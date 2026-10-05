@@ -18,6 +18,8 @@
     <div class="stats" id="stats"></div>
   </header>
 
+  <div id="notices"></div>
+
   <div class="grid">
     <div class="panel">
       <div class="row">
@@ -53,6 +55,7 @@
         <span class="status" id="status"></span>
         <button class="tbtn" id="openBomDir" type="button" title="Åpner BOM-mappen i Utforsker">BOM-mappen</button>
         <button class="tbtn" id="openListDir" type="button" title="Åpner mappen med bestillingslister">Bestillingslister</button>
+        <button class="tbtn" id="copyOpen" type="button" aria-expanded="false" aria-controls="copybox" hidden></button>
         <button class="tbtn" id="addToggle" type="button" aria-expanded="false" aria-controls="addbox">+ Legg til nytt prosjekt</button>
       </div>
     </div>
@@ -83,6 +86,17 @@
       </form>
     </div>
 
+    <div class="addbox" id="copybox" hidden>
+      <h3 class="boxtitle" id="copyTitle"></h3>
+      <p class="formnote">Ukene og antall sett kopieres; BOM, leveringstid og buffer følger prosjektet. Bestillinger kopieres ikke, så neste år starter som «ikke bestilt». Sjekk ukene etterpå – timeplanen kan ha endret seg.</p>
+      <div class="copylist" id="copyList"></div>
+      <div class="actions">
+        <button class="pbtn" type="button" id="copyGo">Kopier</button>
+        <button class="tbtn" type="button" id="copyCancel">Avbryt</button>
+        <span class="err" id="copyErr" role="alert"></span>
+      </div>
+    </div>
+
     <div id="diffs"></div>
 
     <div class="tablebox">
@@ -93,6 +107,12 @@
         <tbody id="tbody"></tbody>
       </table>
     </div>
+  </section>
+
+  <section class="history" id="historySec" hidden>
+    <h2>Historikk</h2>
+    <p class="muted">Det som er registrert som bestilt per skoleår, eks. mva. Pris per sett i grått.</p>
+    <div class="tablebox"><table id="histTable"></table></div>
   </section>
 
   <div class="how">

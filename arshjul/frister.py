@@ -73,6 +73,33 @@ def skolear_uker(sy: int, closed: list[dict]) -> list[dict]:
     return out
 
 
+VARSEL_UKER = 12  # si fra om neste skoleår så lenge før den første fristen
+
+
+def oppsett_varsel(rader: list[dict], closed: list[dict], idag: dt.date) -> dict | None:
+    """Si fra hvis et skoleår ikke er satt opp, og den første fristen i det nærmer seg.
+
+    Ser på prosjekter som gikk året før, men mangler i skoleåret (i år og neste år).
+    Høstens frister havner ofte i juni, altså i skoleåret før – derfor må neste år
+    settes opp om våren.
+    """
+    na = skolear_for(idag)
+    mandag_na = idag - dt.timedelta(days=idag.weekday())
+    for sy in (na, na + 1):
+        finnes = {g["prosjektId"] for g in rader if g["skolear"] == sy}
+        mangler = [g for g in rader if g["skolear"] == sy - 1 and g["prosjektId"] not in finnes]
+        if not mangler:
+            continue
+        kandidater = sorted(((frister({**g, "skolear": sy}, closed)["frist"], g["navn"]) for g in mangler),
+                            key=lambda x: x[0]["dato"])
+        frist, navn = kandidater[0]
+        uker = (dt.date.fromisoformat(frist["dato"]) - mandag_na).days // 7
+        if uker <= VARSEL_UKER:
+            return {"skolear": sy, "navn": skolear_navn(sy), "fra": sy - 1, "fraNavn": skolear_navn(sy - 1),
+                    "frist": frist, "prosjekt": navn, "uker": uker, "mangler": len(mangler)}
+    return None
+
+
 def semester(uke: int) -> str:
     return "Høst" if uke >= SKOLEAR_UKE else "Vår"
 

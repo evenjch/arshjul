@@ -33,6 +33,8 @@ Krever Python 3.10 eller nyere. Uten startfilen: `pip install -r requirements.tx
 | Du vil …                       | Gjør slik                                                                 |
 |--------------------------------|---------------------------------------------------------------------------|
 | Legge til et prosjekt          | Bla til riktig skoleår, trykk «+ Legg til nytt prosjekt»                  |
+| Sette opp neste skoleår        | «Kopier til 2027/28 …» over tabellen, velg prosjektene. Årshjulet minner deg på det om våren |
+| Se hva prosjektene har kostet  | «Historikk» under tabellen: bestilt per prosjekt og skoleår, og per sett  |
 | Lage BOM for nytt prosjekt     | «Lag BOM-mal» – filen lages i BOM-mappen med navn, dato, frist og antall sett, og åpnes i Excel |
 | Koble til en BOM du allerede har | Legg filen i BOM-mappen, velg den i «Koble til fil …»                  |
 | Endre en BOM                   | «Åpne i Excel», endre, lagre, gå tilbake til nettleseren                  |

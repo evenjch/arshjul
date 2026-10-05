@@ -66,11 +66,12 @@ Vi utvikler på egen PC, men slik at årshjulet når som helst kan flyttes til e
 
 **Merk:** leverandørnavn må skrives likt i alle BOM-er («RS» og «RS-Online» er to leverandører). Det får betydning når bestillinger skal samles på tvers av prosjekter.
 
-## Fase 2 – Skoleår og historikk
+## Fase 2 – Skoleår og historikk ✓
 
-- **«Kopier til neste skoleår»**: lager neste års gjennomføringer fra årets, med uker og antall sett fylt ut. (Databasen støtter allerede flere gjennomføringer per prosjekt; det mangler bare knappen.)
-- **Påminnelse om våren.** Eksempel: Arduino starter kit starter i uke 34, med 2 uker levering og 3 uker buffer. Fellesferien hoppes over, så bestillingsfristen blir **uke 25, i juni, i forrige skoleår**. Neste skoleår må derfor være satt opp senest i april.
-- **Historikk**: hva som faktisk ble bestilt, og hva det kostet, per gjennomføring og per skoleår.
+- [x] **«Kopier til neste skoleår»**: velg hvilke prosjekter som skal være med. Uker og antall sett kopieres; BOM, leveringstid og buffer følger prosjektet. Bestillinger kopieres ikke. Prosjekter som allerede finnes i neste år hoppes over.
+- [x] **Påminnelse om våren** (`frister.oppsett_varsel`). Når prosjekter fra i år mangler i neste skoleår, og den første fristen deres er mindre enn 12 uker unna, vises et varsel øverst med en knapp for å sette opp året. Eksempel: Arduino starter kit i uke 34 har frist i **uke 25, i juni** – varselet kommer i starten av april.
+- [x] **Historikk**: hva som er registrert som bestilt (eks. mva.), per prosjekt og skoleår, med pris per sett og sum per år. Regnes fra de frosne kopiene, så tallene står seg selv om BOM-en endres eller fjernes.
+- [ ] Vise de enkelte linjene som ble bestilt et tidligere år (i dag: bla til året og åpne «Bestilling»).
 
 ## Fase 3 – Telling etter prosjektet
 

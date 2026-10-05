@@ -71,6 +71,13 @@ def avvik(frosset: list[dict], rader: list[dict]) -> tuple[list[dict], list[dict
     return tillegg, overskudd
 
 
+def kostnad(lagret: dict[str, dict]) -> float | None:
+    """Hva som faktisk er bestilt (eks. mva), fra de frosne kopiene. None hvis ingenting er registrert."""
+    if not lagret:
+        return None
+    return round(sum(l["antall"] * l["pris"] for b in lagret.values() for l in b["linjer"]), 2)
+
+
 def oversikt(rader: list[dict], lagret: dict[str, dict]) -> dict:
     """Status for hver leverandør og for hele gjennomføringen.
 

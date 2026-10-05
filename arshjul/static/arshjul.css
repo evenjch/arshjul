@@ -186,3 +186,20 @@
   .avvik { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 3px; font-size: 13px; }
   .avvik .more { color: var(--soon); }
   .avvik .more b { color: var(--ink); }
+
+  /* neste skoleår og historikk */
+  .notice { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between;
+            border: 1px solid var(--soon); background: var(--soon-soft); border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; }
+  .notice.warn { border-color: var(--warn); background: var(--warn-soft); }
+  .notice > div { max-width: 90ch; }
+  .boxtitle { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+  .copylist { display: grid; gap: 6px; margin: 12px 0; }
+  .copyrow { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+  .copyrow.done { cursor: default; opacity: .65; }
+  .copyrow input { accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+  section.history { margin-top: 20px; }
+  section.history > p { margin: -6px 0 10px; font-size: 12.5px; }
+  #histTable { min-width: 0; }
+  #histTable .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #histTable td small { display: block; color: var(--muted); font-size: 11.5px; }
+  #histTable tfoot td { border-top: 2px solid var(--line); }

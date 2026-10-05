@@ -168,7 +168,8 @@ def state():
             f = frister.frister(g, closed)
             best = bestilling.oversikt(c["rader"], bestilt.get(g["id"], {})) if c and c["linjer"] else None
             out.append({**g, "semester": frister.semester(g["start"]), "hendelser": f.pop("hendelser"),
-                        "frister": f, "bomStatus": st, "bestilling": best})
+                        "frister": f, "bomStatus": st, "bestilling": best,
+                        "bestiltKr": bestilling.kostnad(bestilt.get(g["id"], {}))})
         if dirty:
             _write_json(SNAP_FILE, snaps)
 
@@ -185,7 +186,18 @@ def state():
         if BOM_DIR.exists() else []
     return jsonify({"prosjekter": out, "stengte": closed, "ledigeBom": ledige, "modus": config.MODUS,
                     "idag": frister.uke_info(idag), "skolearNa": na, "skolear": skolear, "neste8": neste8,
+                    "oppsett": frister.oppsett_varsel(rader, closed, idag),
                     "mapper": {"bom": str(BOM_DIR), "lister": str(LIST_DIR)}})
+
+
+@app.post("/api/skolear/<int:fra>/kopier")
+def copy_year(fra):
+    """Kopier gjennomføringer til neste skoleår. «ids» velger hvilke (standard: alle)."""
+    ids = (request.get_json(silent=True) or {}).get("ids")
+    if ids is not None and (not isinstance(ids, list) or not all(isinstance(i, (str, int)) for i in ids)):
+        raise bomlib.BomError("Ugyldig liste over prosjekter.")
+    nye = store.kopier(fra, [str(i) for i in ids] if ids is not None else None)
+    return jsonify({"nye": nye, "til": fra + 1, "navn": frister.skolear_navn(fra + 1)})
 
 
 def _clean(body: dict, partial: bool) -> dict:

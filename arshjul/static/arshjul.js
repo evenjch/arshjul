@@ -8,7 +8,7 @@
   // projects = alle gjennomføringer i alle skoleår; hjulet og tabellen viser det valgte skoleåret (SY)
   let mode = "loading", projects = [], ledigeBom = [];
   let LOKAL = true; // false når årshjulet kjører på en server: da kan vi ikke åpne Excel eller mapper
-  let SYS = [], SY = null, IDAG = null, NESTE8 = [];
+  let SYS = [], SY = null, IDAG = null, NESTE8 = [], OPPSETT = null;
   const hasBom = (p) => !!(p.bomStatus && p.bomStatus.finnes && !p.bomStatus.feil && p.bomStatus.linjer > 0);
   const nf2 = new Intl.NumberFormat("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -31,7 +31,7 @@
     try {
       const st = await api("GET", "/api/state");
       CLOSED = st.stengte; ledigeBom = st.ledigeBom;
-      SYS = st.skolear; IDAG = st.idag; NESTE8 = st.neste8;
+      SYS = st.skolear; IDAG = st.idag; NESTE8 = st.neste8; OPPSETT = st.oppsett;
       if (SY === null || !SYS.some((s) => s.ar === SY)) SY = st.skolearNa;
       LOKAL = st.modus !== "server";
       $("openBomDir").hidden = $("openListDir").hidden = !LOKAL;
@@ -397,8 +397,79 @@
     }).join("");
   }
 
+  // ---------- neste skoleår: varsel og kopiering ----------
+  const syName = (ar) => { const s = SYS.find((x) => x.ar === ar); return s ? s.navn : `${ar}/${String((ar + 1) % 100).padStart(2, "0")}`; };
+  function drawNotices() {
+    const o = OPPSETT;
+    if (!o || mode === "loading") { $("notices").innerHTML = ""; return; }
+    const naar = o.uker < 0 ? "fristen er allerede passert" : o.uker === 0 ? "denne uken" : `om ${o.uker} ${o.uker === 1 ? "uke" : "uker"}`;
+    $("notices").innerHTML = `<div class="notice ${o.uker <= 4 ? "warn" : "soon"}"><div>`
+      + `<b>Skoleåret ${esc(o.navn)} er ikke satt opp.</b> ${o.mangler} ${o.mangler === 1 ? "prosjekt" : "prosjekter"} fra ${esc(o.fraNavn)} mangler. `
+      + `Første bestillingsfrist blir uke ${o.frist.uke} for ${esc(o.prosjekt)} – ${naar}.</div>`
+      + `<button type="button" class="mini" id="oppsettGo">Sett opp ${esc(o.navn)} …</button></div>`;
+  }
+  $("notices").addEventListener("click", (e) => {
+    if (!e.target.closest("#oppsettGo") || !OPPSETT) return;
+    goSY(OPPSETT.fra); openCopy(true);
+    $("copybox").scrollIntoView({ block: "center", behavior: "smooth" });
+  });
+
+  function drawCopyButton() {
+    const has = inSY().length > 0;
+    $("copyOpen").hidden = !has || mode === "loading";
+    $("copyOpen").textContent = `Kopier til ${syName(SY + 1)} …`;
+    if (!has) openCopy(false);
+  }
+  function openCopy(open) {
+    $("copybox").hidden = !open; $("copyOpen").setAttribute("aria-expanded", String(open)); $("copyErr").textContent = "";
+    if (!open) return;
+    const neste = new Set(projects.filter((p) => p.skolear === SY + 1).map((p) => p.prosjektId));
+    $("copyTitle").textContent = `Kopier fra ${syName(SY)} til ${syName(SY + 1)}`;
+    $("copyList").innerHTML = sorted().map((p) => {
+      const finnes = neste.has(p.prosjektId);
+      return `<label class="copyrow${finnes ? " done" : ""}"><input type="checkbox" value="${esc(p.id)}"${finnes ? " disabled" : " checked"}>`
+        + `<span class="dot" style="background:${col(p)}"></span><span><b>${esc(p.navn)}</b> <span class="muted">· uke ${p.start}${p.start !== p.slutt ? "–" + p.slutt : ""}${p.sett ? " · " + p.sett + " sett" : ""}${finnes ? " · finnes allerede" : ""}</span></span></label>`;
+    }).join("");
+  }
+  $("copyOpen").addEventListener("click", () => openCopy($("copybox").hidden));
+  $("copyCancel").addEventListener("click", () => openCopy(false));
+  $("copyGo").addEventListener("click", async () => {
+    const ids = [...$("copyList").querySelectorAll("input:checked")].map((i) => i.value);
+    if (!ids.length) { $("copyErr").textContent = "Velg minst ett prosjekt."; return; }
+    $("copyGo").disabled = true;
+    try {
+      const r = await api("POST", `/api/skolear/${SY}/kopier`, { ids });
+      openCopy(false); await load(); goSY(r.til);
+      setStatus(`Kopierte ${r.nye.length} ${r.nye.length === 1 ? "prosjekt" : "prosjekter"} til ${r.navn}. Sjekk ukene og antall sett.`);
+    } catch (err) { $("copyErr").textContent = err.message; }
+    finally { $("copyGo").disabled = false; }
+  });
+
+  // ---------- historikk: hva hvert prosjekt har kostet per skoleår ----------
+  function drawHistory() {
+    const runs = projects.filter((p) => p.bestiltKr != null);
+    $("historySec").hidden = !runs.length;
+    if (!runs.length) return;
+    const years = [...new Set(runs.map((p) => p.skolear))].sort((a, b) => a - b);
+    const rows = new Map();
+    runs.forEach((p) => {
+      const r = rows.get(p.prosjektId) || { navn: p.navn, p, cells: {} };
+      r.cells[p.skolear] = p; rows.set(p.prosjektId, r);
+    });
+    const cell = (p) => {
+      if (!p) return `<td class="num muted">—</td>`;
+      const sett = p.sett || (p.bomStatus && p.bomStatus.settFil);
+      return `<td class="num">${nf0.format(p.bestiltKr)} kr${sett ? `<small>${nf0.format(p.bestiltKr / sett)} kr/sett · ${sett} sett</small>` : ""}</td>`;
+    };
+    const sum = (y) => runs.filter((p) => p.skolear === y).reduce((s, p) => s + p.bestiltKr, 0);
+    $("histTable").innerHTML = `<thead><tr><th>Prosjekt</th>${years.map((y) => `<th class="num">${esc(syName(y))}</th>`).join("")}</tr></thead><tbody>`
+      + [...rows.values()].sort((a, b) => a.navn.localeCompare(b.navn, "nb")).map((r) =>
+        `<tr><td class="name"><b><span class="dot" style="background:${col(r.p)}"></span>${esc(r.navn)}</b></td>${years.map((y) => cell(r.cells[y])).join("")}</tr>`).join("")
+      + `</tbody><tfoot><tr><td><b>Sum</b></td>${years.map((y) => `<td class="num"><b>${nf0.format(sum(y))} kr</b></td>`).join("")}</tr></tfoot>`;
+  }
+
   function renderAll(keepTable) {
-    drawWheel(); drawWeeks(); drawStats(); drawDiffs();
+    drawWheel(); drawWeeks(); drawStats(); drawDiffs(); drawNotices(); drawCopyButton(); drawHistory();
     if (!keepTable) drawTable();
     else inSY().forEach((p) => { const cell = document.querySelector(`tr[data-id="${CSS.escape(p.id)}"] .fristcell`); if (cell) cell.innerHTML = fristHtml(p);
       const oc = document.querySelector(`tr[data-id="${CSS.escape(p.id)}"] .ordercell`); if (oc) oc.innerHTML = orderCell(p);

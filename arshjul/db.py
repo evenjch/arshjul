@@ -181,6 +181,25 @@ class Db:
                             (*gf.values(), gid))
         return self.gjennomforing(gid)
 
+    def kopier(self, fra: int, ids: list[str] | None = None) -> list[str]:
+        """Kopier gjennomføringer fra skoleåret «fra» til året etter, med samme uker og antall sett.
+
+        ids: hvilke gjennomføringer (standard: alle). Prosjekter som allerede finnes
+        i neste skoleår hoppes over. Bestillinger kopieres ikke. Returnerer de nye id-ene.
+        """
+        nye = []
+        with self.tx() as con:
+            rader = con.execute("SELECT * FROM gjennomforing WHERE skolear = ?", (fra,)).fetchall()
+            finnes = {r[0] for r in con.execute("SELECT prosjekt_id FROM gjennomforing WHERE skolear = ?", (fra + 1,))}
+            for r in rader:
+                if (ids is not None and str(r["id"]) not in ids) or r["prosjekt_id"] in finnes:
+                    continue
+                cur = con.execute("INSERT INTO gjennomforing (prosjekt_id, skolear, start, slutt, sett) VALUES (?,?,?,?,?)",
+                                  (r["prosjekt_id"], fra + 1, r["start"], r["slutt"], r["sett"]))
+                finnes.add(r["prosjekt_id"])
+                nye.append(str(cur.lastrowid))
+        return nye
+
     # ---------- bestillinger ----------
 
     def bestillinger(self) -> dict[str, dict[str, dict]]:
