@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bestilling – IELS1001 Hackathon - Insektsløp</title>
+</head>
+<body>
+<style>
+  :root {
+    --bg: #f4f6f8; --card: #ffffff; --ink: #1f2a33; --muted: #6b7885; --line: #e6eaee;
+    --head: #24343f; --accent: #2e5e73; --accent-soft: #e8f0f3; --hover: #eef4f7;
+    --copied: #e3f1e7; --copied-ink: #2f6b45; --pill: #eef1f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #13191e; --card: #1b232a; --ink: #e6ebef; --muted: #93a0ab; --line: #2b353e;
+      --head: #0e1418; --accent: #7fb3c9; --accent-soft: #1f2f37; --hover: #22313a;
+      --copied: #1f3a2a; --copied-ink: #9fd6b2; --pill: #26313a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 "Segoe UI", system-ui, -apple-system, Arial, sans-serif; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 32px 16px 80px; }
+  header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 20px; align-items: flex-end;
+           padding-bottom: 18px; border-bottom: 2px solid var(--accent); margin-bottom: 20px; }
+  .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
+  h1 { margin: 2px 0 6px; font-size: 26px; letter-spacing: -0.01em; }
+  .meta { color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 18px; }
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 16px; min-width: 120px; }
+  .stat small { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: .07em; color: var(--muted); text-transform: uppercase; }
+  .stat b { font-size: 18px; white-space: nowrap; }
+  .stat.accent b { color: var(--accent); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin-bottom: 14px; }
+  .toolbar input[type=search], .toolbar select {
+    font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line);
+    border-radius: 9px; padding: 8px 12px; min-width: 0; }
+  .toolbar input[type=search] { flex: 1 1 220px; }
+  .toolbar label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); cursor: pointer; user-select: none; }
+  .toolbar .spacer { flex: 1 1 auto; }
+  .tbtn { font: 600 13px/1 inherit; font-family: inherit; border: 1px solid var(--line); background: var(--card); color: var(--accent);
+          border-radius: 9px; padding: 9px 12px; cursor: pointer; }
+  .tbtn:hover { background: var(--hover); }
+  .hint { color: var(--muted); font-size: 13px; margin: -4px 0 12px; }
+  .tablebox { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 860px; }
+  th { position: sticky; top: 0; background: var(--head); color: #fff; font-size: 12px; font-weight: 600;
+       text-align: left; padding: 11px 12px; white-space: nowrap; }
+  th.num, td.num { text-align: right; }
+  th.c, td.c { text-align: center; }
+  td { padding: 0; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  td.cp { cursor: copy; position: relative; }
+  td.cp > span { display: block; padding: 10px 12px; border-radius: 6px; transition: background .12s; }
+  td.cp:hover > span { background: var(--hover); }
+  td.cp.copied > span { background: var(--copied); }
+  td.cp.flash > span { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  td.muted > span { color: var(--muted); }
+  td.nr { color: var(--muted); padding: 10px 12px; }
+  td.chk { width: 44px; text-align: center; }
+  td.chk input { width: 17px; height: 17px; cursor: pointer; accent-color: var(--accent); }
+  .sku { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-weight: 600; background: var(--pill);
+         padding: 3px 8px; border-radius: 6px; letter-spacing: .01em; }
+  td.qty > span { font-weight: 700; font-size: 15px; }
+  td.num > span, td[data-k=varenummer] > span { white-space: nowrap; }
+  td.total > span { font-weight: 600; }
+  tr.done td { opacity: .45; }
+  tr.done td.chk { opacity: 1; }
+  tr.done td.desc > span { text-decoration: line-through; }
+  tr.zero td > span { color: var(--muted); }
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
+           background: var(--head); color: #fff; padding: 10px 18px; border-radius: 10px; font-size: 14px;
+           box-shadow: 0 6px 24px rgba(0,0,0,.18); transition: .18s; max-width: calc(100% - 32px);
+           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast b { font-family: ui-monospace, Consolas, monospace; }
+  footer { margin-top: 18px; color: var(--muted); font-size: 12px; }
+  @media print {
+    body { background: #fff; } .toolbar, .hint, .toast { display: none !important; }
+    th { position: static; } .tablebox { border: 0; }
+  }
+</style>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Bestillingsliste</div>
+      <h1 id="title"></h1>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <div class="toolbar">
+    <input type="search" id="q" placeholder="Søk i beskrivelse, varenummer …">
+    <select id="sup"></select>
+    <label><input type="checkbox" id="showZero"> Vis linjer uten noe å bestille</label>
+    <label><input type="checkbox" id="hideDone"> Skjul ferdige</label>
+    <span class="spacer"></span>
+    <button class="tbtn" id="copyList" title="Kopierer varenummer og antall, én linje per vare, for linjene som vises">Kopier varenr + antall</button>
+  </div>
+  <p class="hint">Klikk på en celle for å kopiere innholdet. Kopierte celler blir grønne. Kryss av en linje når den er lagt i handlekurven.</p>
+
+  <div class="tablebox"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody></table></div>
+  <footer id="foot"></footer>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const BOM = __BOM_JSON__;
+(function () {
+  const nf2 = new Intl.NumberFormat("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const nf0 = new Intl.NumberFormat("nb-NO", { maximumFractionDigits: 2 });
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const isNum = (v) => typeof v === "number" && isFinite(v);
+
+  const COLS = BOM.cols; // {key,label,kind}
+  const has = (k) => COLS.some((c) => c.key === k);
+  const state = { done: new Set(), copied: new Set() };
+  const storeKey = "bom-" + BOM.id;
+  try {
+    const saved = JSON.parse(localStorage.getItem(storeKey) || "null");
+    if (saved) { state.done = new Set(saved.done); state.copied = new Set(saved.copied); }
+  } catch (e) {}
+  const save = () => { try { localStorage.setItem(storeKey, JSON.stringify({ done: [...state.done], copied: [...state.copied] })); } catch (e) {} };
+
+  // Header
+  const m = BOM.meta;
+  $("title").textContent = m.prosjekt || "BOM";
+  document.title = "Bestilling – " + (m.prosjekt || "BOM");
+  $("meta").innerHTML = [
+    m.ansvarlig && "Ansvarlig: " + esc(m.ansvarlig),
+    m.dato && "Dato: " + esc(m.dato),
+    m.sett && "Antall sett: " + esc(m.sett),
+  ].filter(Boolean).map((t) => "<span>" + t + "</span>").join("");
+
+  const orderRows = BOM.rows.filter((r) => !has("antall") || !isNum(r.antall) || r.antall > 0);
+  const stats = [["Linjer å bestille", orderRows.length, ""], ["Ferdig", "", "done"]];
+  if (isNum(BOM.totals.eks)) stats.push(["Sum eks. mva", nf2.format(BOM.totals.eks) + " kr", ""]);
+  if (isNum(BOM.totals.inkl)) stats.push(["Sum inkl. mva", nf2.format(BOM.totals.inkl) + " kr", "accent"]);
+  $("stats").innerHTML = stats.map(([l, v, k]) =>
+    '<div class="stat ' + k + '"><small>' + l + "</small><b" + (k === "done" ? ' id="doneCount"' : "") + ">" + v + "</b></div>").join("");
+
+  // Supplier filter
+  const sups = [...new Set(BOM.rows.map((r) => r.leverandor).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nb"));
+  if (sups.length > 1) {
+    $("sup").innerHTML = '<option value="">Alle leverandører</option>' + sups.map((s) => "<option>" + esc(s) + "</option>").join("");
+  } else $("sup").style.display = "none";
+  if (!has("antall")) $("showZero").parentElement.style.display = "none";
+
+  // Table head
+  $("thead").innerHTML = '<th class="c" title="Ferdig">✓</th>' + COLS.map((c) =>
+    '<th class="' + (c.kind === "money" ? "num" : c.kind === "qty" || c.key === "nr" ? "c" : "") + '">' + esc(c.label) + "</th>").join("");
+
+  const display = (c, v) => {
+    if (v === "" || v == null) return "";
+    if (c.kind === "money") return isNum(v) ? nf2.format(v) + " kr" : esc(v);
+    if (c.kind === "qty") return isNum(v) ? nf0.format(v) : esc(v);
+    if (c.key === "varenummer") return '<span class="sku">' + esc(v) + "</span>";
+    return esc(v);
+  };
+  const copyText = (c, v) => {
+    if (isNum(v)) return c.kind === "money" ? v.toFixed(2).replace(".", ",") : String(Math.round(v * 100) / 100).replace(".", ",");
+    return String(v);
+  };
+
+  function render() {
+    const q = $("q").value.trim().toLowerCase();
+    const sup = $("sup").value;
+    const showZero = $("showZero").checked, hideDone = $("hideDone").checked;
+    const rows = BOM.rows.filter((r) => {
+      if (!showZero && has("antall") && isNum(r.antall) && r.antall <= 0) return false;
+      if (sup && r.leverandor !== sup) return false;
+      if (hideDone && state.done.has(r.id)) return false;
+      if (q && !COLS.some((c) => String(r[c.key] ?? "").toLowerCase().includes(q))) return false;
+      return true;
+    });
+    $("tbody").innerHTML = rows.length ? rows.map((r) => {
+      const zero = has("antall") && isNum(r.antall) && r.antall <= 0;
+      let h = '<tr data-id="' + r.id + '" class="' + (state.done.has(r.id) ? "done " : "") + (zero ? "zero" : "") + '">';
+      h += '<td class="chk"><input type="checkbox" aria-label="Ferdig"' + (state.done.has(r.id) ? " checked" : "") + "></td>";
+      for (const c of COLS) {
+        const v = r[c.key];
+        if (c.key === "nr") { h += '<td class="nr c">' + esc(v ?? "") + "</td>"; continue; }
+        const cls = ["cp", c.kind === "money" ? "num" : "", c.kind === "qty" ? "c qty" : "", c.key === "total" ? "total" : "",
+                     c.key === "beskrivelse" ? "desc" : "", c.key === "kategori" || c.key === "kommentar" ? "muted" : "",
+                     state.copied.has(r.id + ":" + c.key) ? "copied" : ""].filter(Boolean).join(" ");
+        const empty = v === "" || v == null;
+        h += empty ? "<td></td>" : '<td class="' + cls + '" data-k="' + c.key + '"><span>' + display(c, v) + "</span></td>";
+      }
+      return h + "</tr>";
+    }).join("") : '<tr><td colspan="' + (COLS.length + 1) + '" class="empty">Ingen linjer passer med filteret.</td></tr>';
+    const total = orderRows.length, done = orderRows.filter((r) => state.done.has(r.id)).length;
+    $("doneCount").textContent = done + " av " + total;
+    $("copyList").dataset.n = rows.filter((r) => r.varenummer).length;
+    $("copyList").textContent = "Kopier varenr + antall (" + $("copyList").dataset.n + ")";
+    $("copyList").style.display = has("varenummer") ? "" : "none";
+  }
+
+  let toastTimer;
+  function toast(html) {
+    const t = $("toast"); t.innerHTML = html; t.classList.add("show");
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 1600);
+  }
+  async function copy(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.cssText = "position:fixed;opacity:0;top:0;left:0";
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+    ta.remove(); return ok;
+  }
+
+  $("tbody").addEventListener("click", async (e) => {
+    const tr = e.target.closest("tr[data-id]"); if (!tr) return;
+    const id = +tr.dataset.id;
+    if (e.target.matches('input[type=checkbox]')) {
+      e.target.checked ? state.done.add(id) : state.done.delete(id);
+      save(); render(); return;
+    }
+    const td = e.target.closest("td.cp"); if (!td) return;
+    const c = COLS.find((x) => x.key === td.dataset.k);
+    const r = BOM.rows.find((x) => x.id === id);
+    const text = copyText(c, r[c.key]);
+    if (await copy(text)) {
+      state.copied.add(id + ":" + c.key); save();
+      td.classList.add("copied", "flash"); setTimeout(() => td.classList.remove("flash"), 450);
+      toast("Kopiert: <b>" + esc(text) + "</b>");
+    } else toast("Kunne ikke kopiere – marker teksten og bruk Ctrl+C");
+  });
+
+  $("copyList").addEventListener("click", async () => {
+    const ids = new Set([...document.querySelectorAll("#tbody tr[data-id]")].map((tr) => +tr.dataset.id));
+    const lines = BOM.rows.filter((r) => ids.has(r.id) && r.varenummer)
+      .map((r) => r.varenummer + (has("antall") && isNum(r.antall) ? "\t" + copyText({ kind: "qty" }, r.antall) : ""));
+    if (!lines.length) return toast("Ingen varenummer å kopiere");
+    if (await copy(lines.join("\n"))) toast("Kopiert " + lines.length + " linjer (varenummer + antall)");
+  });
+
+  ["q", "sup", "showZero", "hideDone"].forEach((id) => $(id).addEventListener("input", render));
+  $("foot").textContent = "Laget fra " + (BOM.source || "BOM") + " · " + BOM.generated;
+  render();
+})();
+</script>
+</body>
+</html>

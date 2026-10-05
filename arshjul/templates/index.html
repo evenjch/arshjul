@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Årshjul for innkjøp</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='arshjul.css') }}">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Elektronikk · innkjøp til undervisning</div>
+      <h1>Årshjul for innkjøp</h1>
+      <div class="meta" id="today"></div>
+    </div>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="row">
+        <h2>Skoleåret <span id="syName"></span></h2>
+        <div class="synav">
+          <button class="mini" id="syPrev" type="button" aria-label="Forrige skoleår">‹</button>
+          <button class="mini" id="syNow" type="button">I år</button>
+          <button class="mini" id="syNext" type="button" aria-label="Neste skoleår">›</button>
+        </div>
+      </div>
+      <svg id="wheel" viewBox="0 0 600 600" role="img" aria-label="Årshjul med prosjekter og bestillingsfrister"></svg>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--muted)"></span>Bestillingsfrist</span>
+        <span><span class="sw lead"></span>Bestilling og levering</span>
+        <span><span class="sw use"></span>I bruk</span>
+        <span><span class="sq"></span>Innlevering / telling</span>
+        <span><span class="sw closed"></span>Stengt periode</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Neste 8 uker</h2>
+      <div class="weeks" id="weeks"></div>
+    </div>
+  </div>
+
+  <section class="projects">
+    <div class="row">
+      <h2>Prosjekter <span id="syTable"></span></h2>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span class="status" id="status"></span>
+        <button class="tbtn" id="openBomDir" type="button" title="Åpner BOM-mappen i Utforsker">BOM-mappen</button>
+        <button class="tbtn" id="openListDir" type="button" title="Åpner mappen med bestillingslister">Bestillingslister</button>
+        <button class="tbtn" id="addToggle" type="button" aria-expanded="false" aria-controls="addbox">+ Legg til nytt prosjekt</button>
+      </div>
+    </div>
+
+    <div class="addbox" id="addbox" hidden>
+      <form id="addForm" novalidate>
+        <p class="wide formnote">Legges inn i skoleåret <b id="f-sy"></b>. Uke 32–53 er høsten, uke 1–31 er våren etter.</p>
+        <label class="wide">Navn på prosjekt
+          <input type="text" id="f-navn" placeholder="F.eks. Lodde-workshop" autocomplete="off">
+        </label>
+        <label>Type
+          <select id="f-type"><option value="hack">Hackathon / lab</option><option value="sett">Semestersett</option></select>
+        </label>
+        <label>Semester
+          <select id="f-semester"><option>Høst</option><option>Vår</option></select>
+        </label>
+        <label>I bruk fra uke <input type="number" id="f-start" min="1" max="53" value="40"></label>
+        <label>til uke <input type="number" id="f-slutt" min="1" max="53" value="40"></label>
+        <label>Leveringstid (uker) <input type="number" id="f-lev" min="0" max="20" value="2"></label>
+        <label>Buffer (uker) <input type="number" id="f-buf" min="0" max="20" value="2"></label>
+        <label>Antall sett <input type="number" id="f-sett" min="0" max="999" placeholder="F.eks. 30"></label>
+        <label class="wide">Notat <input type="text" id="f-notat" placeholder="Valgfritt, f.eks. emnekode" autocomplete="off"></label>
+        <div class="actions">
+          <button class="pbtn" type="submit" id="f-save">Legg til</button>
+          <button class="tbtn" type="button" id="f-cancel">Avbryt</button>
+          <span class="err" id="f-err" role="alert"></span>
+        </div>
+      </form>
+    </div>
+
+    <div id="diffs"></div>
+
+    <div class="tablebox">
+      <table>
+        <thead><tr>
+          <th>Prosjekt</th><th>Type</th><th>I bruk fra</th><th>til uke</th><th title="Leveringstid i uker">Levering</th><th title="Buffer i uker">Buffer</th><th>Sett</th><th>Bestillingsfrist</th><th>BOM</th><th></th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="how">
+    <div>
+      <h2>Slik regnes fristen</h2>
+      <p>Bestillingsfristen er første bruksuke minus leveringstid og buffer, begge i uker. Uker i en stengt periode telles ikke med, så fristen for høstens startsett havner før fellesferien. Buffer dekker godkjenning hos bestiller, mottak og pakking.</p>
+      <p style="margin-top:10px">Antall å bestille er antall per sett × antall sett − det som er på lager. Antall sett styres her i årshjulet; BOM-en gir komponentene, antall per sett, lagerstatus og pris.</p>
+    </div>
+    <div>
+      <h2>Filene dine</h2>
+      <p>BOM-ene leses rett fra BOM-mappen hver gang siden oppdateres. Årshjulet skriver aldri til en BOM, det lager bare nye maler. Endre filen i Excel, lagre, og gå tilbake hit.</p>
+      <p style="margin-top:10px">Stengte perioder: <span id="closedList"></span>.
+        <button class="mini quiet" id="closedToggle" type="button" aria-expanded="false" aria-controls="closedEdit">Endre</button></p>
+      <div class="closededit" id="closedEdit" hidden></div>
+    </div>
+  </div>
+</div>
+<script src="{{ url_for('static', filename='arshjul.js') }}"></script>
+</body>
+</html>

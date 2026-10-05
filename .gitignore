@@ -1,0 +1,16 @@
+# Python-miljø og kjørefiler
+.venv/
+__pycache__/
+.pytest_cache/
+*.tmp
+
+# Brukerdata – ligger i datamappen, ikke i koden
+.cache/
+BOM/
+Bestillingslister/
+arshjul.json
+arshjul.json.importert
+*.db
+
+# Excel-låsefiler
+~$*
