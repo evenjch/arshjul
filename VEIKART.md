@@ -37,7 +37,7 @@ Vi utvikler på egen PC, men slik at årshjulet når som helst kan flyttes til e
 - [x] Innstillinger via miljøvariabler (`config.py`), data skilt fra kode, servermodus
 - [x] waitress som server, `--debug` for utvikling
 - [x] Tester (`arshjul/tests/`)
-- [ ] Git (lokalt). `.gitignore` og `.gitattributes` er klare; git må installeres (`winget install --id Git.Git -e`)
+- [x] Git (lokalt)
 - [x] **Ny datamodell** i SQLite (`arshjul.db` i datamappen, `db.py`). Prosjekt og gjennomføring er på plass; bestilling, telling og endringslogg kommer i senere faser:
 
   ```
