@@ -54,13 +54,17 @@ Vi utvikler på egen PC, men slik at årshjulet når som helst kan flyttes til e
 - [x] Hjulet viser ett skoleår om gangen og starter i august. Uke 53 og årsskiftet regnes med ekte datoer. «Neste 8 uker» og «Neste frist» ser på tvers av skoleår, så juni-frister for høsten kommer med.
 - [x] Stengte perioder lagres i databasen og endres nederst på siden.
 
-## Fase 1 – Bestillingsstatus
+## Fase 1 – Bestillingsstatus ✓
 
-- Én rad per leverandør, hentet fra Leverandør-kolonnen i BOM-en. Linjer uten leverandør samles i «Ukjent leverandør».
-- Status: Ikke bestilt → Bestilt → Delvis mottatt / Mottatt → Innlevert og telt. Gjennomføringen får den «dårligste» statusen.
-- Når du trykker «Bestilt», lagres dato, hvem, ordrenummer og en **frosset kopi** av linjene (bestillingslisten har allerede en `list_id`).
-- **«BOM-en er endret etter at du bestilte»**: den frosne kopien sammenlignes med BOM-en med dagens `diff()`, og du ser hva som må bestilles i tillegg.
-- I hjulet og «neste 8 uker»: grønn = bestilt, gul = frist snart, **rød = fristen er passert og ingenting er bestilt**. «Neste frist» hopper over det som er bestilt.
+- [x] Én rad per leverandør, hentet fra Leverandør-kolonnen i BOM-en. Linjer uten leverandør samles i «Ukjent leverandør». Linjer der alt er på lager teller ikke.
+- [x] Status: Ikke bestilt → Bestilt → Delvis mottatt / Mottatt. Gjennomføringen får den «dårligste» statusen («2 av 3 bestilt»). Innlevert og telt kommer i fase 3.
+- [x] Når du trykker «Registrer bestilt», lagres dato, ordrenummer, antall sett og en **frosset kopi** av linjene (`bestilling.py`, tabellen `bestilling`). «Hvem» lagres når innlogging kommer i fase 4.
+- [x] **«Trenger mer enn det som er bestilt»**: den frosne kopien sammenlignes med det BOM-en og antall sett krever nå. Du ser hva som mangler per linje, og registrerer en tilleggsbestilling.
+- [x] I hjulet, «neste 8 uker» og toppfeltet: grønn ring = bestilt, gul = frist snart eller må bestille mer, **rød = fristen er passert og ikke bestilt**. «Neste frist» hopper over det som er bestilt. Prosjekter som allerede har startet uten registrert bestilling markeres ikke.
+- [x] Bestillingsliste for én leverandør.
+- [ ] Prosjekter uten BOM kan ikke markeres som bestilt ennå.
+
+**Merk:** leverandørnavn må skrives likt i alle BOM-er («RS» og «RS-Online» er to leverandører). Det får betydning når bestillinger skal samles på tvers av prosjekter.
 
 ## Fase 2 – Skoleår og historikk
 

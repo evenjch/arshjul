@@ -1,25 +1,9 @@
-import datetime as dt
-
 import openpyxl
 import pytest
 
 import bom
 import config
-
-
-def lag_bom(navn="Test – BOM.xlsx", rader=(), sett=10):
-    target = config.BOM_DIR / navn
-    bom.make_template(config.TEMPLATE_BOM, target, prosjekt="Testprosjekt", dato=dt.date(2026, 8, 1),
-                      frist=dt.date(2026, 6, 15), sett=sett)
-    if rader:
-        wb = openpyxl.load_workbook(target)
-        ws = wb.worksheets[0]
-        for i, (besk, lev, varenr, pr_sett, lager, pris) in enumerate(rader):
-            r = bom.FIRST_ROW + i
-            ws[f"C{r}"], ws[f"E{r}"], ws[f"F{r}"] = besk, lev, varenr
-            ws[f"G{r}"], ws[f"H{r}"], ws[f"J{r}"] = pr_sett, lager, pris
-        wb.save(target)
-    return target
+from hjelp import lag_bom
 
 
 def test_mal_kan_leses_tilbake():

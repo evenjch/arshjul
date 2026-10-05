@@ -37,7 +37,10 @@ Krever Python 3.10 eller nyere. Uten startfilen: `pip install -r requirements.tx
 | Koble til en BOM du allerede har | Legg filen i BOM-mappen, velg den i «Koble til fil …»                  |
 | Endre en BOM                   | «Åpne i Excel», endre, lagre, gå tilbake til nettleseren                  |
 | Se hva som er endret           | Endringer siden sist vises over tabellen. «OK, sett» når du har sett dem  |
-| Lage bestillingsliste          | «Bestillingsliste» – lagres i Bestillingslister og åpnes                  |
+| Lage bestillingsliste          | «Bestillingsliste» – lagres i Bestillingslister og åpnes. For én leverandør: «Liste» under «Bestilling» |
+| Registrere at du har bestilt   | Trykk på statusen i «Bestilling»-kolonnen, skriv ordrenummer, «Registrer bestilt» for hver leverandør |
+| Registrere mottak              | Velg «Delvis mottatt» eller «Mottatt» for leverandøren                    |
+| Bestille det som mangler       | Når BOM-en eller antall sett endres etter bestilling, vises det over tabellen. Bestill, og trykk «Registrer tilleggsbestilling» |
 
 Siden oppdateres av seg selv når du går tilbake til nettleservinduet.
 
@@ -46,7 +49,8 @@ Siden oppdateres av seg selv når du går tilbake til nettleservinduet.
 - `app.py`: Flask-appen og API-et
 - `config.py`: innstillinger fra miljøvariabler (datamappe, modus, port)
 - `frister.py`: uker, skoleår og frister – det eneste stedet de regnes ut
-- `db.py`: databasen (prosjekter, gjennomføringer per skoleår, stengte perioder) og oppgraderinger av den
+- `db.py`: databasen (prosjekter, gjennomføringer per skoleår, bestillinger, stengte perioder) og oppgraderinger av den
+- `bestilling.py`: bestillingsstatus per leverandør, frossen kopi og hva som mangler
 - `bom.py`: lesing av BOM, utregning, endringer, mal og bestillingsliste
 - `maler/`: BOM-malen og bestillingsliste-malen
 - `templates/index.html`, `static/`: selve årshjulet

@@ -48,6 +48,23 @@ MIGRERINGER = [
         til  INTEGER NOT NULL
     );
     """,
+    # 2: bestillinger per leverandør, med frossen kopi av linjene som ble bestilt (JSON)
+    """
+    CREATE TABLE bestilling (
+        id               INTEGER PRIMARY KEY,
+        gjennomforing_id INTEGER NOT NULL REFERENCES gjennomforing(id) ON DELETE CASCADE,
+        leverandor       TEXT NOT NULL,
+        navn             TEXT NOT NULL,
+        status           TEXT NOT NULL,
+        bestilt_dato     TEXT NOT NULL,
+        mottatt_dato     TEXT,
+        ordrenr          TEXT NOT NULL DEFAULT '',
+        av               TEXT,
+        sett             INTEGER,
+        linjer           TEXT NOT NULL,
+        UNIQUE (gjennomforing_id, leverandor)
+    );
+    """,
 ]
 
 PROSJEKT_FELT = ("navn", "type", "lev", "buf", "notat", "color", "bom")
@@ -163,6 +180,38 @@ class Db:
                 con.execute(f"UPDATE gjennomforing SET {', '.join(k + ' = ?' for k in gf)} WHERE id = ?",
                             (*gf.values(), gid))
         return self.gjennomforing(gid)
+
+    # ---------- bestillinger ----------
+
+    def bestillinger(self) -> dict[str, dict[str, dict]]:
+        """Alle registrerte bestillinger: {gjennomføring-id: {leverandør-nøkkel: rad}}."""
+        out: dict[str, dict[str, dict]] = {}
+        with self.tx() as con:
+            for r in con.execute("SELECT * FROM bestilling"):
+                d = dict(r)
+                d["linjer"] = json.loads(d["linjer"])
+                out.setdefault(str(d["gjennomforing_id"]), {})[d["leverandor"]] = d
+        return out
+
+    def ny_bestilling(self, gid: str, key: str, navn: str, *, dato: str, ordrenr: str, sett: int | None,
+                      linjer: list[dict]) -> None:
+        with self.tx() as con:
+            con.execute("""INSERT INTO bestilling (gjennomforing_id, leverandor, navn, status, bestilt_dato, ordrenr, sett, linjer)
+                           VALUES (?,?,?,?,?,?,?,?)""",
+                        (gid, key, navn, "bestilt", dato, ordrenr, sett, json.dumps(linjer, ensure_ascii=False)))
+
+    def endre_bestilling(self, gid: str, key: str, **felt) -> None:
+        if "linjer" in felt:
+            felt["linjer"] = json.dumps(felt["linjer"], ensure_ascii=False)
+        with self.tx() as con:
+            cur = con.execute(f"UPDATE bestilling SET {', '.join(k + ' = ?' for k in felt)} "
+                              "WHERE gjennomforing_id = ? AND leverandor = ?", (*felt.values(), gid, key))
+            if not cur.rowcount:
+                raise KeyError(key)
+
+    def slett_bestilling(self, gid: str, key: str) -> None:
+        with self.tx() as con:
+            con.execute("DELETE FROM bestilling WHERE gjennomforing_id = ? AND leverandor = ?", (gid, key))
 
     def slett(self, gid: str) -> None:
         """Slett gjennomføringen. Prosjektet slettes også hvis det ikke har flere."""

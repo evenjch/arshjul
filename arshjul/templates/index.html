@@ -35,6 +35,9 @@
         <span><span class="sw use"></span>I bruk</span>
         <span><span class="sq"></span>Innlevering / telling</span>
         <span><span class="sw closed"></span>Stengt periode</span>
+        <span><span class="ring ok"></span>Bestilt</span>
+        <span><span class="ring soon"></span>Frist snart / må bestille mer</span>
+        <span><span class="ring late"></span>Frist passert</span>
       </div>
     </div>
     <div class="panel">
@@ -85,7 +88,7 @@
     <div class="tablebox">
       <table>
         <thead><tr>
-          <th>Prosjekt</th><th>Type</th><th>I bruk fra</th><th>til uke</th><th title="Leveringstid i uker">Levering</th><th title="Buffer i uker">Buffer</th><th>Sett</th><th>Bestillingsfrist</th><th>BOM</th><th></th>
+          <th>Prosjekt</th><th>Type</th><th>I bruk fra</th><th>til uke</th><th title="Leveringstid i uker">Levering</th><th title="Buffer i uker">Buffer</th><th>Sett</th><th>Bestillingsfrist</th><th>Bestilling</th><th>BOM</th><th></th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -96,6 +99,7 @@
     <div>
       <h2>Slik regnes fristen</h2>
       <p>Bestillingsfristen er første bruksuke minus leveringstid og buffer, begge i uker. Uker i en stengt periode telles ikke med, så fristen for høstens startsett havner før fellesferien. Buffer dekker godkjenning hos bestiller, mottak og pakking.</p>
+      <p style="margin-top:10px">Under «Bestilling» registrerer du hver leverandør som bestilt. Årshjulet husker hva som ble bestilt, og sier fra hvis BOM-en eller antall sett endres så du trenger mer.</p>
       <p style="margin-top:10px">Antall å bestille er antall per sett × antall sett − det som er på lager. Antall sett styres her i årshjulet; BOM-en gir komponentene, antall per sett, lagerstatus og pris.</p>
     </div>
     <div>

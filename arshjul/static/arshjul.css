@@ -3,6 +3,7 @@
     --bg: #f2f5f6; --card: #ffffff; --ink: #1d2830; --muted: #65737d; --line: #e0e6e9;
     --head: #24343f; --accent: #2e5e73; --accent-soft: #e6eff2; --hover: #eef4f6;
     --closed: #c9d2d7; --warn: #a2461f; --warn-soft: #fbece4;
+    --ok: #2f7d4f; --ok-soft: #e3f2e8; --soon: #9a6a00; --soon-soft: #fbf1d9;
     --p1: #3a7ca5; --p2: #c9821a; --p3: #b8457a; --p4: #3f8a55; --p5: #7659b0; --p6: #2a8a84; --p7: #7f8a24; --p8: #5b6b7a;
     --sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
     --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
@@ -12,6 +13,7 @@
       --bg: #12181c; --card: #1a2228; --ink: #e5eaee; --muted: #93a0aa; --line: #2a343c;
       --head: #0d1316; --accent: #80b4c9; --accent-soft: #1e2e36; --hover: #212e36;
       --closed: #3a454d; --warn: #f0a07a; --warn-soft: #3a2419;
+      --ok: #74c493; --ok-soft: #1c3326; --soon: #e3b555; --soon-soft: #362b14;
       --p1: #6aa9d1; --p2: #e4a649; --p3: #df76a6; --p4: #72bb86; --p5: #a78be0; --p6: #5cc4bd; --p7: #bdc85c; --p8: #9fb0c0;
       color-scheme: dark;
     }
@@ -20,6 +22,7 @@
     --bg: #12181c; --card: #1a2228; --ink: #e5eaee; --muted: #93a0aa; --line: #2a343c;
     --head: #0d1316; --accent: #80b4c9; --accent-soft: #1e2e36; --hover: #212e36;
     --closed: #3a454d; --warn: #f0a07a; --warn-soft: #3a2419;
+      --ok: #74c493; --ok-soft: #1c3326; --soon: #e3b555; --soon-soft: #362b14;
     --p1: #6aa9d1; --p2: #e4a649; --p3: #df76a6; --p4: #72bb86; --p5: #a78be0; --p6: #5cc4bd; --p7: #bdc85c; --p8: #9fb0c0;
     color-scheme: dark;
   }
@@ -153,3 +156,33 @@
   .closedrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--muted); }
   .closedrow input[type=text] { font: 400 13px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line);
                                 border-radius: 7px; padding: 5px 8px; width: 140px; }
+
+  /* bestillingsstatus */
+  .ring { width: 11px; height: 11px; border-radius: 50%; display: inline-block; border: 2.5px solid; }
+  .ring.ok { border-color: var(--ok); } .ring.soon { border-color: var(--soon); } .ring.late { border-color: var(--warn); }
+  .tag.ok { background: var(--ok-soft); color: var(--ok); }
+  .tag.soon { background: var(--soon-soft); color: var(--soon); }
+  .stat.soon { border-color: var(--soon); background: var(--soon-soft); }
+  .stat.soon b { color: var(--soon); }
+  .diffbox.soon { border-color: var(--soon); }
+  .diffbox p { margin: 0; font-size: 12.5px; }
+  .ostat { font: 600 12px var(--sans); border: 1px dashed var(--muted); background: none; color: var(--muted);
+           border-radius: 999px; padding: 3px 10px; cursor: pointer; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+  .ostat:hover { background: var(--hover); }
+  .ostat.ok { border: 1px solid transparent; background: var(--ok-soft); color: var(--ok); }
+  .ostat.soon { border: 1px solid var(--soon); background: var(--soon-soft); color: var(--soon); }
+  .ostat.late { border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warn); }
+  .ostat .chev { font-size: 10px; }
+  tr.detail td { background: var(--bg); border-top: 0; padding: 4px 12px 14px; }
+  .levs { display: grid; gap: 8px; }
+  .lev { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .levhead { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin-bottom: 6px; }
+  .levact { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .levact .when { font-size: 12px; }
+  .ordrenr { font: 400 13px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+             border-radius: 7px; padding: 4px 8px; width: 150px; }
+  .ordrenr:focus-visible, .levact select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .mini.confirm { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
+  .avvik { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 3px; font-size: 13px; }
+  .avvik .more { color: var(--soon); }
+  .avvik .more b { color: var(--ink); }

@@ -23,6 +23,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
 
+import bestilling
 import bom as bomlib
 import config
 import frister
@@ -110,18 +111,18 @@ def read_bom_cached(path: Path) -> dict:
     return data
 
 
-def bom_status(p: dict, snaps: dict) -> tuple[dict | None, bool]:
-    """Returnerer (status, snaps_endret)."""
+def bom_status(p: dict, snaps: dict) -> tuple[dict | None, bool, dict | None]:
+    """Returnerer (status, snaps_endret, utregning)."""
     fil = p.get("bom")
     if not fil:
-        return None, False
+        return None, False, None
     path = BOM_DIR / fil
     if not path.exists():
-        return {"fil": fil, "finnes": False}, False
+        return {"fil": fil, "finnes": False}, False, None
     try:
         b = read_bom_cached(path)
     except bomlib.BomError as e:
-        return {"fil": fil, "finnes": True, "feil": str(e)}, False
+        return {"fil": fil, "finnes": True, "feil": str(e)}, False, None
     sett = p.get("sett") or b["sett"] or 0
     c = bomlib.calc(b, sett)
     changed = False
@@ -135,7 +136,7 @@ def bom_status(p: dict, snaps: dict) -> tuple[dict | None, bool]:
         "fil": fil, "finnes": True, "linjer": c["linjer"], "bestill": c["bestill"], "eks": c["eks"],
         "inkl": c["inkl"], "endret": b["endret"], "settFil": b["sett"], "prosjektFil": b["prosjekt"],
         "endringer": endringer, "sistLest": sist,
-    }, changed
+    }, changed, c
 
 
 def bom_path(g: dict) -> Path:
@@ -156,16 +157,18 @@ def index():
 def state():
     closed = store.stengte()
     rader = store.gjennomforinger()
+    bestilt = store.bestillinger()
     with _lock:
         snaps = _read_json(SNAP_FILE, {})
         dirty = False
         out = []
         for g in rader:
-            st, ch = bom_status(g, snaps)
+            st, ch, c = bom_status(g, snaps)
             dirty |= ch
             f = frister.frister(g, closed)
+            best = bestilling.oversikt(c["rader"], bestilt.get(g["id"], {})) if c and c["linjer"] else None
             out.append({**g, "semester": frister.semester(g["start"]), "hendelser": f.pop("hendelser"),
-                        "frister": f, "bomStatus": st})
+                        "frister": f, "bomStatus": st, "bestilling": best})
         if dirty:
             _write_json(SNAP_FILE, snaps)
 
@@ -271,19 +274,91 @@ def open_bom(gid):
     return jsonify({"ok": True})
 
 
-@app.post("/api/gjennomforinger/<gid>/liste")
-def order_list(gid):
-    g = store.gjennomforing(gid)
+def beregn(g: dict) -> tuple[dict, dict, int, Path]:
+    """(bom, utregning, sett, sti) for en gjennomføring."""
     path = bom_path(g)
     b = bomlib.read_bom(path)
     sett = g.get("sett") or b["sett"] or 0
-    c = bomlib.calc(b, sett)
+    return b, bomlib.calc(b, sett), sett, path
+
+
+@app.post("/api/gjennomforinger/<gid>/liste")
+def order_list(gid):
+    """Bestillingsliste for hele BOM-en, eller bare én leverandør hvis «leverandor» er gitt."""
+    g = store.gjennomforing(gid)
+    b, c, sett, path = beregn(g)
+    navn = safe_name(b["prosjekt"] or g["navn"])
+    lev = (request.get_json(silent=True) or {}).get("leverandor")
+    if lev is not None:
+        gr = bestilling.gruppe(c["rader"], bestilling.lev_key(lev))
+        if gr is None:
+            raise bomlib.BomError("Fant ikke leverandøren i BOM-en.")
+        eks = round(sum(r["total"] for r in gr["rader"]), 2)
+        c = {"rader": gr["rader"], "linjer": len(gr["rader"]), "bestill": sum(1 for r in gr["rader"] if r["bestill"] > 0),
+             "eks": eks, "inkl": round(eks * (1 + b["mva"]), 2)}
+        navn += " – " + safe_name(gr["navn"])
     LIST_DIR.mkdir(exist_ok=True)
-    target = LIST_DIR / f"Bestilling – {safe_name(b['prosjekt'] or g['navn'])}.html"
+    target = LIST_DIR / f"Bestilling – {navn}.html"
     bomlib.make_order_list(TEMPLATE_LIST, target, bom=b, beregnet=c, prosjekt=g["navn"], sett=sett,
                            list_id=f"{g['prosjektId']}-{g['id']}-{int(path.stat().st_mtime)}")
     open_path(target)
     return jsonify({"fil": target.name, "linjer": c["bestill"]})
+
+
+@app.post("/api/gjennomforinger/<gid>/bestilling")
+def order_status(gid):
+    """Registrer bestilling hos én leverandør.
+
+    handling: «bestilt» (ny, fryser linjene), «tillegg» (bestilt det som manglet),
+              «status» (bestilt / delvis / mottatt), «ordrenr», «angre» (fjern registreringen)
+    """
+    body = request.get_json(force=True) or {}
+    handling = body.get("handling")
+    key = bestilling.lev_key(body.get("leverandor"))
+    g = store.gjennomforing(gid)
+    lagret = store.bestillinger().get(gid, {}).get(key)
+    ordrenr = str(body.get("ordrenr") or "").strip()[:100]
+
+    if handling in ("bestilt", "tillegg"):
+        _, c, sett, _ = beregn(g)
+        gr = bestilling.gruppe(c["rader"], key)
+        linjer = bestilling.frys(gr["rader"]) if gr else []
+        if handling == "bestilt":
+            if lagret:
+                raise bomlib.BomError("Denne leverandøren er allerede registrert som bestilt.")
+            if not linjer:
+                raise bomlib.BomError("Det er ingenting å bestille hos denne leverandøren.")
+            dato = body.get("dato") or dt.date.today().isoformat()
+            try:
+                dt.date.fromisoformat(dato)
+            except (TypeError, ValueError):
+                raise bomlib.BomError("Ugyldig dato.")
+            store.ny_bestilling(gid, key, gr["navn"], dato=dato, ordrenr=ordrenr, sett=sett, linjer=linjer)
+        else:
+            if not lagret:
+                raise bomlib.BomError("Registrer først den vanlige bestillingen.")
+            felt = {"linjer": bestilling.slaa_sammen(lagret["linjer"], linjer), "status": "bestilt",
+                    "mottatt_dato": None, "sett": sett}
+            if ordrenr:
+                felt["ordrenr"] = f"{lagret['ordrenr']} + {ordrenr}" if lagret["ordrenr"] else ordrenr
+            store.endre_bestilling(gid, key, **felt)
+    elif handling == "status":
+        status = body.get("status")
+        if status not in bestilling.LAGRET_STATUS:
+            raise bomlib.BomError("Ugyldig status.")
+        if not lagret:
+            raise bomlib.BomError("Leverandøren er ikke registrert som bestilt.")
+        mottatt = lagret["mottatt_dato"] or dt.date.today().isoformat()
+        store.endre_bestilling(gid, key, status=status, mottatt_dato=None if status == "bestilt" else mottatt)
+    elif handling == "ordrenr":
+        if not lagret:
+            raise bomlib.BomError("Leverandøren er ikke registrert som bestilt.")
+        store.endre_bestilling(gid, key, ordrenr=ordrenr)
+    elif handling == "angre":
+        store.slett_bestilling(gid, key)
+    else:
+        raise bomlib.BomError("Ukjent handling.")
+    return jsonify({"ok": True})
 
 
 @app.post("/api/gjennomforinger/<gid>/sett")

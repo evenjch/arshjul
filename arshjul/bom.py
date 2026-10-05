@@ -95,7 +95,7 @@ def calc(bom: dict, sett: int) -> dict:
 
 # ---------- endringer siden sist ----------
 
-def _key(r: dict) -> str:
+def rad_key(r: dict) -> str:
     return (r.get("varenummer") or r.get("beskrivelse") or "").strip().lower()
 
 
@@ -104,17 +104,17 @@ FIELDS = [("beskrivelse", "beskrivelse"), ("leverandor", "leverandør"), ("prSet
 
 
 def diff(old: list[dict], new: list[dict]) -> list[dict]:
-    a = {_key(r): r for r in old}
-    b = {_key(r): r for r in new}
+    a = {rad_key(r): r for r in old}
+    b = {rad_key(r): r for r in new}
     out = []
     for r in new:
-        if _key(r) not in a:
+        if rad_key(r) not in a:
             out.append({"type": "ny", "beskrivelse": r["beskrivelse"], "varenummer": r["varenummer"], "prSett": r["prSett"]})
     for r in old:
-        if _key(r) not in b:
+        if rad_key(r) not in b:
             out.append({"type": "fjernet", "beskrivelse": r["beskrivelse"], "varenummer": r["varenummer"]})
     for r in new:
-        o = a.get(_key(r))
+        o = a.get(rad_key(r))
         if not o:
             continue
         for k, label in FIELDS:
