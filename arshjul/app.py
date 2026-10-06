@@ -146,7 +146,8 @@ def telling_status(g: dict, c: dict | None, st: dict | None, lagret: dict, tell:
     if tell:
         lagret_ = {**tell, **telling.oppsummering(tell["linjer"]),
                    "ventende": len(telling.ventende(tell["linjer"], tell["skrevet_verdier"])),
-                   "iBom": len(tell["skrevet_verdier"])}
+                   "iBom": len(tell["skrevet_verdier"]),
+                   "endretIExcel": telling.endret_i_bom(tell["skrevet_verdier"], c["rader"] if c else [])}
         return {"lagret": lagret_, "grunnlag": None, "antattBestilt": False}
     if not c or not c["linjer"]:
         return None
@@ -499,6 +500,28 @@ def undo_count(gid):
         sv = {k: v for k, v in sv.items() if k not in res["skrevet"]}
         store.telling_skrevet(gid, sv, _logg(tell, "angret", res), tell["skrevet"], tell["backup"])
     return jsonify(res)
+
+
+@app.post("/api/gjennomforinger/<gid>/telling/hent")
+def adopt_count(gid):
+    """Bruk «På lager» fra BOM-en som telt antall, for linjer som er endret i Excel etter skriving.
+
+    For når endringen i Excel var en retting av tellingen. Svinn regnes da ut fra det nye tallet.
+    """
+    g = store.gjennomforing(gid)
+    tell = store.tellinger().get(gid)
+    if not tell:
+        raise bomlib.BomError("Det finnes ingen telling.")
+    _, c, _, _ = beregn(g)
+    endret = telling.endret_i_bom(tell["skrevet_verdier"], c["rader"])
+    if not endret:
+        raise bomlib.BomError("Ingen linjer er endret i BOM-en siden tellingen ble skrevet.")
+    linjer = [{**l, "telt": endret[l["key"]]} if l["key"] in endret else l for l in tell["linjer"]]
+    store.lagre_telling(gid, g["prosjektId"], tell["dato"], linjer)
+    logg = tell["logg"] + [{"tid": dt.datetime.now().isoformat(timespec="minutes"), "handling": "hentet",
+                            "linjer": len(endret), "konflikter": 0, "backup": None}]
+    store.telling_skrevet(gid, {**tell["skrevet_verdier"], **endret}, logg, tell["skrevet"], tell["backup"])
+    return jsonify({"hentet": len(endret), **telling.oppsummering(linjer)})
 
 
 @app.delete("/api/gjennomforinger/<gid>/telling")

@@ -85,6 +85,7 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 - [x] Forventet = på lager + bestilt (registrert, ellers det BOM-en sa), minus det som er delt ut for forbruk. Avvik og **svinn** (utstyr som ikke kom tilbake, i kroner) vises, og svinn står også i historikken.
 - [x] **«Oppdater På lager i BOM-en»** skriver de telte tallene inn i kolonne H, etter bekreftelse. Bare kolonne H endres; formler, formatering og validering står (testet på kopi av en ekte BOM). Det lages alltid en sikkerhetskopi i `BOM/Sikkerhetskopi/` først, og filen må være lukket i Excel.
 - [x] **Rette og angre** (migrering 4). En telling kan rettes etter skriving; «før»-tallene fra den opprinnelige tellingen beholdes, så ingenting telles to ganger. Bare endrede linjer skrives på nytt. **«Angre»** setter «På lager» tilbake til tallene fra før tellingen. Begge sjekker først at cellen fortsatt har tallet årshjulet skrev sist; er den endret i Excel siden, røres den ikke, og du får beskjed. Hver skriving og angring logges med sikkerhetskopi. En telling som står i BOM-en kan ikke slettes – angre først.
+- [x] **Endret i Excel etter skriving:** tellingen endres ikke av seg selv (den er det som faktisk ble telt, og svinn regnes fra den), men linjen viser «endret i Excel: 30». Var endringen en retting av tellingen, henter **«Bruk tallene fra BOM-en i tellingen»** tallene inn.
 - [x] Neste års BOM-utregning bruker den nye lagerbeholdningen.
 
 ## Fase 4 – Server og faglærerpanel

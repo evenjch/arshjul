@@ -75,6 +75,13 @@ def ventende(linjer: list[dict], skrevet_verdier: dict[str, float]) -> list[str]
             if l["key"] not in skrevet_verdier or abs(l["telt"] - skrevet_verdier[l["key"]]) > 1e-9]
 
 
+def endret_i_bom(skrevet_verdier: dict[str, float], rader: list[dict]) -> dict[str, float]:
+    """Linjer der «På lager» i BOM-en ikke lenger er det årshjulet skrev (endret i Excel siden).
+    rader: BOM-linjene slik de er nå. Svar: {nøkkel: tallet i BOM-en nå}."""
+    na = {rad_key(r): r["lager"] for r in rader}
+    return {k: na[k] for k, v in skrevet_verdier.items() if k in na and abs(na[k] - v) > 1e-9}
+
+
 def oppsummering(linjer: list[dict]) -> dict:
     """Svinn regnes bare for utstyr; forbruk som ikke er brukt opp er bare et avvik."""
     svinn = [l for l in linjer if l["type"] == "utstyr" and l["telt"] < l["forventet"] - 1e-9]

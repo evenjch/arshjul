@@ -252,3 +252,30 @@ def test_migrering_4_fyller_inn_det_som_er_skrevet(tmp_path, monkeypatch):
     assert t["1"]["skrevet_verdier"] == {"a1": 9, "l1": 4.5}
     assert t["1"]["logg"][0]["backup"] == "k.xlsx"
     assert (t["2"]["skrevet_verdier"], t["2"]["logg"]) == ({}, [])
+
+
+def test_endret_i_excel_vises_og_kan_hentes_inn_i_tellingen(client):
+    """Ingeniørens test: tell 21, rett til 18 og skriv, sett 30 i Excel – tellingen skal vise det."""
+    gid, fil = oppsett(client)
+    client.post(f"{G}/{gid}/telling", json={"linjer": [{"key": "a1", "telt": 21}, {"key": "l1", "type": "forbruk", "telt": 4}]})
+    client.post(f"{G}/{gid}/telling/skriv")
+    client.post(f"{G}/{gid}/telling", json={"linjer": [{"key": "a1", "telt": 18}, {"key": "l1", "type": "forbruk", "telt": 4}]})
+    client.post(f"{G}/{gid}/telling/skriv")
+    assert tell(client)["lagret"]["endretIExcel"] == {}
+    bom.write_stock(config.BOM_DIR / fil, {"a1": 30}, config.BOM_DIR / "Sikkerhetskopi")  # «Excel»
+
+    L = tell(client)["lagret"]
+    assert L["endretIExcel"] == {"a1": 30}
+    assert {l["key"]: l["telt"] for l in L["linjer"]}["a1"] == 18  # tellingen endres ikke av seg selv
+
+    r = client.post(f"{G}/{gid}/telling/hent").get_json()
+    assert r["hentet"] == 1
+    L = tell(client)["lagret"]
+    assert {l["key"]: l["telt"] for l in L["linjer"]}["a1"] == 30
+    assert (L["endretIExcel"], L["ventende"], L["logg"][-1]["handling"]) == ({}, 0, "hentet")
+    assert lager(fil)["A1"] == 30  # BOM-en er ikke rørt
+    assert client.post(f"{G}/{gid}/telling/hent").status_code == 400  # ingenting mer å hente
+
+    # angre etterpå setter tilbake til tallet før tellingen, siden BOM-en har det årshjulet kjenner
+    client.post(f"{G}/{gid}/telling/angre")
+    assert lager(fil)["A1"] == 4

@@ -345,7 +345,8 @@
     const t = p.telling; if (!t) return "";
     const id = esc(p.id), L = t.lagret, draft = tellDraft[p.id] || {};
     const lines = L ? L.linjer : t.grunnlag, iBom = L ? L.skrevet_verdier : {};
-    const bomState = !L ? "" : !L.iBom ? " · ikke skrevet til BOM-en ennå"
+    const bomState = !L ? "" : Object.keys(L.endretIExcel).length ? " · «På lager» er endret i Excel etterpå"
+      : !L.iBom ? " · ikke skrevet til BOM-en ennå"
       : L.ventende ? ` · ${L.ventende} ${L.ventende === 1 ? "endring" : "endringer"} ikke skrevet til BOM-en`
       : ` · «På lager» oppdatert ${dfmtY.format(toD(L.skrevet))}`;
     const summary = L
@@ -360,7 +361,9 @@
           + `<option value="utstyr"${type === "utstyr" ? " selected" : ""}>Utstyr</option><option value="forbruk"${type === "forbruk" ? " selected" : ""}>Forbruk</option></select>`;
       // hva står i BOM-en fra denne tellingen, hvis det er noe annet enn det som er telt nå
       const skrevet = iBom[l.key], ulik = L && L.iBom && (skrevet === undefined || Math.abs(skrevet - l.telt) > 1e-9);
-      const bomNote = !ulik ? "" : skrevet === undefined ? `<small>ikke i BOM-en</small>` : `<small>i BOM-en: ${qty(skrevet)}</small>`;
+      const excel = L && L.endretIExcel[l.key];
+      const bomNote = excel !== undefined ? `<small class="excel">endret i Excel: ${qty(excel)}</small>`
+        : !ulik ? "" : skrevet === undefined ? `<small>ikke i BOM-en</small>` : `<small>i BOM-en: ${qty(skrevet)}</small>`;
       const teltCell = `<input type="number" min="0" step="any" data-role="telt" ${k} value="${esc(telt)}" aria-label="Telt: ${esc(l.beskrivelse)}">${bomNote}`;
       const diff = (parseFloat(telt) || 0) - f;
       return `<tr data-key="${esc(l.key)}" data-lager="${l.lagerFor}" data-bestilt="${l.bestilt}" data-utdelt="${l.utdelt}">`
@@ -373,10 +376,14 @@
     if (L && L.ventende) actions += `<button type="button" class="mini" data-act="tskriv" data-id="${id}">${L.iBom ? "Skriv endringene til BOM-en …" : "Oppdater «På lager» i BOM-en …"}</button>`;
     if (L && L.iBom) actions += `<button type="button" class="mini quiet" data-act="tangre" data-id="${id}">Angre – sett «På lager» tilbake …</button>`;
     else if (L) actions += `<button type="button" class="mini quiet" data-act="tslett" data-id="${id}">Slett telling</button>`;
-    const note = !L && t.antattBestilt ? `<p class="muted">* Leverandøren er ikke registrert som bestilt, så «før» bruker det BOM-en sa skulle bestilles.</p>` : "";
+    let note = !L && t.antattBestilt ? `<p class="muted">* Leverandøren er ikke registrert som bestilt, så «før» bruker det BOM-en sa skulle bestilles.</p>` : "";
+    const nExcel = L ? Object.keys(L.endretIExcel).length : 0;
+    if (nExcel) note += `<div class="excelnote"><span>«På lager» er endret i Excel for ${nExcel} ${nExcel === 1 ? "linje" : "linjer"} etter at tellingen ble skrevet. `
+      + `Var det en retting av tellingen, kan tellingen bruke tallene fra BOM-en. Ellers kan du la den stå.</span>`
+      + `<button type="button" class="mini" data-act="thent" data-id="${id}">Bruk tallene fra BOM-en i tellingen</button></div>`;
     const fmtTid = (s) => { const d = new Date(s); return isNaN(d) ? esc(s) : d.toLocaleString("nb-NO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
     const logg = L && L.logg.length ? `<ul class="tlogg">${L.logg.map((x) =>
-      `<li>${fmtTid(x.tid)}: ${x.handling === "angret" ? "satt tilbake" : "skrev"} ${x.linjer} ${x.linjer === 1 ? "linje" : "linjer"}`
+      `<li>${fmtTid(x.tid)}: ${{ angret: "satt tilbake", hentet: "hentet fra BOM-en" }[x.handling] || "skrev"} ${x.linjer} ${x.linjer === 1 ? "linje" : "linjer"}`
       + (x.konflikter ? `, ${x.konflikter} hoppet over (endret i Excel)` : "")
       + (x.backup ? ` · sikkerhetskopi: BOM/Sikkerhetskopi/${esc(x.backup)}` : "") + `</li>`).join("")}</ul>` : "";
     return `<details class="tellbox" data-id="${id}"${open ? " open" : ""}><summary><b>Telling etter prosjektet</b> <span class="muted">· ${summary}</span></summary>`
@@ -627,6 +634,8 @@
           return api("POST", P(id) + "/telling/skriv");
         }, (r) => writeMsg(r, "Oppdaterte «På lager» for"));
       }
+      if (a === "thent") act(async () => { const r = await api("POST", P(id) + "/telling/hent"); delete tellDraft[id]; return r; },
+        (r) => `Tellingen bruker nå tallene fra BOM-en for ${r.hentet} ${r.hentet === 1 ? "linje" : "linjer"}${r.svinn ? `. Svinn: ${nf0.format(r.svinnKr)} kr` : ""}.`);
       if (a === "tangre") {
         if (!b.classList.contains("confirm")) { b.classList.add("confirm"); b.textContent = "Bekreft: sett «På lager» tilbake"; return; }
         act(() => api("POST", P(id) + "/telling/angre"), (r) => writeMsg(r, "Satte «På lager» tilbake for"));

@@ -221,4 +221,8 @@
   table.tell input[type=number] { width: 72px; text-align: right; }
   table.tell .loss { color: var(--warn); font-weight: 600; }
   table.tell td.num small { color: var(--soon); }
+  table.tell td.num small.excel { color: var(--warn); }
+  .excelnote { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 8px; padding: 8px 10px;
+               border: 1px solid var(--soon); background: var(--soon-soft); border-radius: 8px; font-size: 12.5px; }
+  .excelnote span { max-width: 75ch; }
   .tlogg { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; color: var(--muted); display: grid; gap: 2px; }

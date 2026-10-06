@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+import bom
 import config
 from hjelp import lag_bom
 
@@ -134,6 +135,10 @@ def test_siden_tegner_alle_tilstander(client):
     client.post(f"{G}/{angret}/telling", json={"linjer": [{"key": "a1", "telt": 10}]})
     client.post(f"{G}/{angret}/telling/skriv")
     client.post(f"{G}/{angret}/telling/angre")
+    excel = prosjekt("Excel", start=6, slutt=6)
+    client.post(f"{G}/{excel}/telling", json={"linjer": [{"key": "a1", "telt": 10}]})
+    client.post(f"{G}/{excel}/telling/skriv")
+    bom.write_stock(config.BOM_DIR / "Excel – BOM.xlsx", {"a1": 30}, config.BOM_DIR / "Sikkerhetskopi")
     client.post("/api/skolear/2026/kopier")
 
     state = client.get("/api/state").get_json()
@@ -143,5 +148,6 @@ def test_siden_tegner_alle_tilstander(client):
     assert "Registrer bestilt" in res["tbody"]
     assert "Skriv endringene til BOM-en" in res["tbody"] and "i BOM-en: 10" in res["tbody"]
     assert "Angre – sett «På lager» tilbake" in res["tbody"] and "satt tilbake" in res["tbody"]
+    assert "endret i Excel: 30" in res["tbody"] and "Bruk tallene fra BOM-en i tellingen" in res["tbody"]
     assert "Historikk" not in res["history"]  # tabellen er tegnet (overskriften står i HTML-malen)
     assert "Sum" in res["history"]
