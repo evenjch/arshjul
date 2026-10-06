@@ -64,7 +64,24 @@ Brukere lages fra kommandolinjen, i `arshjul/`:
 .venv\Scripts\python manage.py aktiver ola        (også: opphever låsing etter feil passord)
 ```
 
-Vil du se hvordan det ser ut for en faglærer, lag en faglærer, sett `ARSHJUL_INNLOGGING=på` i `innstillinger.env`, og start årshjulet på nytt. Lag da også en ingeniørbruker til deg selv.
+### Prøve faglærervisningen lokalt
+
+1. **Lag brukere** (fra `arshjul/`). Du trenger en ingeniørbruker til deg selv også, for med innlogging på er du ikke lenger automatisk ingeniøren:
+   ```
+   .venv\Scripts\python manage.py ny-bruker even "Even" ingenior
+   .venv\Scripts\python manage.py ny-bruker ola "Ola Testlærer" faglarer
+   ```
+   Passordet spørres om i terminalen (minst 10 tegn).
+2. **Slå på innlogging**: legg til `ARSHJUL_INNLOGGING=på` i `arshjul/innstillinger.env`.
+3. **Start årshjulet på nytt** (lukk svartvinduet, dobbeltklikk `Start årshjul.bat`). Vinduet viser fortsatt BOM-mappen; siden sender deg nå til innlogging.
+4. **Logg inn som deg selv**, og velg «Faglærer: Ola Testlærer» under navnet på et prosjekt, så Ola eier det.
+5. **Logg inn som faglæreren i et annet vindu** – et privat/inkognito-vindu, eller en annen nettleser – så kan du være begge samtidig. Endre uker eller antall sett, legg til eller fjern et prosjekt.
+6. **Gå tilbake til ditt eget vindu**: endringene står øverst med «OK, sett», og fjernede prosjekter med «Gjenopprett».
+
+Godt å vite:
+- Lokalt lages en ny hemmelig nøkkel ved hver oppstart, så du må logge inn på nytt etter omstart. (På serveren er nøkkelen fast, `ARSHJUL_SECRET_KEY`.)
+- Testbrukerne og endringene havner i den vanlige databasen. Fjern testlæreren etterpå med `manage.py deaktiver ola`, og sett faglærer tilbake til «ingen» på prosjektet.
+- **Tilbake til normalen:** fjern linjen `ARSHJUL_INNLOGGING=på` (eller sett `#` foran) og start på nytt – da er du automatisk ingeniøren igjen.
 
 ## Filene i programmet
 
