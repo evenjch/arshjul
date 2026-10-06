@@ -253,6 +253,15 @@
   .meg { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); margin-top: 6px; }
   .meg form { margin: 0; }
   [data-rolle="faglarer"] .ing { display: none !important; }
+  [data-admin="0"] .adm { display: none !important; }
+  #brukerTable { min-width: 760px; }
+  #brukerTable input[type=text], #brukerTable input[type=password], #brukerTable select {
+    font: 400 13px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 7px; padding: 4px 7px; width: 100%; min-width: 0; }
+  #brukerTable tr.inaktiv td { opacity: .55; }
+  #brukerTable label.aktiv { display: inline-flex; gap: 4px; align-items: center; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+  #brukerTable .pwrow { display: flex; gap: 6px; align-items: center; }
+  #brukerTable .pwrow input { width: 160px; }
   .eier { display: block; margin: 2px 0 0 18px; font-size: 12px; color: var(--muted); }
   .eier select { font: 500 12px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; }
   .eier.mangler, .eier.mangler select { color: var(--soon); font-weight: 600; }

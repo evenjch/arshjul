@@ -41,6 +41,8 @@ FAGLARER_FELT = {"navn", "type", "start", "slutt", "sett", "notat"}
 # endepunktene en faglærer kan bruke – alt annet er bare for ingeniører
 FAGLARER_TILLATT = {"index", "state", "create", "update", "delete", "auth.login", "auth.logout", "static"}
 PROGRAM = {"bachelor": "Bachelor", "master": "Master"}
+# bare for administratoren
+ADMIN_ENDEPUNKT = {"create_user", "update_user"}
 
 app = Flask(__name__)
 app.json.ensure_ascii = False
@@ -50,7 +52,7 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=not config.LOKAL,  # bare over HTTPS på serveren
-    PERMANENT_SESSION_LIFETIME=dt.timedelta(hours=12),
+    PERMANENT_SESSION_LIFETIME=dt.timedelta(hours=config.OKT_TIMER),
 )
 if config.BAK_PROXY:
     # Caddy/nginx foran: riktig klientadresse (låsing per IP) og https-adresser
@@ -94,19 +96,24 @@ def _rolle():
         if request.path.startswith("/api/"):
             return jsonify({"feil": "Bare ingeniøren kan gjøre dette."}), 403
         return "Ikke tilgang", 403
+    if req.bruker and request.endpoint in ADMIN_ENDEPUNKT and not auth.er_admin():
+        return jsonify({"feil": "Bare administratoren kan gjøre dette."}), 403
     return None
 
 
 def kan_handle(g: dict) -> bool:
     """Får den innloggede gjøre noe med denne gjennomføringen?
 
+    Administrator: alt.
     Ingeniør: prosjekter i emner der hen er ansvarlig, og prosjekter uten emne eller uten
-    ansvarlig ingeniør (så ingenting blir liggende). Lokalt uten innlogging: alt.
+    ansvarlig ingeniør (så ingenting blir liggende).
     Faglærer: prosjekter i egne emner.
     """
     meg = auth.meg()
+    if auth.er_admin():
+        return True
     if auth.er_ingenior():
-        return meg["id"] is None or g["ingeniorId"] in (None, meg["id"])
+        return g["ingeniorId"] in (None, meg["id"])
     return g["faglarerId"] is not None and g["faglarerId"] == meg["id"]
 
 
@@ -325,7 +332,8 @@ def state():
 
     svar = {"prosjekter": out, "stengte": closed, "modus": config.MODUS,
             "idag": frister.uke_info(idag), "skolearNa": na, "skolear": skolear, "neste8": neste8,
-            "meg": {"id": meg["id"], "navn": meg["navn"], "rolle": meg["rolle"], "innlogging": config.INNLOGGING},
+            "meg": {"id": meg["id"], "navn": meg["navn"], "rolle": meg["rolle"], "admin": meg["admin"]},
+            "brukere": [],
             "ledigeBom": [], "oppsett": None, "mapper": {}, "endringer": [], "slettede": [],
             "emner": [], "faglarere": [], "ingeniorer": [], "program": PROGRAM}
     emner = store.emner()
@@ -347,6 +355,8 @@ def state():
         svar["faglarere"] = [{"id": u["id"], "navn": u["navn"]} for u in brukere if u["rolle"] == "faglarer"]
         svar["ingeniorer"] = [{"id": u["id"], "navn": u["navn"]} for u in brukere if u["rolle"] == "ingenior"]
         svar["emner"] = emner
+        if auth.er_admin():
+            svar["brukere"] = [{**u, "admin": bool(u["admin"]), "aktiv": bool(u["aktiv"])} for u in store.brukere()]
     else:
         # faglæreren trenger sine egne emner for å legge til prosjekter
         svar["emner"] = [e for e in emner if e["faglarerId"] == meg["id"] and e["aktiv"]]
@@ -528,6 +538,75 @@ def update_subject(eid):
         return jsonify(store.endre_emne(eid, _emnefelt(request.get_json(force=True) or {}, nytt=False)))
     except sqlite3.IntegrityError:
         raise bomlib.BomError("Det finnes allerede et emne med den koden.")
+
+
+# ---------- brukere (administratoren) ----------
+
+def _brukerfelt(body: dict, ny: bool) -> dict:
+    out = {}
+    if ny:
+        brukernavn = str(body.get("brukernavn") or "").strip()
+        if not brukernavn or any(c.isspace() for c in brukernavn) or len(brukernavn) > 40:
+            raise bomlib.BomError("Brukernavnet kan ikke være tomt eller inneholde mellomrom.")
+        out["brukernavn"] = brukernavn
+    if "navn" in body or ny:
+        navn = str(body.get("navn") or "").strip()[:80]
+        if not navn:
+            raise bomlib.BomError("Gi brukeren et navn.")
+        out["navn"] = navn
+    if "rolle" in body or ny:
+        if body.get("rolle") not in auth.ROLLER:
+            raise bomlib.BomError("Rollen må være ingeniør eller faglærer.")
+        out["rolle"] = body["rolle"]
+    if "admin" in body:
+        out["admin"] = 1 if body["admin"] else 0
+    if "aktiv" in body:
+        out["aktiv"] = 1 if body["aktiv"] else 0
+    if "passord" in body or ny:
+        try:
+            out["passord"] = auth.hash_passord(str(body.get("passord") or ""))
+        except ValueError as e:
+            raise bomlib.BomError(str(e))
+    if out.get("rolle") == "faglarer":
+        out["admin"] = 0  # administrator er alltid en ingeniør
+    return out
+
+
+def _bruker_ut(u: dict) -> dict:
+    return {k: (bool(u[k]) if k in ("admin", "aktiv") else u[k])
+            for k in ("id", "brukernavn", "navn", "rolle", "admin", "aktiv", "sist_inne", "last_til")}
+
+
+@app.post("/api/brukere")
+def create_user():
+    f = _brukerfelt(request.get_json(force=True) or {}, ny=True)
+    try:
+        uid = store.ny_bruker(f["brukernavn"], f["navn"], f["rolle"], f["passord"], admin=bool(f.get("admin")))
+    except sqlite3.IntegrityError:
+        raise bomlib.BomError(f"Brukernavnet «{f['brukernavn']}» er tatt.")
+    return jsonify(_bruker_ut(store.bruker(id=uid)))
+
+
+@app.patch("/api/brukere/<int:uid>")
+def update_user(uid):
+    u = store.bruker(id=uid)
+    if not u:
+        raise KeyError(uid)
+    f = _brukerfelt(request.get_json(force=True) or {}, ny=False)
+    ny = {**u, **f}
+    # det må alltid finnes en aktiv administrator, ellers kommer ingen inn i «Brukere» igjen
+    var_admin = u["admin"] and u["aktiv"]
+    blir_admin = ny["admin"] and ny["aktiv"] and ny["rolle"] == "ingenior"
+    if var_admin and not blir_admin and store.aktive_admins() <= 1:
+        raise bomlib.BomError("Det må finnes minst én aktiv administrator.")
+    if f.get("rolle", u["rolle"]) != u["rolle"]:
+        i_emner = [e["kode"] for e in store.emner() if uid in (e["faglarerId"], e["ingeniorId"])]
+        if i_emner:
+            raise bomlib.BomError("Brukeren står på " + ", ".join(i_emner) + ". Bytt person der først.")
+    if "passord" in f or "aktiv" in f:
+        f.update(feilforsok=0, last_til=None)  # nytt passord eller aktivert: lås opp
+    store.endre_bruker(uid, **f)
+    return jsonify(_bruker_ut(store.bruker(id=uid)))
 
 
 @app.post("/api/gjennomforinger/<gid>/gjenopprett")

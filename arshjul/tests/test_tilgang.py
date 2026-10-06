@@ -18,7 +18,6 @@ PASSORD = "et-langt-passord"
 
 @pytest.fixture
 def innlogging(monkeypatch):
-    monkeypatch.setattr(config, "INNLOGGING", True)
     ids = {}
     for navn, fullt, rolle in (("ing", "Ingrid Ingeniør", "ingenior"), ("ola", "Ola Faglærer", "faglarer"),
                                ("kari", "Kari Faglærer", "faglarer")):
@@ -66,7 +65,7 @@ def test_ikke_innlogget(innlogging):
 def test_logg_inn_og_ut(innlogging):
     c = logg_inn("ola")
     assert c.svar.status_code == 302 and c.svar.headers["Location"] == "/"
-    assert state(c)["meg"] == {"id": innlogging["ola"], "navn": "Ola Faglærer", "rolle": "faglarer", "innlogging": True}
+    assert state(c)["meg"] == {"id": innlogging["ola"], "navn": "Ola Faglærer", "rolle": "faglarer", "admin": False}
     assert "Ola Faglærer" in c.get("/").get_data(as_text=True)
     c.post("/logout", data={"csrf": c.environ_base["HTTP_X_CSRF_TOKEN"]})
     assert c.get("/api/state").status_code == 401

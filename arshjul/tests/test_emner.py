@@ -22,7 +22,6 @@ SY = frister.skolear_for(dt.date.today()) + 1
 
 @pytest.fixture
 def inst(monkeypatch):
-    monkeypatch.setattr(config, "INNLOGGING", True)
     s = arshjul.store
     u = {k: s.ny_bruker(k, navn, rolle, auth.hash_passord(PASSORD)) for k, navn, rolle in (
         ("anne", "Anne", "ingenior"), ("bjorn", "Bjørn", "ingenior"), ("cecilie", "Cecilie", "ingenior"),

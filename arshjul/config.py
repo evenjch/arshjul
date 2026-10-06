@@ -10,7 +10,7 @@
     ARSHJUL_HOST        standard 127.0.0.1
     ARSHJUL_PORT        standard 5057
     ARSHJUL_SECRET_KEY  nøkkel som signerer innloggingen. Påkrevd i servermodus (minst 32 tegn).
-    ARSHJUL_INNLOGGING  «på»/«av». Alltid på i servermodus; lokalt av (du er ingeniøren).
+                        Lokalt lages den selv og lagres i <datamappen>/.cache.
     ARSHJUL_BAK_PROXY   «på» når Caddy/nginx står foran (standard i servermodus).
     ARSHJUL_NO_OPEN     satt = ikke åpne filer eller nettleser (også i lokal modus)
 
@@ -69,9 +69,19 @@ SECRET_KEY = os.environ.get("ARSHJUL_SECRET_KEY") or ""
 if not SECRET_KEY:
     if not LOKAL:
         raise SystemExit("ARSHJUL_SECRET_KEY må settes i servermodus.")
-    SECRET_KEY = secrets.token_hex(32)
+    # lokalt: lag nøkkelen én gang og ta vare på den, så du forblir innlogget etter omstart
+    _nokkel = CACHE_DIR / "hemmelig-nokkel.txt"
+    if _nokkel.exists():
+        SECRET_KEY = _nokkel.read_text(encoding="utf-8").strip()
+    if len(SECRET_KEY) < 32:
+        SECRET_KEY = secrets.token_hex(32)
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        _nokkel.write_text(SECRET_KEY, encoding="utf-8")
 elif not LOKAL and len(SECRET_KEY) < 32:
     raise SystemExit("ARSHJUL_SECRET_KEY må være minst 32 tegn i servermodus.")
+
+# hvor lenge du er logget inn: lenge på din egen PC, en arbeidsdag på serveren
+OKT_TIMER = 24 * 30 if LOKAL else 12
 
 
 def _av_paa(navn: str, standard: bool) -> bool:
@@ -83,11 +93,8 @@ def _av_paa(navn: str, standard: bool) -> bool:
     return v in ("på", "pa", "1", "ja")
 
 
-# Innlogging: alltid på i servermodus. Lokalt av (du er ingeniøren), men kan slås på for å
-# teste faglærervisningen med brukere laget med manage.py.
-INNLOGGING = _av_paa("ARSHJUL_INNLOGGING", standard=not LOKAL)
-if not LOKAL and not INNLOGGING:
-    raise SystemExit("Innlogging kan ikke slås av i servermodus.")
+# Innlogging er alltid på, også lokalt – det finnes ingen «superbruker» uten navn.
+# (ARSHJUL_INNLOGGING fra en eldre innstillinger.env blir ikke lenger brukt.)
 
 # Bak Caddy/nginx: stol på X-Forwarded-For/-Proto fra én proxy (HTTPS og klientens adresse).
 BAK_PROXY = _av_paa("ARSHJUL_BAK_PROXY", standard=not LOKAL)

@@ -1,6 +1,7 @@
 """Brukere til årshjulet – fra kommandolinjen. Det finnes ingen registreringsside.
 
-    python manage.py ny-bruker <brukernavn> "<Fullt navn>" ingenior|faglarer
+    python manage.py ny-bruker <brukernavn> "<Fullt navn>" ingenior|faglarer [--admin]
+    python manage.py admin <brukernavn> [--fjern]  (gjør en ingeniør til administrator, eller ikke)
     python manage.py passord <brukernavn>
     python manage.py deaktiver <brukernavn>      (kan ikke logge inn, men historikken står)
     python manage.py aktiver <brukernavn>        (også: opphever låsing etter feil passord)
@@ -53,8 +54,12 @@ def main(argv: list[str] | None = None) -> None:
     ny.add_argument("brukernavn")
     ny.add_argument("navn", help="fullt navn, slik det vises i årshjulet")
     ny.add_argument("rolle", choices=auth.ROLLER)
+    ny.add_argument("--admin", action="store_true", help="administrator (bare for ingeniører)")
     for k in ("passord", "deaktiver", "aktiver"):
         sub.add_parser(k).add_argument("brukernavn")
+    adm = sub.add_parser("admin", help="gjør en ingeniør til administrator")
+    adm.add_argument("brukernavn")
+    adm.add_argument("--fjern", action="store_true", help="ta bort administratorrollen")
     sub.add_parser("liste")
     a = p.parse_args(argv)
 
@@ -65,15 +70,25 @@ def main(argv: list[str] | None = None) -> None:
         brukernavn = a.brukernavn.strip()
         if not brukernavn or any(c.isspace() for c in brukernavn):
             sys.exit("Brukernavnet kan ikke være tomt eller inneholde mellomrom.")
+        if a.admin and a.rolle != "ingenior":
+            sys.exit("Bare ingeniører kan være administrator.")
         try:
             hashet = auth.hash_passord(_passord())
         except ValueError as e:
             sys.exit(str(e))
         try:
-            store.ny_bruker(brukernavn, a.navn.strip(), a.rolle, hashet)
+            store.ny_bruker(brukernavn, a.navn.strip(), a.rolle, hashet, admin=a.admin)
         except sqlite3.IntegrityError:
             sys.exit(f"Brukernavnet «{brukernavn}» er tatt.")
-        print(f"Laget {auth.ROLLENAVN[a.rolle].lower()} «{brukernavn}» ({a.navn}).")
+        print(f"Laget {auth.ROLLENAVN[a.rolle].lower()}{' (administrator)' if a.admin else ''} «{brukernavn}» ({a.navn}).")
+    elif a.kommando == "admin":
+        u = _finn(store, a.brukernavn)
+        if u["rolle"] != "ingenior":
+            sys.exit("Bare ingeniører kan være administrator.")
+        if a.fjern and u["admin"] and store.aktive_admins() <= 1:
+            sys.exit("Det må finnes minst én aktiv administrator.")
+        store.endre_bruker(u["id"], admin=0 if a.fjern else 1)
+        print(f"«{u['brukernavn']}» er {'ikke lenger' if a.fjern else 'nå'} administrator.")
     elif a.kommando == "passord":
         u = _finn(store, a.brukernavn)
         try:
@@ -92,12 +107,13 @@ def main(argv: list[str] | None = None) -> None:
     else:
         brukere = store.brukere()
         if not brukere:
-            print("Ingen brukere ennå. Lag en med: python manage.py ny-bruker <brukernavn> \"<Navn>\" ingenior")
+            print("Ingen brukere ennå. Lag administratoren med: python manage.py ny-bruker <brukernavn> \"<Navn>\" ingenior --admin")
         for u in brukere:
             status = "aktiv" if u["aktiv"] else "deaktivert"
             if u["last_til"]:
                 status += f", låst til {u['last_til']}"
-            print(f"{u['brukernavn']:<16} {u['navn']:<28} {auth.ROLLENAVN[u['rolle']]:<10} {status}"
+            rolle = auth.ROLLENAVN[u["rolle"]] + (" (admin)" if u["admin"] else "")
+            print(f"{u['brukernavn']:<16} {u['navn']:<28} {rolle:<18} {status}"
                   f"   sist inne: {u['sist_inne'] or '–'}")
 
 

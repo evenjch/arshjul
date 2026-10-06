@@ -160,6 +160,10 @@ MIGRERINGER = [
     ALTER TABLE prosjekt ADD COLUMN emne_id INTEGER REFERENCES emne(id) ON DELETE SET NULL;
     UPDATE prosjekt SET faglarer_id = NULL;
     """,
+    # 9: administrator – en ingeniør som har alle emner og styrer brukerne
+    """
+    ALTER TABLE bruker ADD COLUMN admin INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 _JSON_BESTILLING = ("linjer", "paa_lager", "lager_logg")
 
@@ -317,11 +321,20 @@ class Db:
 
     # ---------- brukere ----------
 
-    def ny_bruker(self, brukernavn: str, navn: str, rolle: str, passord_hash: str) -> int:
+    def ny_bruker(self, brukernavn: str, navn: str, rolle: str, passord_hash: str, admin: bool = False) -> int:
         with self.tx() as con:
-            cur = con.execute("INSERT INTO bruker (brukernavn, navn, rolle, passord, opprettet) VALUES (?,?,?,?,?)",
-                              (brukernavn, navn, rolle, passord_hash, dt.datetime.now().isoformat(timespec="seconds")))
+            cur = con.execute("INSERT INTO bruker (brukernavn, navn, rolle, passord, opprettet, admin) VALUES (?,?,?,?,?,?)",
+                              (brukernavn, navn, rolle, passord_hash, dt.datetime.now().isoformat(timespec="seconds"),
+                               1 if admin and rolle == "ingenior" else 0))
             return cur.lastrowid
+
+    def antall_brukere(self) -> int:
+        with self.tx() as con:
+            return con.execute("SELECT COUNT(*) FROM bruker").fetchone()[0]
+
+    def aktive_admins(self) -> int:
+        with self.tx() as con:
+            return con.execute("SELECT COUNT(*) FROM bruker WHERE admin = 1 AND aktiv = 1").fetchone()[0]
 
     def bruker(self, *, id: int | None = None, brukernavn: str | None = None) -> dict | None:
         with self.tx() as con:
@@ -334,7 +347,7 @@ class Db:
     def brukere(self) -> list[dict]:
         with self.tx() as con:
             return [dict(r) for r in con.execute(
-                "SELECT id, brukernavn, navn, rolle, aktiv, sist_inne, last_til FROM bruker ORDER BY rolle, navn")]
+                "SELECT id, brukernavn, navn, rolle, admin, aktiv, sist_inne, last_til FROM bruker ORDER BY rolle, navn")]
 
     def endre_bruker(self, id: int, **felt) -> None:
         with self.tx() as con:

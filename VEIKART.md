@@ -22,7 +22,6 @@ Vi utvikler på egen PC, men slik at årshjulet når som helst kan flyttes til e
 | `ARSHJUL_HOST` | `127.0.0.1` | adressen serveren lytter på |
 | `ARSHJUL_PORT` | `5057` | porten |
 | `ARSHJUL_SECRET_KEY` | tilfeldig lokalt | påkrevd i servermodus (innlogging), minst 32 tegn |
-| `ARSHJUL_INNLOGGING` | `av` lokalt, `på` på server | `på` lokalt for å teste faglærervisningen |
 | `ARSHJUL_BAK_PROXY` | `av` lokalt, `på` på server | stol på `X-Forwarded-*` fra Caddy/nginx |
 | `ARSHJUL_NO_OPEN` | ikke satt | satt = åpne aldri filer eller nettleser |
 
@@ -97,9 +96,10 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 ## Fase 4 – Faglærerpanel ✓ (lokalt) · Server ⏳ (venter på IT)
 
 **Innlogging og roller** (`auth.py`, `manage.py`, migrering 7)
-- [x] Brukere lages fra kommandolinjen: `python manage.py ny-bruker <brukernavn> "<Navn>" ingenior|faglarer`. Ingen selvregistrering. Også `passord`, `deaktiver`, `aktiver`, `liste`.
+- [x] **Administrator** (migrering 9): en ingeniør med alle emner, som styrer brukerne under «Brukere» på nettsiden (lage, nytt passord, admin, deaktivere). Det må alltid finnes minst én aktiv administrator. Ingen selvregistrering.
+- [x] Første administrator: lokalt på siden «Velkommen til årshjulet» når det ikke finnes brukere; på serveren bare med `python manage.py ny-bruker <brukernavn> "<Navn>" ingenior --admin`, så ingen andre rekker det først. `manage.py` er også reserve (`passord`, `admin`, `aktiver`, `deaktiver`, `liste`).
 - [x] Passord lagres som hash (scrypt), minst 10 tegn. Låst i 15 minutter etter 5 feil; i tillegg en grense per IP-adresse. Samme melding for feil brukernavn og feil passord.
-- [x] Innlogging er alltid på i servermodus. Lokalt er den av (du er ingeniøren); `ARSHJUL_INNLOGGING=på` slår den på for å teste faglærervisningen.
+- [x] **Innlogging er alltid på – lokalt også.** Ingen bruker uten navn, så det som testes lokalt er det som kjører på serveren, og loggen viser alltid hvem. Lokalt lagres nøkkelen i datamappen, og du forblir innlogget i 30 dager (serveren: 12 timer).
 - [x] Økten varer 12 timer, og slutter å gjelde når passordet endres eller brukeren deaktiveres.
 - [x] **Rollene sjekkes på serveren**, ikke bare i nettleseren. En faglærer når bare de endepunktene som er listet som tillatt (`FAGLARER_TILLATT`) – alt annet er stengt som standard.
 
@@ -140,7 +140,7 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 3. Lag en datamappe, for eksempel `/srv/arshjul-data`, og kopier over `arshjul.db`. Stopp årshjulet lokalt først, så databasen er ferdig lagret.
 4. Monter BOM-fellesmappen (CIFS, med `iocharset=utf8` for æøå), for eksempel på `/mnt/arshjul-bom`.
 5. Sett `ARSHJUL_MODUS=server`, `ARSHJUL_DATA`, `ARSHJUL_BOM=/mnt/arshjul-bom` og `ARSHJUL_SECRET_KEY` (lag med `python -c "import secrets; print(secrets.token_hex(32))"`) – i `innstillinger.env` (lesbar bare for tjenestebrukeren) eller i systemd-tjenesten. La `ARSHJUL_HOST=127.0.0.1`, så bare Caddy/nginx når appen.
-6. Lag brukere: `python manage.py ny-bruker <brukernavn> "<Navn>" ingenior` (og faglærere).
+6. Lag administratoren: `python manage.py ny-bruker <brukernavn> "<Navn>" ingenior --admin`. Resten av brukerne lages på nettsiden under «Brukere». (Tar du med `arshjul.db` fra PC-en, følger brukerne med.)
 7. Kjør `python app.py` som en systemd-tjeneste, med Caddy foran for HTTPS, f.eks. `arshjul.ntnu.no { reverse_proxy 127.0.0.1:5057 }`.
 8. Sett opp backup av datamappen.
 

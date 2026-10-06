@@ -17,7 +17,12 @@ os.environ["ARSHJUL_MODUS"] = "lokal"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import app as arshjul  # noqa: E402
+import auth  # noqa: E402
 import config  # noqa: E402
+
+# scrypt er bevisst tregt; testene lager mange brukere
+auth.HASH_METODE = "pbkdf2:sha256:1000"
+ADMIN_PASSORD = "admin-passord-123"
 
 
 @pytest.fixture(autouse=True)
@@ -28,16 +33,27 @@ def tom_datamappe():
     arshjul._bom_cache.clear()
     arshjul.init()
     arshjul._ready = True
+    auth._ip_feil.clear()
     yield
 
 
 @pytest.fixture
 def client():
-    """Testklient som ingeniør (innlogging av, som lokalt), med gyldig CSRF-token."""
+    """Testklient innlogget som administrator (ser og gjør alt), med gyldig CSRF-token."""
     arshjul.app.config["TESTING"] = True
+    uid = arshjul.store.ny_bruker("admin", "Admin Testesen", "ingenior", auth.hash_passord(ADMIN_PASSORD), admin=True)
     with arshjul.app.test_client() as c:
-        med_csrf(c)
+        som(c, uid)
         yield c
+
+
+def som(c, uid, token="test-csrf"):
+    """Logg testklienten inn som brukeren uid (uten å gå via innloggingssiden)."""
+    u = arshjul.store.bruker(id=uid)
+    with c.session_transaction() as s:
+        s["uid"], s["pv"], s["csrf"] = uid, u["passord"][-16:], token
+    c.environ_base["HTTP_X_CSRF_TOKEN"] = token
+    return c
 
 
 def med_csrf(c, token="test-csrf"):

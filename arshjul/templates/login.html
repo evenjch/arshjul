@@ -18,7 +18,15 @@
     {% if feil %}<p class="err" role="alert">{{ feil }}</p>{% endif %}
     <button class="pbtn" type="submit">Logg inn</button>
   </form>
-  <p class="muted">Har du ikke bruker? Spør ingeniøren.</p>
+  {% if ingen_brukere %}
+  <p class="muted">Det finnes ingen brukere ennå. Lag administratoren på serveren:<br>
+    <code>python manage.py ny-bruker &lt;brukernavn&gt; "&lt;Navn&gt;" ingenior --admin</code></p>
+  {% elif ingen_admin %}
+  <p class="muted">Ingen bruker er administrator ennå. Gjør en ingeniør til administrator, fra <code>arshjul/</code>:<br>
+    <code>.venv\Scripts\python manage.py admin &lt;brukernavn&gt;</code></p>
+  {% else %}
+  <p class="muted">Har du ikke bruker? Spør administratoren.</p>
+  {% endif %}
 </main>
 </body>
 </html>

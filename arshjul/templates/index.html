@@ -8,14 +8,14 @@
 <meta name="csrf" content="{{ csrf_token }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='arshjul.css') }}">
 </head>
-<body data-rolle="{{ meg.rolle }}">
+<body data-rolle="{{ meg.rolle }}" data-admin="{{ 1 if meg.admin else 0 }}">
 <div class="wrap">
   <header>
     <div>
       <div class="eyebrow">Elektronikk · innkjøp til undervisning</div>
       <h1>Årshjul for innkjøp</h1>
       <div class="meta" id="today"></div>
-      {% if innlogging %}<div class="meg">Innlogget som <b>{{ meg.navn }}</b> ({{ rollenavn[meg.rolle] | lower }})
+      {% if meg %}<div class="meg">Innlogget som <b>{{ meg.navn }}</b> ({{ rollenavn[meg.rolle] | lower }}{% if meg.admin %}, administrator{% endif %})
         <form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button class="mini quiet" type="submit">Logg ut</button></form></div>{% endif %}
     </div>
     <div class="stats" id="stats"></div>
@@ -123,6 +123,15 @@
     </div>
     <p class="muted">Hvert prosjekt hører til et emne. Emnet bestemmer hvilken faglærer som kan endre prosjektene, og hvilken ingeniør som har ansvaret og får varslene. Endringer lagres med en gang.</p>
     <div class="tablebox"><table id="emneTable"></table></div>
+  </section>
+
+  <section class="emner ing adm" id="brukerSec">
+    <div class="row">
+      <h2>Brukere</h2>
+      <button class="tbtn" id="brukerNy" type="button">+ Ny bruker</button>
+    </div>
+    <p class="muted">Bare du som administrator ser dette. Ingeniører jobber i emnene der de er ansvarlige; administratorer ser og gjør alt. Deaktiverte brukere kan ikke logge inn, men navnet står fortsatt i loggene. Endringer lagres med en gang.</p>
+    <div class="tablebox"><table id="brukerTable"></table></div>
   </section>
 
   <section class="history ing" id="historySec" hidden>

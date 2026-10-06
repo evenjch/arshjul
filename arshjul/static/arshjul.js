@@ -11,7 +11,7 @@
   let SYS = [], SY = null, IDAG = null, NESTE8 = [], OPPSETT = null;
   // innlogget bruker; ING = ingeniør (alt), ellers faglærer (egne prosjekter, ingen BOM/bestilling)
   let MEG = { rolle: document.body.dataset.rolle || "ingenior" }, ING = MEG.rolle === "ingenior";
-  let ENDRINGER = [], SLETTEDE = [], FAGLARERE = [], INGENIORER = [], EMNER = [], PROGRAM = {};
+  let ENDRINGER = [], SLETTEDE = [], FAGLARERE = [], INGENIORER = [], EMNER = [], PROGRAM = {}, BRUKERE = [];
   // ALLE = alt serveren sendte; projects = det som vises. En ingeniør ser egne emner, eller hele instituttet.
   let ALLE = [];
   let VIS_ALLE = false;
@@ -51,7 +51,8 @@
       SYS = st.skolear; IDAG = st.idag; NESTE8 = st.neste8; OPPSETT = st.oppsett;
       MEG = st.meg; ING = MEG.rolle === "ingenior"; document.body.dataset.rolle = MEG.rolle;
       ENDRINGER = st.endringer; SLETTEDE = st.slettede; FAGLARERE = st.faglarere;
-      INGENIORER = st.ingeniorer; EMNER = st.emner; PROGRAM = st.program;
+      INGENIORER = st.ingeniorer; EMNER = st.emner; PROGRAM = st.program; BRUKERE = st.brukere;
+      document.body.dataset.admin = MEG.admin ? "1" : "0";
       if (SY === null || !SYS.some((s) => s.ar === SY)) SY = st.skolearNa;
       LOKAL = st.modus !== "server";
       $("openBomDir").hidden = $("openListDir").hidden = !LOKAL;
@@ -764,8 +765,65 @@
     act(() => api("PATCH", `/api/emner/${tr.dataset.emne}`, { [felt]: v[felt] }), "Emnet er lagret.", $("emneTable"));
   });
 
+  // ---------- brukere (administrator) ----------
+  let nyBruker = false;
+  const pwOpen = new Set();
+  function drawBrukere() {
+    if (!MEG.admin || mode === "loading" || $("brukerTable").contains(document.activeElement)) return;
+    const ROLLE = { ingenior: "Ingeniør", faglarer: "Faglærer" };
+    const rolle = (v) => `<select data-bf="rolle" aria-label="Rolle">${Object.entries(ROLLE).map(([k, n]) =>
+      `<option value="${k}"${k === v ? " selected" : ""}>${n}</option>`).join("")}</select>`;
+    const rad = (u) => {
+      if (!u) return `<tr data-bruker="ny"><td><input type="text" data-bf="brukernavn" placeholder="brukernavn" aria-label="Brukernavn" autocomplete="off"></td>`
+        + `<td><input type="text" data-bf="navn" placeholder="Fullt navn" aria-label="Navn" autocomplete="off"></td><td>${rolle("faglarer")}</td>`
+        + `<td><label class="aktiv"><input type="checkbox" data-bf="admin"> admin</label></td>`
+        + `<td colspan="2"><input type="password" data-bf="passord" placeholder="Startpassord (min. 10 tegn)" aria-label="Startpassord" autocomplete="new-password"></td>`
+        + `<td><button type="button" class="mini" data-act="brukerlagre">Lagre</button> <button type="button" class="mini quiet" data-act="brukeravbryt">Avbryt</button></td></tr>`;
+      const deg = u.id === MEG.id;
+      const pw = pwOpen.has(u.id)
+        ? `<span class="pwrow"><input type="password" data-pw placeholder="Nytt passord" aria-label="Nytt passord for ${esc(u.navn)}" autocomplete="new-password">`
+          + `<button type="button" class="mini" data-act="pwlagre">Lagre</button><button type="button" class="mini quiet" data-act="pwavbryt">Avbryt</button></span>`
+        : `<button type="button" class="mini quiet" data-act="pwvis">Nytt passord …</button>`;
+      return `<tr data-bruker="${u.id}"${u.aktiv ? "" : ' class="inaktiv"'}>`
+        + `<td><code>${esc(u.brukernavn)}</code>${deg ? " (deg)" : ""}</td>`
+        + `<td><input type="text" data-bf="navn" value="${esc(u.navn)}" aria-label="Navn"></td><td>${rolle(u.rolle)}</td>`
+        + `<td><label class="aktiv"><input type="checkbox" data-bf="admin"${u.admin ? " checked" : ""}${u.rolle !== "ingenior" ? " disabled" : ""}> admin</label></td>`
+        + `<td><label class="aktiv"><input type="checkbox" data-bf="aktiv"${u.aktiv ? " checked" : ""}> aktiv</label>`
+        + `${u.last_til ? ` <span class="tag">låst</span>` : ""}</td>`
+        + `<td class="muted">${u.sist_inne ? tidFmt(u.sist_inne) : "aldri"}</td><td>${pw}</td></tr>`;
+    };
+    $("brukerTable").innerHTML = `<thead><tr><th>Brukernavn</th><th>Navn</th><th>Rolle</th><th></th><th></th><th>Sist inne</th><th></th></tr></thead><tbody>`
+      + (nyBruker ? rad(null) : "") + BRUKERE.map(rad).join("") + `</tbody>`;
+    $("brukerNy").hidden = nyBruker;
+  }
+  const brukerVerdier = (tr) => {
+    const v = {};
+    tr.querySelectorAll("[data-bf]").forEach((el) => { v[el.dataset.bf] = el.type === "checkbox" ? el.checked : el.value; });
+    return v;
+  };
+  $("brukerNy").addEventListener("click", () => { nyBruker = true; drawBrukere(); const k = $("brukerTable").querySelector("[data-bf=brukernavn]"); if (k) k.focus(); });
+  $("brukerTable").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-act]"); if (!b) return;
+    const tr = b.closest("tr[data-bruker]"), id = tr.dataset.bruker, a = b.dataset.act;
+    if (a === "brukeravbryt") { nyBruker = false; b.blur(); drawBrukere(); return; }
+    if (a === "pwvis" || a === "pwavbryt") { a === "pwvis" ? pwOpen.add(+id) : pwOpen.delete(+id); b.blur(); drawBrukere(); return; }
+    if (a === "brukerlagre") act(async () => { const r = await api("POST", "/api/brukere", brukerVerdier(tr)); nyBruker = false; b.blur(); return r; },
+      (r) => `Brukeren «${r.brukernavn}» er laget. Gi dem brukernavn og startpassord, og velg dem på emnene.`, $("brukerTable"));
+    if (a === "pwlagre") {
+      const pw = tr.querySelector("[data-pw]").value;
+      act(async () => { const r = await api("PATCH", `/api/brukere/${id}`, { passord: pw }); pwOpen.delete(+id); b.blur(); return r; },
+        (r) => `Nytt passord for «${r.brukernavn}»${+id === MEG.id ? ". Logg inn på nytt med det." : "."}`, $("brukerTable"));
+    }
+  });
+  $("brukerTable").addEventListener("change", (e) => {
+    const tr = e.target.closest("tr[data-bruker]"); if (!tr || tr.dataset.bruker === "ny" || !e.target.dataset.bf) return;
+    const felt = e.target.dataset.bf, v = brukerVerdier(tr);
+    e.target.blur();
+    act(() => api("PATCH", `/api/brukere/${tr.dataset.bruker}`, { [felt]: v[felt] }), "Brukeren er lagret.", $("brukerTable"));
+  });
+
   function renderAll(keepTable) {
-    drawScope(); drawEmner();
+    drawScope(); drawEmner(); drawBrukere();
     drawWheel(); drawWeeks(); drawStats(); drawDiffs(); drawNotices(); drawCopyButton(); drawHistory();
     if (!keepTable) drawTable();
     else inSY().forEach((p) => { const cell = document.querySelector(`tr[data-id="${CSS.escape(p.id)}"] .fristcell`); if (cell) cell.innerHTML = fristHtml(p);

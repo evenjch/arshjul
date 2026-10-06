@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Opprett administrator – Årshjul for innkjøp</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='arshjul.css') }}">
+</head>
+<body>
+<main class="loginbox">
+  <div class="eyebrow">Elektronikk · innkjøp til undervisning</div>
+  <h1>Velkommen til årshjulet</h1>
+  <p class="muted">Det finnes ingen brukere ennå. Lag din egen bruker. Du blir <b>administrator</b>: ingeniør med alle emner, og den som lager brukere til andre ingeniører og faglærere.</p>
+  <form method="post" action="{{ url_for('auth.oppsett') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
+    <label>Navn <input type="text" name="navn" autocomplete="name" placeholder="F.eks. Even Hansen" value="{{ request.form.navn or '' }}" required></label>
+    <label>Brukernavn <input type="text" name="brukernavn" autocomplete="username" placeholder="F.eks. evenjc" value="{{ request.form.brukernavn or '' }}" required></label>
+    <label>Passord (minst {{ min_passord }} tegn) <input type="password" name="passord" autocomplete="new-password" required></label>
+    <label>Gjenta passordet <input type="password" name="passord2" autocomplete="new-password" required></label>
+    {% if feil %}<p class="err" role="alert">{{ feil }}</p>{% endif %}
+    <button class="pbtn" type="submit">Opprett og logg inn</button>
+  </form>
+  <p class="muted">Glemmer du passordet: <code>python manage.py passord &lt;brukernavn&gt;</code> fra <code>arshjul/</code>.</p>
+</main>
+</body>
+</html>
