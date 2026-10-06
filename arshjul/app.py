@@ -39,7 +39,8 @@ FIELDS = {"navn": str, "type": str, "start": int, "slutt": int, "lev": int, "buf
 # det en faglærer kan endre på sine egne prosjekter (ingeniøren eier leveringstid, buffer, BOM, farge og emne)
 FAGLARER_FELT = {"navn", "type", "start", "slutt", "sett", "notat"}
 # endepunktene en faglærer kan bruke – alt annet er bare for ingeniører
-FAGLARER_TILLATT = {"index", "state", "create", "update", "delete", "auth.login", "auth.logout", "static"}
+FAGLARER_TILLATT = {"index", "state", "create", "update", "delete", "create_subject", "update_subject",
+                    "acknowledge_mine", "auth.login", "auth.logout", "static"}
 PROGRAM = {"bachelor": "Bachelor", "master": "Master"}
 # bare for administratoren
 ADMIN_ENDEPUNKT = {"create_user", "update_user"}
@@ -348,9 +349,12 @@ def state():
                                    if not f.name.startswith("~$") and f.name not in linked) if BOM_DIR.exists() else []
         svar["oppsett"] = frister.oppsett_varsel([g for g in mine if not g["slettet"]], closed, idag)
         svar["mapper"] = {"bom": str(BOM_DIR), "lister": str(LIST_DIR)}
-        # en ny ansvarlig ingeniør overtar varslene som ikke er kvittert
-        svar["endringer"] = [e for e in store.endringer()
-                             if e["gjennomforing_id"] in mine_id or e["gjennomforing_id"] not in finnes]
+        def mitt(e):
+            if e["mottaker_id"] is not None:  # varsel til én bestemt (f.eks. «du er valgt som ingeniør»)
+                return e["mottaker_id"] == meg["id"]
+            # faglærerens endringer i et prosjekt: emnets ingeniør (en ny ingeniør overtar de ukvitterte)
+            return e["gjennomforing_id"] in mine_id or e["gjennomforing_id"] not in finnes
+        svar["endringer"] = [e for e in store.endringer() if mitt(e)]
         svar["slettede"] = [{k: g[k] for k in ("id", "navn", "skolear", "start", "slutt", "slettet", "slettetAv", "emneKode")}
                             for g in mine if g["slettet"]]
         brukere = [u for u in store.brukere() if u["aktiv"]]
@@ -360,8 +364,10 @@ def state():
         if auth.er_admin():
             svar["brukere"] = [{**u, "admin": bool(u["admin"]), "aktiv": bool(u["aktiv"])} for u in store.brukere()]
     else:
-        # faglæreren trenger sine egne emner for å legge til prosjekter
-        svar["emner"] = [e for e in emner if e["faglarerId"] == meg["id"] and e["aktiv"]]
+        # faglæreren styrer sine egne emner og velger ingeniør til dem
+        svar["emner"] = [e for e in emner if e["faglarerId"] == meg["id"]]
+        svar["ingeniorer"] = [{"id": u["id"], "navn": u["navn"]} for u in store.brukere()
+                              if u["aktiv"] and u["rolle"] == "ingenior"]
     return jsonify(svar)
 
 
@@ -492,7 +498,7 @@ def delete(gid):
     return jsonify({"ok": True, "venter": True})
 
 
-# ---------- emner (alle ingeniører kan legge inn og endre) ----------
+# ---------- emner (ingeniører: alle; faglærer: sine egne) ----------
 
 def _emnefelt(body: dict, nytt: bool) -> dict:
     out = {}
@@ -525,21 +531,68 @@ def _emnefelt(body: dict, nytt: bool) -> dict:
     return out
 
 
+def _varsle_ingenior(fra: dict | None, til: dict) -> None:
+    """Fortell ingeniøren som er valgt (og den som er tatt av) – men ikke deg selv."""
+    meg = auth.meg()
+    felles = {"bruker_id": meg["id"], "bruker_navn": meg["navn"], "rolle": meg["rolle"], "emne_id": til["id"],
+              "prosjekt_navn": til["kode"], "felt": "ingeniør"}
+    rader = []
+    ny, gammel = til["ingeniorId"], fra["ingeniorId"] if fra else None
+    if ny == gammel:
+        return
+    if ny and ny != meg["id"]:
+        rader.append({**felles, "handling": "valgt_ingenior", "mottaker_id": ny, "til": til["ingeniorNavn"],
+                      "fra": fra["ingeniorNavn"] if fra else None})
+    if gammel and gammel != meg["id"]:
+        rader.append({**felles, "handling": "fjernet_ingenior", "mottaker_id": gammel, "fra": fra["ingeniorNavn"],
+                      "til": til["ingeniorNavn"]})
+    if rader:
+        store.logg(rader)
+
+
 @app.post("/api/emner")
 def create_subject():
+    """Ingeniører legger inn hvilke emner som helst; en faglærer lager sine egne (og blir faglærer for dem)."""
+    body = request.get_json(force=True) or {}
+    if not auth.er_ingenior():
+        if "faglarer" in body and body["faglarer"] not in (None, "", auth.meg()["id"]):
+            raise Nektet("Du kan bare lage emner der du selv er faglærer.")
+        body = {**body, "faglarer": auth.meg()["id"]}
     try:
-        return jsonify(store.nytt_emne(_emnefelt(request.get_json(force=True) or {}, nytt=True)))
+        e = store.nytt_emne(_emnefelt(body, nytt=True))
     except sqlite3.IntegrityError:
         raise bomlib.BomError("Det finnes allerede et emne med den koden.")
+    _varsle_ingenior(None, e)
+    return jsonify(e)
 
 
 @app.patch("/api/emner/<int:eid>")
 def update_subject(eid):
-    store.emne(eid)  # 404 hvis det ikke finnes
+    """Ingeniører endrer alle emner; en faglærer sine egne – men ikke hvem som er faglærer."""
+    e0 = store.emne(eid)  # 404 hvis det ikke finnes
+    body = request.get_json(force=True) or {}
+    if not auth.er_ingenior():
+        if e0["faglarerId"] != auth.meg()["id"]:
+            raise Nektet("Du kan bare endre dine egne emner.")
+        if "faglarer" in body:
+            raise Nektet("Det er administratoren eller en ingeniør som bytter faglærer på et emne.")
     try:
-        return jsonify(store.endre_emne(eid, _emnefelt(request.get_json(force=True) or {}, nytt=False)))
+        e1 = store.endre_emne(eid, _emnefelt(body, nytt=False))
     except sqlite3.IntegrityError:
         raise bomlib.BomError("Det finnes allerede et emne med den koden.")
+    _varsle_ingenior(e0, e1)
+    return jsonify(e1)
+
+
+@app.post("/api/endringer/kvitter")
+def acknowledge_mine():
+    """«OK, sett» på varsler som er til deg (f.eks. «du er valgt som ingeniør»)."""
+    ids = (request.get_json(silent=True) or {}).get("ids") or []
+    try:
+        ids = [int(i) for i in ids]
+    except (TypeError, ValueError):
+        raise bomlib.BomError("Ugyldige varsler.")
+    return jsonify({"kvittert": store.kvitter_til(auth.meg()["id"], ids)})
 
 
 # ---------- brukere (administratoren) ----------

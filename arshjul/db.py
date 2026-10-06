@@ -164,6 +164,11 @@ MIGRERINGER = [
     """
     ALTER TABLE bruker ADD COLUMN admin INTEGER NOT NULL DEFAULT 0;
     """,
+    # 10: varsler om emner (en ingeniør er valgt eller tatt av) – går til én bestemt mottaker
+    """
+    ALTER TABLE endring ADD COLUMN emne_id INTEGER;
+    ALTER TABLE endring ADD COLUMN mottaker_id INTEGER;
+    """,
 ]
 _JSON_BESTILLING = ("linjer", "paa_lager", "lager_logg")
 
@@ -390,32 +395,40 @@ class Db:
     # ---------- endringslogg ----------
 
     def logg(self, rader: list[dict]) -> None:
-        """rader: {bruker_id, bruker_navn, rolle, gjennomforing_id, prosjekt_navn, skolear, handling, felt, fra, til}"""
+        """rader: {bruker_id, bruker_navn, rolle, gjennomforing_id, prosjekt_navn, skolear, handling, felt, fra, til,
+                   emne_id, mottaker_id}. Med mottaker_id er varselet til én bestemt bruker."""
         tid = dt.datetime.now().isoformat(timespec="seconds")
         with self.tx() as con:
             con.executemany("""INSERT INTO endring (tid, bruker_id, bruker_navn, rolle, gjennomforing_id, prosjekt_navn,
-                                                    skolear, handling, felt, fra, til)
-                               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                                                    skolear, handling, felt, fra, til, emne_id, mottaker_id)
+                               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                             [(tid, r.get("bruker_id"), r["bruker_navn"], r["rolle"], r.get("gjennomforing_id"),
                               r["prosjekt_navn"], r.get("skolear"), r["handling"], r.get("felt"),
                               None if r.get("fra") is None else str(r["fra"]),
-                              None if r.get("til") is None else str(r["til"])) for r in rader])
+                              None if r.get("til") is None else str(r["til"]),
+                              r.get("emne_id"), r.get("mottaker_id")) for r in rader])
 
-    def endringer(self, ukvitterte: bool = True, rolle: str | None = "faglarer") -> list[dict]:
-        sql = "SELECT * FROM endring WHERE 1=1"
-        args: list = []
-        if ukvitterte:
-            sql += " AND kvittert IS NULL"
-        if rolle:
-            sql += " AND rolle = ?"
-            args.append(rolle)
+    def endringer(self) -> list[dict]:
+        """Ukvitterte varsler: faglærernes endringer i prosjekter, og varsler til en bestemt mottaker."""
         with self.tx() as con:
-            return [dict(r) for r in con.execute(sql + " ORDER BY id", args)]
+            return [dict(r) for r in con.execute(
+                """SELECT * FROM endring WHERE kvittert IS NULL
+                   AND ((rolle = 'faglarer' AND mottaker_id IS NULL) OR mottaker_id IS NOT NULL) ORDER BY id""")]
+
+    def kvitter_til(self, mottaker_id: int, ids: list[int]) -> int:
+        """«OK, sett» på varsler som er til deg."""
+        if not ids:
+            return 0
+        with self.tx() as con:
+            return con.execute(f"""UPDATE endring SET kvittert = ? WHERE kvittert IS NULL AND mottaker_id = ?
+                                   AND id IN ({','.join('?' * len(ids))})""",
+                               (dt.datetime.now().isoformat(timespec="seconds"), mottaker_id, *ids)).rowcount
 
     def kvitter(self, gid: str) -> int:
         with self.tx() as con:
             return con.execute("""UPDATE endring SET kvittert = ?
-                                  WHERE gjennomforing_id = ? AND kvittert IS NULL AND rolle = 'faglarer'""",
+                                  WHERE gjennomforing_id = ? AND kvittert IS NULL AND rolle = 'faglarer'
+                                  AND mottaker_id IS NULL""",
                                (dt.datetime.now().isoformat(timespec="seconds"), gid)).rowcount
 
     # ---------- bestillinger ----------

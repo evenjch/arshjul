@@ -114,6 +114,7 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 - [x] **Eierskap sjekkes på serveren for alt som endrer en gjennomføring** (`kan_handle` i `_eierskap`): ingeniører kan ikke bestille, telle, endre eller slette i andres emner; faglærere bare i egne emner.
 - [x] Faglærerens endringer varsles til emnets ingeniør. Bytter emnet ingeniør, overtar den nye varslene som ikke er kvittert.
 - [x] Alle ingeniører kan legge inn og endre emner (seksjonen «Emner»). Emner deaktiveres, ikke slettes.
+- [x] **Faglæreren lager sine egne emner og velger ingeniør** (migrering 10). Faglæreren kan ikke bytte faglærer eller endre andres emner. Ingeniøren som velges – og den som tas av – får et varsel med «OK, sett» (ikke når du velger deg selv). Ingen godkjenning: ingeniøren får emnet med en gang.
 - [x] «Kopier til neste skoleår» og vårpåminnelsen gjelder egne emner.
 - Lager og BOM er fortsatt per prosjekt (felles lager på tvers av emner er parkert).
 - [x] Mens faglæreren endrer, vises konsekvensen ved fristen: «Fristen er om 1 uke – ingeniøren varsles».

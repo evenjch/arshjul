@@ -594,9 +594,17 @@
         + `<button type="button" class="mini" data-act="gjenopprett" data-id="${esc(s.id)}">Gjenopprett</button>`
         + `<button type="button" class="mini quiet" data-act="slettbekreft" data-id="${esc(s.id)}">Bekreft sletting …</button></span></div>`;
     });
+    // varsler til deg om emner: du er valgt som (eller tatt av som) ansvarlig ingeniør
+    ENDRINGER.filter((e) => e.mottaker_id).forEach((e) => {
+      const tekst = e.handling === "valgt_ingenior"
+        ? `<b>${esc(e.bruker_navn)} valgte deg som ansvarlig ingeniør for ${esc(e.prosjekt_navn)}.</b> Prosjektene i emnet vises nå hos deg, og du får varslene om dem.`
+        : `<b>${esc(e.bruker_navn)} tok deg av ${esc(e.prosjekt_navn)}</b>${e.til ? ` – ${esc(e.til)} har det nå` : ""}. Prosjektene i emnet vises ikke lenger hos deg.`;
+      h += `<div class="notice info"><div>${tekst} <span class="muted">· ${tidFmt(e.tid)}</span></div>`
+        + `<button type="button" class="mini" data-act="kvitterid" data-id="${e.id}">OK, sett</button></div>`;
+    });
     const fjernet = new Set(SLETTEDE.map((s) => String(s.id)));
     const per = new Map();
-    ENDRINGER.forEach((e) => {
+    ENDRINGER.filter((e) => !e.mottaker_id).forEach((e) => {
       const gid = String(e.gjennomforing_id);
       if (fjernet.has(gid)) return; // vises som «fjernet» over
       if (!per.has(gid)) per.set(gid, []);
@@ -638,6 +646,7 @@
     if (b) {
       const id = b.dataset.id, a = b.dataset.act;
       if (a === "kvitter") act(() => api("POST", `/api/endringer/${encodeURIComponent(id)}/kvitter`), null, b);
+      if (a === "kvitterid") act(() => api("POST", "/api/endringer/kvitter", { ids: [+id] }), null, b);
       if (a === "gjenopprett") act(() => api("POST", P(id) + "/gjenopprett"), "Prosjektet er gjenopprettet.", b);
       if (a === "slettbekreft") {
         if (!b.classList.contains("confirm")) { b.classList.add("confirm"); b.textContent = "Bekreft: slett for godt"; return; }
@@ -709,7 +718,7 @@
   // ---------- emner (ingeniører) ----------
   let nyttEmne = false;
   function drawEmner() {
-    if (!ING || mode === "loading" || $("emneTable").contains(document.activeElement)) return;
+    if (mode === "loading" || $("emneTable").contains(document.activeElement)) return;
     const velg = (navn, liste, valgt, lbl) => `<select data-ef="${navn}" aria-label="${lbl}"><option value="">–</option>`
       + liste.map((u) => `<option value="${u.id}"${u.id === valgt ? " selected" : ""}>${esc(u.navn)}</option>`).join("") + `</select>`;
     const program = (valgt) => `<select data-ef="program" aria-label="Studieprogram">`
@@ -718,14 +727,15 @@
       + `<td><input type="text" data-ef="kode" value="${esc(e ? e.kode : "")}" placeholder="IELS1001" aria-label="Emnekode" maxlength="20"></td>`
       + `<td><input type="text" data-ef="navn" value="${esc(e ? e.navn : "")}" placeholder="Emnenavn" aria-label="Emnenavn"></td>`
       + `<td>${program(e ? e.program : "bachelor")}</td>`
-      + `<td>${velg("faglarer", FAGLARERE, e && e.faglarerId, "Faglærer")}</td>`
-      + `<td>${velg("ingenior", INGENIORER, e ? e.ingeniorId : MEG.id, "Ansvarlig ingeniør")}</td>`
+      // faglæreren er alltid seg selv på egne emner; ingeniører velger faglærer
+      + `<td>${ING ? velg("faglarer", FAGLARERE, e && e.faglarerId, "Faglærer") : "deg"}</td>`
+      + `<td>${velg("ingenior", INGENIORER, e ? e.ingeniorId : (ING ? MEG.id : null), "Ansvarlig ingeniør")}</td>`
       + (e ? `<td class="num">${e.prosjekter}</td><td><label class="aktiv"><input type="checkbox" data-ef="aktiv"${e.aktiv ? " checked" : ""}> aktiv</label></td>`
            : `<td></td><td><button type="button" class="mini" data-act="emnelagre">Lagre</button> <button type="button" class="mini quiet" data-act="emneavbryt">Avbryt</button></td>`)
       + `</tr>`;
     $("emneTable").innerHTML = `<thead><tr><th>Kode</th><th>Navn</th><th>Program</th><th>Faglærer</th><th>Ansvarlig ingeniør</th><th class="num">Prosjekter</th><th></th></tr></thead><tbody>`
       + (nyttEmne ? rad(null) : "") + EMNER.map(rad).join("")
-      + (!EMNER.length && !nyttEmne ? `<tr><td colspan="7" class="blank">Ingen emner ennå. Trykk «+ Nytt emne».</td></tr>` : "") + `</tbody>`;
+      + (!EMNER.length && !nyttEmne ? `<tr><td colspan="7" class="blank">Ingen emner ennå. Trykk «+ Nytt emne»${ING ? "" : " for å lage ditt første"}.</td></tr>` : "") + `</tbody>`;
     $("emneNy").hidden = nyttEmne;
   }
   const emneVerdier = (tr) => {
@@ -993,7 +1003,7 @@
       $("f-sy").textContent = curSY() ? curSY().navn : "";
       // faglærer: velg blant egne emner (påkrevd); ingeniør: alle aktive emner, eller uten emne
       const valg = EMNER.filter((e) => e.aktiv);
-      $("f-emne").innerHTML = (ING ? `<option value="">Uten emne</option>` : valg.length ? "" : `<option value="">Du har ingen emner – spør ingeniøren</option>`)
+      $("f-emne").innerHTML = (ING ? `<option value="">Uten emne</option>` : valg.length ? "" : `<option value="">Du har ingen emner – lag et under «Emner» nederst</option>`)
         + valg.map((e) => `<option value="${e.id}"${ING && MEG.id && e.ingeniorId === MEG.id ? " data-mitt" : ""}>${esc(e.kode)}${e.navn ? " – " + esc(e.navn) : ""}</option>`).join("");
       const mitt = $("f-emne").querySelector("[data-mitt]"); if (mitt) mitt.selected = true;
       $("f-navn").focus();

@@ -60,6 +60,7 @@ Hvert prosjekt hører til et **emne** (f.eks. IELS1001, bachelor eller master). 
 
 - **Ingeniøren** ser og jobber med prosjektene i sine egne emner – bestilling, varemottak, telling, BOM. I tillegg prosjekter uten emne (eller i et emne uten ingeniør), så et nytt prosjekt aldri blir usynlig for alle.
 - **Faglæreren** ser bare prosjektene i sine egne emner, og endrer navn, type, uker, antall sett og notat. Ser ikke BOM, bestillinger eller kostnader. Endringene dukker opp øverst hos **emnets ingeniør** med «OK, sett».
+- **Faglæreren lager sine egne emner og velger ingeniør** under «Emner». Ingeniøren som blir valgt (og den som blir tatt av) får beskjed øverst på siden. Ingeniører og administratoren kan også endre alle emner, og bytte faglærer.
 - **Administratoren** ser alt.
 - **Emner** legges inn og endres under «Emner» nederst på siden, av hvilken som helst ingeniør. Bytter et emne ingeniør, overtar den nye varslene som ikke er kvittert. Emner deaktiveres i stedet for å slettes, så historikken står.
 
@@ -81,9 +82,9 @@ Hvert prosjekt hører til et **emne** (f.eks. IELS1001, bachelor eller master). 
 ### Prøve faglærervisningen
 
 1. Under **«Brukere»**: lag en faglærer, f.eks. `ola` med et startpassord.
-2. Under **«Emner»**: «+ Nytt emne», f.eks. `TEST1001` med faglærer Ola og deg selv som ansvarlig ingeniør. Velg så «Emne: TEST1001» under navnet på et prosjekt.
-3. **Logg inn som Ola i et privat/inkognito-vindu** (eller en annen nettleser), så kan du være begge samtidig. Endre uker eller antall sett, legg til eller fjern et prosjekt.
-4. **Gå tilbake til ditt eget vindu**: endringene står øverst med «OK, sett», og fjernede prosjekter med «Gjenopprett».
+2. **Logg inn som Ola i et privat/inkognito-vindu** (eller en annen nettleser), så kan du være begge samtidig.
+3. Som Ola, under **«Emner»**: «+ Nytt emne», f.eks. `TEST1001`, og velg deg selv som ingeniør. Legg så til et prosjekt i emnet, endre uker eller antall sett, eller fjern et.
+4. **Gå tilbake til ditt eget vindu**: «Ola valgte deg som ansvarlig ingeniør for TEST1001», endringene med «OK, sett», og fjernede prosjekter med «Gjenopprett».
 
 Rydd etterpå: fjern haken «aktiv» på testlæreren og testemnet.
 

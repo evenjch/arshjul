@@ -86,7 +86,9 @@ def test_ny_ingenior_overtar_varslene(inst):
     r = anne.patch(f"/api/emner/{inst['e']['EMNE-B']}", json={"ingenior": inst["u"]["anne"]})
     assert r.get_json()["ingeniorNavn"] == "Anne"
     assert [e["prosjekt_navn"] for e in state(anne)["endringer"]] == ["Prosjekt B"]
-    assert state(logg_inn("bjorn"))["endringer"] == []
+    # Bjørn ser ikke lenger Olas endring – bare beskjed om at han er tatt av emnet
+    assert [(e["handling"], e["prosjekt_navn"], e["til"]) for e in state(logg_inn("bjorn"))["endringer"]] == [
+        ("fjernet_ingenior", "EMNE-B", "Anne")]
 
 
 def test_fjernet_prosjekt_vises_for_emnets_ingenior(inst):
@@ -117,14 +119,13 @@ def test_emner_legges_inn_og_endres(inst):
     assert anne.post("/api/emner", json={"kode": "X3", "ingenior": inst["u"]["ola"]}).status_code == 400  # ikke ingeniør
     assert anne.patch(f"/api/emner/{e['id']}", json={"kode": "EMNE-A"}).status_code == 400  # kode tatt
     assert anne.patch("/api/emner/9999", json={"navn": "x"}).status_code == 404
-    assert logg_inn("ola").post("/api/emner", json={"kode": "OLA9"}).status_code == 403  # bare ingeniører
 
 
 def test_deaktivert_emne(inst):
     anne = logg_inn("anne")
     anne.patch(f"/api/emner/{inst['e']['EMNE-A']}", json={"aktiv": False})
     ola = logg_inn("ola")
-    assert [e["kode"] for e in state(ola)["emner"]] == ["EMNE-B"]
+    assert [(e["kode"], e["aktiv"]) for e in state(ola)["emner"]] == [("EMNE-B", 1), ("EMNE-A", 0)]  # kan slå på igjen
     r = ola.post(G, json={"navn": "Nytt", "skolear": SY, "emne": inst["e"]["EMNE-A"]})
     assert r.status_code == 403
     # prosjektene i emnet finnes fortsatt, og historikken står
@@ -164,3 +165,64 @@ def test_andres_bom_er_ikke_ledig(inst):
 def test_emner_teller_prosjekter_for_alle(inst):
     anne = state(logg_inn("anne"))
     assert {e["kode"]: e["prosjekter"] for e in anne["emner"]} == {"EMNE-A": 1, "EMNE-B": 1, "EMNE-C": 1, "EMNE-D": 1}
+
+
+# ---------- faglæreren lager emner og velger ingeniør ----------
+
+def test_faglarer_lager_emne_og_velger_ingenior(inst):
+    ola = logg_inn("ola")
+    assert [i["navn"] for i in state(ola)["ingeniorer"]] == ["Anne", "Bjørn", "Cecilie"]
+    r = ola.post("/api/emner", json={"kode": "ola2", "navn": "Robotikk", "ingenior": inst["u"]["cecilie"]})
+    e = r.get_json()
+    assert (e["kode"], e["faglarerNavn"], e["ingeniorNavn"]) == ("OLA2", "Ola", "Cecilie")
+    # kan ikke lage emner for andre faglærere
+    assert ola.post("/api/emner", json={"kode": "KARIS", "faglarer": inst["u"]["kari"]}).status_code == 403
+
+    # Cecilie får beskjed
+    cec = logg_inn("cecilie")
+    v = [x for x in state(cec)["endringer"] if x["mottaker_id"]]
+    assert [(x["handling"], x["bruker_navn"], x["prosjekt_navn"]) for x in v] == [("valgt_ingenior", "Ola", "OLA2")]
+    assert state(logg_inn("anne"))["endringer"] == []
+
+    # Ola lager et prosjekt i emnet – det havner hos Cecilie
+    g = ola.post(G, json={"navn": "Robot", "skolear": SY, "emne": e["id"]}).get_json()
+    assert g["ingeniorNavn"] == "Cecilie"
+    assert "Robot" in egne(cec)
+
+    # Cecilie kvitterer; Anne kan ikke kvittere for henne
+    assert logg_inn("anne").post("/api/endringer/kvitter", json={"ids": [v[0]["id"]]}).get_json() == {"kvittert": 0}
+    assert cec.post("/api/endringer/kvitter", json={"ids": [v[0]["id"]]}).get_json() == {"kvittert": 1}
+    assert [x for x in state(cec)["endringer"] if x["mottaker_id"]] == []
+
+
+def test_faglarer_bytter_ingenior_pa_eget_emne(inst):
+    ola = logg_inn("ola")
+    r = ola.patch(f"/api/emner/{inst['e']['EMNE-A']}", json={"ingenior": inst["u"]["bjorn"]})
+    assert r.get_json()["ingeniorNavn"] == "Bjørn"
+    assert [x["handling"] for x in state(logg_inn("bjorn"))["endringer"] if x["mottaker_id"]] == ["valgt_ingenior"]
+    assert [x["handling"] for x in state(logg_inn("anne"))["endringer"] if x["mottaker_id"]] == ["fjernet_ingenior"]
+    assert "Prosjekt A" not in egne(logg_inn("anne")) and "Prosjekt A" in egne(logg_inn("bjorn"))
+
+
+def test_faglarer_kan_ikke_endre_andres_emner_eller_bytte_faglarer(inst):
+    ola = logg_inn("ola")
+    assert ola.patch(f"/api/emner/{inst['e']['EMNE-C']}", json={"ingenior": inst["u"]["bjorn"]}).status_code == 403
+    assert ola.patch(f"/api/emner/{inst['e']['EMNE-A']}", json={"faglarer": inst["u"]["kari"]}).status_code == 403
+    assert ola.patch(f"/api/emner/{inst['e']['EMNE-A']}", json={"ingenior": inst["u"]["kari"]}).status_code == 400  # ikke ingeniør
+
+
+def test_ingen_varsel_nar_du_velger_deg_selv(inst):
+    anne = logg_inn("anne")
+    anne.post("/api/emner", json={"kode": "ANNE1", "ingenior": inst["u"]["anne"]})
+    assert state(anne)["endringer"] == []
+
+
+def test_siden_for_faglarer_med_emner(inst):
+    from test_side import kjor_siden
+    ola = logg_inn("ola")
+    ola.post("/api/emner", json={"kode": "OLA2", "ingenior": inst["u"]["cecilie"]})
+    res = kjor_siden(state(ola))
+    assert res["errors"] == []
+    res = kjor_siden(state(logg_inn("cecilie")))
+    assert res["errors"] == []
+    assert "Ola valgte deg som ansvarlig ingeniør for OLA2" in res["notices"] and "kvitterid" in res["notices"]

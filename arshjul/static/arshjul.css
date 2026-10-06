@@ -254,6 +254,7 @@
   .meg form { margin: 0; }
   [data-rolle="faglarer"] .ing { display: none !important; }
   [data-admin="0"] .adm { display: none !important; }
+  [data-rolle="ingenior"] .fag { display: none !important; }
   #brukerTable { min-width: 760px; }
   #brukerTable input[type=text], #brukerTable input[type=password], #brukerTable select {
     font: 400 13px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line);
