@@ -100,3 +100,12 @@ def test_bare_lokalt_i_servermodus(client, monkeypatch):
 def test_datafiler_ligger_i_datamappen():
     assert arshjul.store.path.parent == config.DATA_DIR
     assert config.SNAP_FILE.parent.parent == config.DATA_DIR
+    assert config.BOM_DIR == config.DATA_DIR / "BOM"
+
+
+def test_innstillingsfil(tmp_path):
+    f = tmp_path / "innstillinger.env"
+    f.write_text('\ufeff# kommentar\nARSHJUL_BOM=\\\\server\\deling\\BOM\n\nARSHJUL_PORT = "6000"\nugyldig linje\n',
+                 encoding="utf-8")
+    assert config.les_innstillinger(f) == {"ARSHJUL_BOM": r"\\server\deling\BOM", "ARSHJUL_PORT": "6000"}
+    assert config.les_innstillinger(tmp_path / "finnes-ikke.env") == {}

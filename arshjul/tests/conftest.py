@@ -9,9 +9,11 @@ import pytest
 
 # må settes før config/app importeres
 _DATA = Path(tempfile.mkdtemp(prefix="arshjul-test-"))
+# satt eksplisitt, så en lokal innstillinger.env aldri får testene til å røre ekte mapper
 os.environ["ARSHJUL_DATA"] = str(_DATA)
+os.environ["ARSHJUL_BOM"] = str(_DATA / "BOM")
 os.environ["ARSHJUL_NO_OPEN"] = "1"
-os.environ.pop("ARSHJUL_MODUS", None)
+os.environ["ARSHJUL_MODUS"] = "lokal"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import app as arshjul  # noqa: E402

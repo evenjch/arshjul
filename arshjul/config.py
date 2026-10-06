@@ -2,12 +2,19 @@
 
     ARSHJUL_DATA        datamappen (BOM/, Bestillingslister/, arshjul.db, .cache/).
                         Standard: mappen over arshjul/.
+    ARSHJUL_BOM         BOM-mappen, hvis den ligger et annet sted enn i datamappen,
+                        f.eks. på en nettverksmappe: \\\\server\\deling\\BOM.
+                        Standard: <datamappen>/BOM.
     ARSHJUL_MODUS       «lokal» (standard) eller «server». I servermodus åpnes aldri
                         filer, mapper eller nettleser på maskinen appen kjører på.
     ARSHJUL_HOST        standard 127.0.0.1
     ARSHJUL_PORT        standard 5057
     ARSHJUL_SECRET_KEY  nøkkel for innlogging senere. Påkrevd i servermodus.
     ARSHJUL_NO_OPEN     satt = ikke åpne filer eller nettleser (også i lokal modus)
+
+Innstillingene kan også stå i arshjul/innstillinger.env, én per linje (NAVN=verdi,
+# for kommentar). Miljøvariabler som er satt, går foran filen. Samme format som
+systemd sin EnvironmentFile, så filen kan brukes på en server også.
 """
 from __future__ import annotations
 
@@ -17,6 +24,22 @@ import shutil
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
+SETTINGS_FILE = APP_DIR / "innstillinger.env"
+
+
+def les_innstillinger(path: Path) -> dict[str, str]:
+    out = {}
+    if path.exists():
+        for linje in path.read_text(encoding="utf-8-sig").splitlines():
+            linje = linje.strip()
+            if linje and not linje.startswith("#") and "=" in linje:
+                k, v = linje.split("=", 1)
+                out[k.strip()] = v.strip().strip('"')
+    return out
+
+
+for _k, _v in les_innstillinger(SETTINGS_FILE).items():
+    os.environ.setdefault(_k, _v)
 
 MODUS = os.environ.get("ARSHJUL_MODUS", "lokal").strip().lower()
 if MODUS not in ("lokal", "server"):
@@ -24,7 +47,7 @@ if MODUS not in ("lokal", "server"):
 LOKAL = MODUS == "lokal"
 
 DATA_DIR = Path(os.environ.get("ARSHJUL_DATA") or APP_DIR.parent).resolve()
-BOM_DIR = DATA_DIR / "BOM"
+BOM_DIR = Path(os.environ.get("ARSHJUL_BOM") or DATA_DIR / "BOM")
 LIST_DIR = DATA_DIR / "Bestillingslister"
 DB_FILE = DATA_DIR / "arshjul.db"
 DATA_FILE = DATA_DIR / "arshjul.json"  # gammelt format; importeres til databasen én gang

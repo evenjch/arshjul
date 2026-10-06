@@ -69,5 +69,5 @@ Planene videre står i [VEIKART.md](VEIKART.md).
 - **Koden ligger i git** (lokalt, gren `main`). BOM-ene, bestillingslistene og `arshjul.db` er brukerdata og holdes utenfor (se `.gitignore`).
 - **Kjør med automatisk omlasting:** `.venv\Scripts\python app.py --debug` fra `arshjul/`.
 - **Kjør testene:** `.venv\Scripts\python -m pip install -r requirements-dev.txt` én gang, deretter `.venv\Scripts\python -m pytest`. Testene bruker en midlertidig mappe og rører aldri de ekte BOM-ene.
-- **Innstillinger** settes med miljøvariabler: `ARSHJUL_DATA` (datamappe), `ARSHJUL_MODUS` (`lokal`/`server`), `ARSHJUL_HOST`, `ARSHJUL_PORT`, `ARSHJUL_SECRET_KEY`. Se `config.py` og VEIKART.md.
+- **Innstillinger** settes med miljøvariabler: `ARSHJUL_DATA` (datamappe), `ARSHJUL_MODUS` (`lokal`/`server`), `ARSHJUL_HOST`, `ARSHJUL_PORT`, `ARSHJUL_SECRET_KEY`. Se `config.py` og VEIKART.md. De kan også skrives i `arshjul/innstillinger.env` (kopier `innstillinger.eksempel.env`), f.eks. `ARSHJUL_BOM=\\server\deling\BOM` for BOM-er på en nettverksmappe.
 - **Endre databasen:** legg en ny oppgradering nederst i `MIGRERINGER` i `db.py`. Endre aldri en som allerede finnes; den har kjørt hos noen.

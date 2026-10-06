@@ -12,5 +12,8 @@ arshjul.json
 arshjul.json.importert
 *.db
 
+# Lokale innstillinger (se arshjul/innstillinger.eksempel.env)
+innstillinger.env
+
 # Excel-låsefiler
 ~$*

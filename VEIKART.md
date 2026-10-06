@@ -17,11 +17,14 @@ Vi utvikler på egen PC, men slik at årshjulet når som helst kan flyttes til e
 | Variabel | Standard | Brukes til |
 |---|---|---|
 | `ARSHJUL_DATA` | mappen over `arshjul/` | datamappen: `BOM/`, `Bestillingslister/`, `arshjul.db`, `.cache/` |
+| `ARSHJUL_BOM` | `<datamappen>/BOM` | BOM-mappen, f.eks. på en nettverksmappe |
 | `ARSHJUL_MODUS` | `lokal` | `lokal` eller `server` |
 | `ARSHJUL_HOST` | `127.0.0.1` | adressen serveren lytter på |
 | `ARSHJUL_PORT` | `5057` | porten |
 | `ARSHJUL_SECRET_KEY` | tilfeldig lokalt | påkrevd i servermodus (innlogging) |
 | `ARSHJUL_NO_OPEN` | ikke satt | satt = åpne aldri filer eller nettleser |
+
+Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.eksempel.env`). Satte miljøvariabler går foran.
 
 ## Beslutninger så langt
 
@@ -32,6 +35,7 @@ Vi utvikler på egen PC, men slik at årshjulet når som helst kan flyttes til e
 - Utstyr/forbruk lagres i årshjulet per prosjekt og linje, ikke i BOM-en.
 - **Faglæreren bestemmer *når* og *hvor mange*:** navn, type, semester, start- og sluttuke, antall sett og notat.
   **Ingeniøren bestemmer *hvor lang tid bestillingen trenger*:** leveringstid, buffer, hvilken BOM som er koblet til, og farge. Faglæreren ser disse, men kan ikke endre dem.
+- **BOM-ene ligger i en delt nettverksmappe** som både serveren og ingeniørens PC når. Én app og én database; ingeniøren åpner BOM-ene i Excel fra en tilordnet stasjon. At bare ingeniøren skal se BOM-ene, løses med roller i appen, ikke med hvor filene ligger. (Valgt fremfor *hybrid* – to apper og synkronisering – og fremfor opplasting/nedlasting i nettleseren.)
 
 ## Fase 0 – Grunnmur
 
@@ -109,10 +113,11 @@ Vi utvikler på egen PC, men slik at årshjulet når som helst kan flyttes til e
 
 1. Installer Python 3.10 eller nyere på VPS-en.
 2. Hent koden (`git clone`), og lag et Python-miljø: `python -m venv .venv` og `pip install -r requirements.txt`.
-3. Lag en datamappe, for eksempel `/srv/arshjul-data`, og kopier over `arshjul.db` (og BOM-ene, hvis de skal ligge på serveren). Stopp årshjulet lokalt først, så databasen er ferdig lagret.
-4. Sett `ARSHJUL_MODUS=server`, `ARSHJUL_DATA`, `ARSHJUL_SECRET_KEY` (lang og tilfeldig), og eventuelt `ARSHJUL_HOST`/`ARSHJUL_PORT`.
-5. Kjør `python app.py` som en systemd-tjeneste, med Caddy eller nginx foran for HTTPS.
-6. Sett opp backup av datamappen.
+3. Lag en datamappe, for eksempel `/srv/arshjul-data`, og kopier over `arshjul.db`. Stopp årshjulet lokalt først, så databasen er ferdig lagret.
+4. Monter BOM-fellesmappen (CIFS, med `iocharset=utf8` for æøå), for eksempel på `/mnt/arshjul-bom`.
+5. Sett `ARSHJUL_MODUS=server`, `ARSHJUL_DATA`, `ARSHJUL_BOM=/mnt/arshjul-bom`, `ARSHJUL_SECRET_KEY` (lang og tilfeldig), og eventuelt `ARSHJUL_HOST`/`ARSHJUL_PORT` – i `innstillinger.env` eller i systemd-tjenesten.
+6. Kjør `python app.py` som en systemd-tjeneste, med Caddy eller nginx foran for HTTPS.
+7. Sett opp backup av datamappen.
 
 ## Parkert / senere
 
@@ -124,9 +129,26 @@ Vi utvikler på egen PC, men slik at årshjulet når som helst kan flyttes til e
 - Kommentarfelt per prosjekt («trenger 5 sett ekstra i år»)
 - Faglæreren bekrefter planen for høsten før sommeren
 
-## Åpne spørsmål
+## BOM-er på nettverksmappe – testet
 
-- **Hvor skal BOM-ene ligge når årshjulet er på serveren?**
-  - *Hybrid:* serveren eier prosjektene, PC-en din beholder BOM-ene og Excel-flyten og henter prosjektene fra serveren. Bevarer dagens arbeidsflyt, men det blir to deler å drive.
-  - *Alt på serveren:* BOM-ene lastes opp og ned i nettleseren. Én app, men «åpne i Excel – lagre – tilbake» forsvinner.
+Testet 6. oktober 2026 fra Windows mot `\\felles.ansatt.ntnu.no\...\evenjc\claude-testing\BOM`, med kopier av de ekte BOM-ene:
+
+| Hva | Resultat |
+|---|---|
+| Lese en BOM | ca. 25 ms |
+| Laste siden (`/api/state`) | 130 ms første gang, deretter ca. 60 ms |
+| Oppdatere «På lager» med sikkerhetskopi | ca. 70 ms, bare kolonne H endret |
+| Endringer gjort i filen oppdages | ja |
+| Fil åpen i Excel (`~$`-fil) eller låst | stoppes med tydelig melding; siden lastes likevel |
+| Ny BOM-mal, filnavn med æøå og tankestrek | virker |
+
+**Gjenstår å teste:**
+- Ekte Excel mot nettverksmappen (åpne, lagre, gå tilbake til årshjulet; prøv «Oppdater På lager» mens filen er åpen).
+- Linux-VPS-en sin tilkobling til mappen (CIFS-montering). Kan bare testes når VPS-en finnes.
+- Hvordan «Åpne i Excel» skal virke fra en server: knapp som kopierer stien, eller en Office-lenke (`ms-excel:`) – må prøves.
+
+## Åpne spørsmål (til IT)
+
+- Kan vi få en **egen fellesmappe for tjenesten** (ikke under en personlig `ansatte\…`-mappe), som VPS-en kan montere med lese- og skrivetilgang via en tjenestekonto, og som ingeniøren kan tilordne som stasjon?
 - Hva krever IT for en VPS (operativsystem, tilgang, backup, sikkerhetsgjennomgang)?
+- Tas det backup av fellesmappen? (Sikkerhetskopiene i `BOM/Sikkerhetskopi/` dekker bare årshjulets egne endringer.)
