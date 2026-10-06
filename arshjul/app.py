@@ -514,7 +514,11 @@ def main() -> None:
     if first_run:
         if config.OPEN_LOCAL:
             threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-        print(f"Årshjulet kjører på {url}  (data: {config.DATA_DIR}, modus: {config.MODUS})")
+        print(f"Årshjulet kjører på {url}  (modus: {config.MODUS})")
+        print(f"  Data:      {config.DATA_DIR}")
+        print(f"  BOM-mappe: {BOM_DIR}")
+        if config.SETTINGS_FILE.exists():
+            print(f"  Innstillinger fra {config.SETTINGS_FILE.name}")
         if config.LOKAL:
             print("Lukk dette vinduet for å stoppe.")
     if debug:

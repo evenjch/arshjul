@@ -35,6 +35,7 @@
       if (SY === null || !SYS.some((s) => s.ar === SY)) SY = st.skolearNa;
       LOKAL = st.modus !== "server";
       $("openBomDir").hidden = $("openListDir").hidden = !LOKAL;
+      $("bomDir").textContent = st.mapper.bom; $("openBomDir").title = "Åpner " + st.mapper.bom;
       // behold verdier som venter på lagring
       st.prosjekter.forEach((p) => { const pend = pending[p.id]; if (pend) Object.assign(p, pend.patch); });
       const sameIds = st.prosjekter.length === projects.length && st.prosjekter.every((p) => projects.some((q) => q.id === p.id));
