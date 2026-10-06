@@ -142,8 +142,10 @@ Testet 6. oktober 2026 fra Windows mot `\\felles.ansatt.ntnu.no\...\evenjc\claud
 | Fil åpen i Excel (`~$`-fil) eller låst | stoppes med tydelig melding; siden lastes likevel |
 | Ny BOM-mal, filnavn med æøå og tankestrek | virker |
 
+**Testet av ingeniøren 6. oktober 2026:** to nye BOM-er laget med «Lag BOM-mal», åpnet og endret i Excel – alt havnet på nettverksmappen og ble lest riktig av årshjulet.
+
 **Gjenstår å teste:**
-- Ekte Excel mot nettverksmappen (åpne, lagre, gå tilbake til årshjulet; prøv «Oppdater På lager» mens filen er åpen).
+- «Oppdater På lager» mens BOM-en er åpen i Excel på nettverksmappen (skal nekte).
 - Linux-VPS-en sin tilkobling til mappen (CIFS-montering). Kan bare testes når VPS-en finnes.
 - Hvordan «Åpne i Excel» skal virke fra en server: knapp som kopierer stien, eller en Office-lenke (`ms-excel:`) – må prøves.
 
