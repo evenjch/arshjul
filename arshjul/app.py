@@ -186,7 +186,9 @@ def state():
             dirty |= ch
             f = frister.frister(g, closed)
             lagret = bestilt.get(g["id"], {})
-            best = bestilling.oversikt(c["rader"], lagret) if c and c["linjer"] else None
+            # «trenger mer» gir bare mening før prosjektet starter og før det er telt
+            sammenlign = f["start"]["dato"] > dt.date.today().isoformat() and g["id"] not in tellinger
+            best = bestilling.oversikt(c["rader"], lagret, sammenlign) if c and c["linjer"] else None
             out.append({**g, "semester": frister.semester(g["start"]), "hendelser": f.pop("hendelser"),
                         "frister": f, "bomStatus": st, "bestilling": best,
                         "bestiltKr": bestilling.kostnad(lagret),
@@ -381,6 +383,8 @@ def order_status(gid):
             raise bomlib.BomError("Ugyldig status.")
         if not lagret:
             raise bomlib.BomError("Leverandøren er ikke registrert som bestilt.")
+        if status == "bestilt" and any(lagret["paa_lager"].values()):
+            raise bomlib.BomError("Noe fra denne bestillingen er lagt på lager. Angre mottaket først.")
         mottatt = lagret["mottatt_dato"] or dt.date.today().isoformat()
         store.endre_bestilling(gid, key, status=status, mottatt_dato=None if status == "bestilt" else mottatt)
     elif handling == "ordrenr":
@@ -388,10 +392,62 @@ def order_status(gid):
             raise bomlib.BomError("Leverandøren er ikke registrert som bestilt.")
         store.endre_bestilling(gid, key, ordrenr=ordrenr)
     elif handling == "angre":
+        if lagret and any(lagret["paa_lager"].values()):
+            raise bomlib.BomError("Noe fra denne bestillingen er lagt på lager. Angre mottaket først.")
         store.slett_bestilling(gid, key)
+    elif handling in ("mottak", "angre_mottak"):
+        return jsonify(_varemottak(g, gid, key, lagret, handling, body.get("linjer")))
     else:
         raise bomlib.BomError("Ukjent handling.")
     return jsonify({"ok": True})
+
+
+def _varemottak(g: dict, gid: str, key: str, lagret: dict | None, handling: str, linjer: dict | None) -> dict:
+    """Varemottak: legg det som har kommet til «På lager» i BOM-en, eller trekk det fra igjen.
+
+    mottak:       linjer = {nøkkel: antall som kom}; uten linjer: alt som gjenstår.
+                  Status blir «mottatt» når alt er lagt på lager, ellers «delvis».
+    angre_mottak: trekk fra alt som er lagt på lager fra denne bestillingen; status «bestilt».
+    Legges til det cellen har nå, så endringer gjort i Excel imens blir ikke borte.
+    """
+    if not lagret:
+        raise bomlib.BomError("Leverandøren er ikke registrert som bestilt.")
+    rader = bestilling.mottak(lagret)
+    paa_lager = dict(lagret["paa_lager"])
+    if handling == "mottak":
+        if linjer is None:
+            delta = {r["key"]: r["gjenstar"] for r in rader if r["gjenstar"] > 0}
+        else:
+            kjente = {r["key"] for r in rader}
+            try:
+                delta = {str(k): float(v) for k, v in linjer.items() if v not in (None, "") and float(v) != 0}
+            except (TypeError, ValueError, AttributeError):
+                raise bomlib.BomError("Ugyldig antall.")
+            if any(v < 0 for v in delta.values()) or not set(delta) <= kjente:
+                raise bomlib.BomError("Ugyldig antall.")
+        if not delta:
+            raise bomlib.BomError("Ingenting å legge på lager.")
+    else:
+        delta = {k: -v for k, v in paa_lager.items() if v}
+        if not delta:
+            raise bomlib.BomError("Ingenting fra denne bestillingen er lagt på lager.")
+
+    res = _skriv_lager(g, lagret["linjer"], delta, legg_til=True)
+    for k in res["skrevet"]:
+        paa_lager[k] = max(0.0, paa_lager.get(k, 0.0) + delta[k])
+    paa_lager = {k: v for k, v in paa_lager.items() if v > 1e-9}
+    if res["skrevet"]:
+        if handling == "angre_mottak":
+            status = "bestilt" if not paa_lager else lagret["status"]
+        else:
+            alt = all(paa_lager.get(r["key"], 0.0) >= r["bestilt"] - 1e-9 for r in rader)
+            status = "mottatt" if alt else "delvis"
+        logg = lagret["lager_logg"] + [{"tid": dt.datetime.now().isoformat(timespec="minutes"),
+                                        "handling": "mottatt" if handling == "mottak" else "angret",
+                                        "linjer": {k: delta[k] for k in res["skrevet"]}, "backup": res["backup"]}]
+        store.endre_bestilling(gid, key, paa_lager=paa_lager, lager_logg=logg, status=status,
+                               mottatt_dato=None if status == "bestilt" else (lagret["mottatt_dato"] or dt.date.today().isoformat()))
+    return res
 
 
 @app.post("/api/gjennomforinger/<gid>/sett")
@@ -437,19 +493,19 @@ def save_count(gid):
     return jsonify(telling.oppsummering(linjer))
 
 
-def _skriv_lager(g: dict, tell: dict, verdier: dict[str, float], forventet: dict[str, float]) -> dict:
-    """Skriv til «På lager» med konfliktsjekk, og hold «sist sett» i takt så vår egen endring
-    ikke vises som «BOM-en er endret». Konflikter får beskrivelse med til nettleseren."""
+def _skriv_lager(g: dict, linjer: list[dict], verdier: dict[str, float], forventet: dict[str, float] | None = None,
+                 legg_til: bool = False) -> dict:
+    """Skriv til «På lager» (se bom.write_stock), og hold «sist sett» i takt så vår egen endring
+    ikke vises som «BOM-en er endret». Konflikter får beskrivelse fra «linjer» med til nettleseren."""
     with _lock:
-        res = bomlib.write_stock(bom_path(g), verdier, BOM_DIR / "Sikkerhetskopi", forventet)
+        res = bomlib.write_stock(bom_path(g), verdier, BOM_DIR / "Sikkerhetskopi", forventet, legg_til)
         snaps = _read_json(SNAP_FILE, {})
-        if g["bom"] in snaps and res["skrevet"]:
-            nye = {k: verdier[k] for k in res["skrevet"]}
+        if g["bom"] in snaps and res["nye"]:
             for r in snaps[g["bom"]]["rader"]:
-                if bomlib.rad_key(r) in nye:
-                    r["lager"] = nye[bomlib.rad_key(r)]
+                if bomlib.rad_key(r) in res["nye"]:
+                    r["lager"] = res["nye"][bomlib.rad_key(r)]
             _write_json(SNAP_FILE, snaps)
-    navn = {l["key"]: l["beskrivelse"] for l in tell["linjer"]}
+    navn = {l["key"]: l["beskrivelse"] for l in linjer}
     for k in res["konflikt"]:
         k["beskrivelse"] = navn.get(k["key"], k["key"])
     return res
@@ -477,7 +533,7 @@ def write_count(gid):
     if not nye:
         raise bomlib.BomError("Alt som er telt, står allerede i BOM-en.")
     linjer = {l["key"]: l for l in tell["linjer"]}
-    res = _skriv_lager(g, tell, {k: linjer[k]["telt"] for k in nye},
+    res = _skriv_lager(g, tell["linjer"], {k: linjer[k]["telt"] for k in nye},
                        {k: sv.get(k, linjer[k]["lagerFor"]) for k in nye})
     if res["skrevet"]:
         sv = {**sv, **{k: linjer[k]["telt"] for k in res["skrevet"]}}
@@ -495,7 +551,7 @@ def undo_count(gid):
     sv = tell["skrevet_verdier"]
     linjer = {l["key"]: l for l in tell["linjer"]}
     keys = [k for k in sv if k in linjer]
-    res = _skriv_lager(g, tell, {k: linjer[k]["lagerFor"] for k in keys}, {k: sv[k] for k in keys})
+    res = _skriv_lager(g, tell["linjer"], {k: linjer[k]["lagerFor"] for k in keys}, {k: sv[k] for k in keys})
     if res["skrevet"]:
         sv = {k: v for k, v in sv.items() if k not in res["skrevet"]}
         store.telling_skrevet(gid, sv, _logg(tell, "angret", res), tell["skrevet"], tell["backup"])

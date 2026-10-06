@@ -130,12 +130,16 @@ def diff(old: list[dict], new: list[dict]) -> list[dict]:
 # ---------- oppdatere lager etter telling ----------
 
 def write_stock(path: Path, verdier: dict[str, float], backup_dir: Path,
-                forventet: dict[str, float] | None = None) -> dict:
+                forventet: dict[str, float] | None = None, legg_til: bool = False) -> dict:
     """Skriv nye «På lager»-tall (kolonne H) i en eksisterende BOM.
 
-    verdier:   {linje-nøkkel: nytt antall}. Bare kolonne H endres.
+    verdier:   {linje-nøkkel: nytt antall}, eller med legg_til: antall som legges til
+               (negativt trekker fra). Bare kolonne H endres.
     forventet: {linje-nøkkel: antall cellen skal ha nå}. Står det noe annet der (endret i
                Excel siden sist), skrives linjen ikke, men meldes som konflikt.
+    legg_til:  varemottak. Legger til det som står i cellen nå – riktig også om cellen er
+               endret i Excel. Blir resultatet negativt, er det en konflikt.
+    Svar: skrevet/hoppet/konflikt, «nye» = {nøkkel: tallet som nå står i cellen}, og backup.
     Linjer som ikke finnes, eller der nøkkelen står på flere rader, hoppes over.
     Lager en sikkerhetskopi først, men bare hvis noe faktisk skal skrives.
     """
@@ -155,7 +159,7 @@ def write_stock(path: Path, verdier: dict[str, float], backup_dir: Path,
         besk = _txt(ws[f"C{r}"].value)
         if besk:
             rader.setdefault(rad_key({"beskrivelse": besk, "varenummer": _txt(ws[f"F{r}"].value)}), []).append(r)
-    skrevet, hoppet, konflikt = [], [], []
+    skrevet, hoppet, konflikt, nye = [], [], [], {}
     for key, antall in verdier.items():
         rows = rader.get(key, [])
         if len(rows) != 1:
@@ -165,10 +169,15 @@ def write_stock(path: Path, verdier: dict[str, float], backup_dir: Path,
         if key in forventet and abs(_num(celle.value) - float(forventet[key])) > 1e-9:
             konflikt.append({"key": key, "forventet": float(forventet[key]), "faktisk": _num(celle.value)})
             continue
-        celle.value = int(antall) if float(antall).is_integer() else float(antall)
+        ny = _num(celle.value) + float(antall) if legg_til else float(antall)
+        if ny < -1e-9:
+            konflikt.append({"key": key, "forventet": -float(antall), "faktisk": _num(celle.value)})
+            continue
+        celle.value = int(ny) if float(ny).is_integer() else ny
         skrevet.append(key)
+        nye[key] = ny
     if not skrevet:
-        return {"skrevet": [], "hoppet": hoppet, "konflikt": konflikt, "backup": None}
+        return {"skrevet": [], "hoppet": hoppet, "konflikt": konflikt, "nye": {}, "backup": None}
 
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = f"{path.stem} {dt.datetime.now():%Y-%m-%d %H%M%S}"
@@ -181,7 +190,7 @@ def write_stock(path: Path, verdier: dict[str, float], backup_dir: Path,
         wb.save(path)
     except PermissionError as e:
         raise BomError(f"«{path.name}» er låst. Lukk den i Excel og prøv igjen.") from e
-    return {"skrevet": skrevet, "hoppet": hoppet, "konflikt": konflikt, "backup": backup.name}
+    return {"skrevet": skrevet, "hoppet": hoppet, "konflikt": konflikt, "nye": nye, "backup": backup.name}
 
 
 # ---------- nye filer ----------

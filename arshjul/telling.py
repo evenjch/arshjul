@@ -1,7 +1,8 @@
 """Telling etter prosjektet: hva som kom tilbake, svinn, og nytt «på lager» til neste år.
 
 For hver BOM-linje:
-    før prosjektet   = på lager (BOM) + bestilt (registrert, ellers det BOM-en sa skulle bestilles)
+    før prosjektet   = på lager (BOM) + bestilt som ikke er lagt på lager ennå
+                       (registrert, ellers det BOM-en sa skulle bestilles)
     forventet        = før prosjektet                  for utstyr (skal komme tilbake)
                      = før prosjektet − delt ut          for forbruk (brukes opp)
     telt             = det du faktisk har etterpå → blir nytt «på lager» i BOM-en
@@ -16,11 +17,16 @@ TYPER = ("utstyr", "forbruk")
 
 
 def bestilt_per_linje(lagret: dict[str, dict]) -> tuple[dict[str, float], set[str]]:
-    """(sum bestilt per linje, leverandører som er registrert bestilt) fra de frosne kopiene."""
+    """(bestilt, men ikke lagt på lager ennå – per linje, leverandører som er registrert bestilt).
+
+    Det som er lagt på lager ved varemottak, står allerede i «På lager» i BOM-en og
+    skal ikke telles med en gang til.
+    """
     out: dict[str, float] = {}
     for b in lagret.values():
+        lagt = b.get("paa_lager") or {}
         for l in b["linjer"]:
-            out[l["key"]] = out.get(l["key"], 0.0) + l["antall"]
+            out[l["key"]] = out.get(l["key"], 0.0) + max(0.0, l["antall"] - lagt.get(l["key"], 0.0))
     return out, set(lagret)
 
 

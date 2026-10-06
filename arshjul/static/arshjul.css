@@ -225,4 +225,13 @@
   .excelnote { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 8px; padding: 8px 10px;
                border: 1px solid var(--soon); background: var(--soon-soft); border-radius: 8px; font-size: 12.5px; }
   .excelnote span { max-width: 75ch; }
+  .mottak { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 8px; font-size: 12.5px; }
+  .mottakform { flex-basis: 100%; display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  .mottakform p { margin: 0; }
+  .mottakform label { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+  .mottakform label > span { min-width: 12em; }
+  .mottakform input { font: 500 13px var(--mono); width: 72px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 7px;
+                      background: var(--card); color: var(--ink); text-align: right; }
+  .mottakform small { color: var(--muted); }
+  .mottak > .tlogg { flex-basis: 100%; margin-top: 2px; }
   .tlogg { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; color: var(--muted); display: grid; gap: 2px; }

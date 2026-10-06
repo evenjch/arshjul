@@ -14,7 +14,7 @@ Innkjøp undervisning/
 
 - **Årshjulet viser ett skoleår om gangen**, fra uke 32 (august) til uke 31. Bla med ‹ og › over hjulet. Uke 32–53 er høsten, uke 1–31 er våren etter.
 - **Et prosjekt** (navn, type, leveringstid, buffer, BOM) går igjen fra år til år. **Ukene og antall sett** gjelder bare det skoleåret du ser på.
-- **Årshjulet skriver nesten aldri til en eksisterende BOM.** Det leser dem og lager nye maler. Eneste unntak: etter en telling kan du be det oppdatere «På lager» (kolonne H). Det skjer bare når du bekrefter, filen må være lukket i Excel, og det lages alltid en sikkerhetskopi i `BOM/Sikkerhetskopi/` først.
+- **Årshjulet skriver nesten aldri til en eksisterende BOM.** Det leser dem og lager nye maler. Eneste unntak: «På lager» (kolonne H), når du registrerer et varemottak eller skriver inn en telling. Det skjer bare når du bekrefter, filen må være lukket i Excel, og det lages alltid en sikkerhetskopi i `BOM/Sikkerhetskopi/` først.
 - **Antall sett** styres i årshjulet. Å bestille = per sett × antall sett − på lager.
 - **Stengte perioder** (jul, påske, fellesferie) endres nederst på siden.
 - Legg gjerne hele mappen i OneDrive, så får du backup automatisk. Ta ikke backup av `arshjul.db` mens årshjulet kjører og lagrer.
@@ -45,7 +45,7 @@ Krever Python 3.10 eller nyere. Uten startfilen: `pip install -r requirements.tx
 | Se hva som er endret           | Endringer siden sist vises over tabellen. «OK, sett» når du har sett dem  |
 | Lage bestillingsliste          | «Bestillingsliste» – lagres i Bestillingslister og åpnes. For én leverandør: «Liste» under «Bestilling» |
 | Registrere at du har bestilt   | Trykk på statusen i «Bestilling»-kolonnen, skriv ordrenummer, «Registrer bestilt» for hver leverandør |
-| Registrere mottak              | Velg «Delvis mottatt» eller «Mottatt» for leverandøren                    |
+| Registrere mottak              | «Registrer mottak …» under leverandøren: skriv hvor mange som kom. Det legges til «På lager» i BOM-en, og status blir Mottatt eller Delvis mottatt |
 | Bestille det som mangler       | Når BOM-en eller antall sett endres etter bestilling, vises det over tabellen. Bestill, og trykk «Registrer tilleggsbestilling» |
 
 Siden oppdateres av seg selv når du går tilbake til nettleservinduet.

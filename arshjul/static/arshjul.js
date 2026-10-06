@@ -388,7 +388,7 @@
       + (x.backup ? ` · sikkerhetskopi: BOM/Sikkerhetskopi/${esc(x.backup)}` : "") + `</li>`).join("")}</ul>` : "";
     return `<details class="tellbox" data-id="${id}"${open ? " open" : ""}><summary><b>Telling etter prosjektet</b> <span class="muted">· ${summary}</span></summary>`
       + `<p class="muted">Tell det du har igjen etter prosjektet. Utstyr skal komme tilbake; forbruk brukes opp. Det telte blir nytt «På lager» i BOM-en.</p>${note}`
-      + `<div class="tellscroll"><table class="tell"><thead><tr><th>Linje</th><th>Type</th><th class="num" title="På lager + bestilt">Før</th><th class="num">Delt ut</th><th class="num">Forventet</th><th class="num">Telt</th><th class="num">Avvik</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      + `<div class="tellscroll"><table class="tell"><thead><tr><th>Linje</th><th>Type</th><th class="num" title="På lager + bestilt som ikke er lagt på lager ennå">Før</th><th class="num">Delt ut</th><th class="num">Forventet</th><th class="num">Telt</th><th class="num">Avvik</th></tr></thead><tbody>${rows}</tbody></table></div>`
       + `<div class="levact">${actions}</div>${logg}</details>`;
   }
   // oppdater «forventet» og «avvik» på raden mens du skriver, og husk tallene til de er lagret
@@ -416,6 +416,43 @@
       key: tr.dataset.key, type: tr.querySelector("[data-role=ttype]").value, telt: tr.querySelector("[data-role=telt]").value }));
   }
   const qty = (x) => fmtNum(Math.round(x * 100) / 100);
+  // ---------- varemottak: legg det som har kommet til «På lager» i BOM-en ----------
+  const mottakOpen = new Set();
+  function mottakHtml(p, g, k) {
+    if (!g.mottak.length || g.status === "ikke" || g.status === "lager") return "";
+    const lagt = g.mottak.filter((m) => m.lagt > 0), rest = g.mottak.filter((m) => m.gjenstar > 0);
+    const fid = `${p.id}|${g.key}`, open = mottakOpen.has(fid) && rest.length;
+    let s = `<div class="mottak">`;
+    const sum = !lagt.length ? "Ingenting lagt på lager ennå."
+      : !rest.length ? `Alt er lagt på lager (${g.mottak.length} ${g.mottak.length === 1 ? "linje" : "linjer"}).`
+      : `${lagt.length} av ${g.mottak.length} linjer er lagt på lager.`;
+    s += `<span class="muted">${sum}</span>`;
+    if (rest.length && !open) s += `<button type="button" class="mini" data-act="mottakvis" ${k}>Registrer mottak …</button>`;
+    if (lagt.length) s += `<button type="button" class="mini quiet" data-act="angremottak" ${k}>Angre mottak …</button>`;
+    if (open) {
+      s += `<div class="mottakform"><p class="muted">Hvor mange kom? Antallet legges til «På lager» i BOM-en.</p>`
+        + rest.map((m) => `<label><span>${esc(m.beskrivelse)}${m.varenummer ? ` <small>${esc(m.varenummer)}</small>` : ""}</span>`
+          + `<input type="number" min="0" step="any" data-role="mottak" data-key="${esc(m.key)}" value="${m.gjenstar}">`
+          + `<small>av ${qty(m.gjenstar)}${m.lagt ? ` (${qty(m.lagt)} lagt på lager før)` : ""}</small></label>`).join("")
+        + `<div class="levact"><button type="button" class="mini" data-act="mottak" ${k}>Legg på lager i BOM-en …</button>`
+        + `<button type="button" class="mini quiet" data-act="mottakskjul" ${k}>Avbryt</button></div></div>`;
+    }
+    if (g.lagerLogg.length) s += `<ul class="tlogg">${g.lagerLogg.map((x) => {
+      const n = Object.keys(x.linjer).length;
+      return `<li>${new Date(x.tid).toLocaleString("nb-NO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}: `
+        + `${x.handling === "angret" ? "trakk fra" : "la på lager"} ${n} ${n === 1 ? "linje" : "linjer"}${x.backup ? ` · sikkerhetskopi: BOM/Sikkerhetskopi/${esc(x.backup)}` : ""}</li>`;
+    }).join("")}</ul>`;
+    return s + `</div>`;
+  }
+  function mottakMsg(r, verb) {
+    const n = (x) => `${x} ${x === 1 ? "linje" : "linjer"}`;
+    let s = r.skrevet.length ? `${verb} for ${n(r.skrevet.length)} i BOM-en. Sikkerhetskopi: ${r.backup}.` : "Ingenting ble endret i BOM-en.";
+    if (r.konflikt.length) s += ` ${n(r.konflikt.length)} ble ikke endret fordi «På lager» ville blitt negativt: `
+      + r.konflikt.map((k) => `${k.beskrivelse} (står ${qty(k.faktisk)})`).join(", ") + ".";
+    if (r.hoppet.length) s += ` ${n(r.hoppet.length)} hoppet over (finnes ikke, eller står flere ganger i BOM-en).`;
+    return s;
+  }
+
   function orderDetail(p) {
     const id = esc(p.id);
     const rows = (p.bestilling ? p.bestilling.grupper : []).map((g) => {
@@ -432,6 +469,7 @@
         + `<span class="muted when">bestilt ${dfmtY.format(toD(g.bestiltDato))}${g.mottattDato && g.status !== "bestilt" ? " · mottatt " + dfmtY.format(toD(g.mottattDato)) : ""}</span>`
         + `<button type="button" class="mini quiet" data-act="angre" ${k}>Angre</button>`;
       const liste = g.linjer && !g.fjernet ? `<button type="button" class="mini" data-act="lliste" ${k}>Liste</button>` : "";
+      const mot = mottakHtml(p, g, k);
       let notes = "";
       if (g.fjernet) notes += `<li class="muted">Leverandøren står ikke lenger i BOM-en.</li>`;
       if (g.tillegg.length) notes += g.tillegg.map((t) =>
@@ -440,7 +478,7 @@
       if (g.overskudd.length) notes += g.overskudd.map((t) =>
         `<li class="muted">${esc(t.beskrivelse)}: bestilt ${qty(t.bestilt)}, trenger nå ${qty(t.trenger)}</li>`).join("");
       return `<div class="lev"><div class="levhead"><b>${esc(g.navn)}</b><span class="muted">${g.linjer} ${g.linjer === 1 ? "linje" : "linjer"} · ${nf0.format(g.eks)} kr</span></div>`
-        + `<div class="levact" data-lev="${esc(g.key)}">${act}${liste}</div>${notes ? `<ul class="avvik">${notes}</ul>` : ""}</div>`;
+        + `<div class="levact" data-lev="${esc(g.key)}">${act}${liste}</div>${mot}${notes ? `<ul class="avvik">${notes}</ul>` : ""}</div>`;
     }).join("");
     return `<tr class="detail" data-for="${id}"><td colspan="${COLS}">${rows ? `<div class="levs">${rows}</div>` : ""}${tellSection(p)}</td></tr>`;
   }
@@ -633,6 +671,18 @@
           if (tellDraft[id]) { await api("POST", P(id) + "/telling", { linjer: tellCollect(id) }); delete tellDraft[id]; }
           return api("POST", P(id) + "/telling/skriv");
         }, (r) => writeMsg(r, "Oppdaterte «På lager» for"));
+      }
+      if (a === "mottakvis" || a === "mottakskjul") { a === "mottakvis" ? mottakOpen.add(`${id}|${lev}`) : mottakOpen.delete(`${id}|${lev}`); drawTable(); return; }
+      if (a === "mottak") {
+        if (!b.classList.contains("confirm")) { b.classList.add("confirm"); b.textContent = "Bekreft: legg til «På lager» i BOM-en"; return; }
+        const linjer = {};
+        b.closest(".mottakform").querySelectorAll("input[data-role=mottak]").forEach((i) => { linjer[i.dataset.key] = i.value; });
+        act(async () => { const r = await orderApi(id, { handling: "mottak", leverandor: lev, linjer }); mottakOpen.delete(`${id}|${lev}`); return r; },
+          (r) => mottakMsg(r, "La varene på lager"));
+      }
+      if (a === "angremottak") {
+        if (!b.classList.contains("confirm")) { b.classList.add("confirm"); b.textContent = "Bekreft: trekk fra «På lager» igjen"; return; }
+        act(() => orderApi(id, { handling: "angre_mottak", leverandor: lev }), (r) => mottakMsg(r, "Trakk mottaket fra igjen"));
       }
       if (a === "thent") act(async () => { const r = await api("POST", P(id) + "/telling/hent"); delete tellDraft[id]; return r; },
         (r) => `Tellingen bruker nå tallene fra BOM-en for ${r.hentet} ${r.hentet === 1 ? "linje" : "linjer"}${r.svinn ? `. Svinn: ${nf0.format(r.svinnKr)} kr` : ""}.`);

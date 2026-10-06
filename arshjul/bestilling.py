@@ -78,22 +78,39 @@ def kostnad(lagret: dict[str, dict]) -> float | None:
     return round(sum(l["antall"] * l["pris"] for b in lagret.values() for l in b["linjer"]), 2)
 
 
-def oversikt(rader: list[dict], lagret: dict[str, dict]) -> dict:
+def mottak(b: dict) -> list[dict]:
+    """Per bestilt linje: bestilt, lagt på lager og hva som gjenstår å legge på lager."""
+    lagt = b.get("paa_lager") or {}
+    return [{"key": l["key"], "beskrivelse": l["beskrivelse"], "varenummer": l.get("varenummer", ""),
+             "bestilt": l["antall"], "lagt": lagt.get(l["key"], 0.0),
+             "gjenstar": max(0.0, l["antall"] - lagt.get(l["key"], 0.0))} for l in b["linjer"]]
+
+
+def _med_mottatt(rader: list[dict], lagt: dict[str, float]) -> list[dict]:
+    """Det som er lagt på lager fra denne bestillingen, har allerede senket «å bestille» i BOM-en.
+    Legg det til igjen før sammenligningen, ellers ser det ut som det er bestilt for mye."""
+    return [{**r, "bestill": r["bestill"] + lagt.get(rad_key(r), 0.0)} for r in rader]
+
+
+def oversikt(rader: list[dict], lagret: dict[str, dict], sammenlign: bool = True) -> dict:
     """Status for hver leverandør og for hele gjennomføringen.
 
-    rader:  bom.calc(...)["rader"] for gjennomføringen
-    lagret: registrerte bestillinger, etter leverandør-nøkkel
+    rader:      bom.calc(...)["rader"] for gjennomføringen
+    lagret:     registrerte bestillinger, etter leverandør-nøkkel
+    sammenlign: se etter «trenger mer / bestilt for mye». Gir bare mening før prosjektet
+                starter – etterpå endres BOM-en av tellinger og neste års innkjøp.
     """
     gr = []
     for g in grupper(rader):
         aktive = [r for r in g["rader"] if r["bestill"] > EPS]
         b = lagret.get(g["key"])
-        tillegg, overskudd = avvik(b["linjer"], g["rader"]) if b else ([], [])
+        tillegg, overskudd = (avvik(b["linjer"], _med_mottatt(g["rader"], b.get("paa_lager") or {}))
+                              if b and sammenlign else ([], []))
         gr.append(_gruppe_ut(g["key"], g["navn"], aktive, b, tillegg, overskudd))
     kjente = {g["key"] for g in gr}
     for key, b in lagret.items():  # leverandøren er fjernet fra BOM-en etter bestilling
         if key not in kjente:
-            _, overskudd = avvik(b["linjer"], [])
+            _, overskudd = avvik(b["linjer"], []) if sammenlign else ([], [])
             gr.append({**_gruppe_ut(key, b["navn"], [], b, [], overskudd), "fjernet": True})
 
     relevante = [g for g in gr if g["status"] != "lager"]
@@ -116,10 +133,12 @@ def oversikt(rader: list[dict], lagret: dict[str, dict]) -> dict:
 
 def _gruppe_ut(key, navn, aktive, b, tillegg, overskudd) -> dict:
     status = b["status"] if b else ("ikke" if aktive else "lager")
+    # bestilt: det som faktisk ble bestilt (BOM-en sier kanskje 0 nå, når varene er lagt på lager)
     return {
-        "key": key, "navn": navn, "linjer": len(aktive),
-        "eks": round(sum(r["total"] for r in aktive), 2),
+        "key": key, "navn": navn, "linjer": len(b["linjer"]) if b else len(aktive),
+        "eks": round(sum(l["antall"] * l["pris"] for l in b["linjer"]) if b else sum(r["total"] for r in aktive), 2),
         "status": status, "statusNavn": STATUSNAVN[status],
         "bestiltDato": b["bestilt_dato"] if b else None, "mottattDato": b["mottatt_dato"] if b else None,
         "ordrenr": b["ordrenr"] if b else "", "tillegg": tillegg, "overskudd": overskudd,
+        "mottak": mottak(b) if b else [], "lagerLogg": (b.get("lager_logg") or []) if b else [],
     }

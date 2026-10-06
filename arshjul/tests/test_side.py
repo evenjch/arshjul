@@ -3,6 +3,7 @@
 Fanger feil som bare skjer i nettleseren, f.eks. at siden krasjer når den tegner et panel.
 Bruker en enkel falsk DOM: vi sjekker at alt kan tegnes uten feil, ikke hvordan det ser ut.
 """
+import datetime as dt
 import importlib.metadata
 import importlib.util
 import json
@@ -16,6 +17,7 @@ import pytest
 
 import bom
 import config
+import frister
 from hjelp import lag_bom
 
 
@@ -40,6 +42,8 @@ def _mini_racer():
 MiniRacer = _mini_racer()
 
 G = "/api/gjennomforinger"
+# neste skoleår: prosjektene har ikke startet, så «må bestille mer» kan vises
+SY = frister.skolear_for(dt.date.today()) + 1
 
 STUB = r"""
 const __els = {};
@@ -109,12 +113,12 @@ def test_siden_tegner_alle_tilstander(client):
     rader = [("Arduino", "Elfa", "A1", 1, 4, 250.0), ("Ledning", "Kjell", "L1", 2, 0, 10.0)]
 
     def prosjekt(navn, **kw):
-        g = client.post(G, json={"navn": navn, "skolear": 2026, "start": 44, "sett": 10, **kw}).get_json()
+        g = client.post(G, json={"navn": navn, "skolear": SY, "start": 44, "sett": 10, **kw}).get_json()
         fil = lag_bom(f"{navn} – BOM.xlsx", rader=rader).name
         client.patch(f"{G}/{g['id']}", json={"bom": fil})
         return g["id"]
 
-    client.post(G, json={"navn": "Uten BOM", "skolear": 2026, "start": 40})
+    client.post(G, json={"navn": "Uten BOM", "skolear": SY, "start": 40})
     prosjekt("Ikke bestilt")
     delvis = prosjekt("Delvis")
     client.post(f"{G}/{delvis}/bestilling", json={"handling": "bestilt", "leverandor": "elfa", "ordrenr": "PO-1"})
@@ -139,7 +143,12 @@ def test_siden_tegner_alle_tilstander(client):
     client.post(f"{G}/{excel}/telling", json={"linjer": [{"key": "a1", "telt": 10}]})
     client.post(f"{G}/{excel}/telling/skriv")
     bom.write_stock(config.BOM_DIR / "Excel – BOM.xlsx", {"a1": 30}, config.BOM_DIR / "Sikkerhetskopi")
-    client.post("/api/skolear/2026/kopier")
+    mottatt = prosjekt("Mottatt")
+    client.post(f"{G}/{mottatt}/bestilling", json={"handling": "bestilt", "leverandor": "elfa"})
+    client.post(f"{G}/{mottatt}/bestilling", json={"handling": "mottak", "leverandor": "elfa"})
+    client.post(f"{G}/{mottatt}/bestilling", json={"handling": "bestilt", "leverandor": "kjell"})
+    client.post(f"{G}/{mottatt}/bestilling", json={"handling": "mottak", "leverandor": "kjell", "linjer": {"l1": 5}})
+    client.post(f"/api/skolear/{SY}/kopier")
 
     state = client.get("/api/state").get_json()
     res = kjor_siden(state)
@@ -149,5 +158,7 @@ def test_siden_tegner_alle_tilstander(client):
     assert "Skriv endringene til BOM-en" in res["tbody"] and "i BOM-en: 10" in res["tbody"]
     assert "Angre – sett «På lager» tilbake" in res["tbody"] and "satt tilbake" in res["tbody"]
     assert "endret i Excel: 30" in res["tbody"] and "Bruk tallene fra BOM-en i tellingen" in res["tbody"]
+    assert "Alt er lagt på lager" in res["tbody"] and "Registrer mottak" in res["tbody"] and "Angre mottak" in res["tbody"]
+    assert "Registrer tilleggsbestilling" in res["tbody"]  # «Mer»: sett økt etter bestilling
     assert "Historikk" not in res["history"]  # tabellen er tegnet (overskriften står i HTML-malen)
     assert "Sum" in res["history"]

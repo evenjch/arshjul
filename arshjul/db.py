@@ -92,7 +92,13 @@ MIGRERINGER = [
                                       'linjer', json_array_length(linjer), 'backup', backup))
     WHERE skrevet IS NOT NULL;
     """,
+    # 5: varemottak – hvor mye av hver linje som er lagt til «På lager» i BOM-en, og en logg
+    """
+    ALTER TABLE bestilling ADD COLUMN paa_lager TEXT NOT NULL DEFAULT '{}';
+    ALTER TABLE bestilling ADD COLUMN lager_logg TEXT NOT NULL DEFAULT '[]';
+    """,
 ]
+_JSON_BESTILLING = ("linjer", "paa_lager", "lager_logg")
 
 PROSJEKT_FELT = ("navn", "type", "lev", "buf", "notat", "color", "bom")
 GJENNOMFORING_FELT = ("start", "slutt", "sett")
@@ -235,7 +241,8 @@ class Db:
         with self.tx() as con:
             for r in con.execute("SELECT * FROM bestilling"):
                 d = dict(r)
-                d["linjer"] = json.loads(d["linjer"])
+                for k in _JSON_BESTILLING:
+                    d[k] = json.loads(d[k])
                 out.setdefault(str(d["gjennomforing_id"]), {})[d["leverandor"]] = d
         return out
 
@@ -247,8 +254,9 @@ class Db:
                         (gid, key, navn, "bestilt", dato, ordrenr, sett, json.dumps(linjer, ensure_ascii=False)))
 
     def endre_bestilling(self, gid: str, key: str, **felt) -> None:
-        if "linjer" in felt:
-            felt["linjer"] = json.dumps(felt["linjer"], ensure_ascii=False)
+        for k in _JSON_BESTILLING:
+            if k in felt:
+                felt[k] = json.dumps(felt[k], ensure_ascii=False)
         with self.tx() as con:
             cur = con.execute(f"UPDATE bestilling SET {', '.join(k + ' = ?' for k in felt)} "
                               "WHERE gjennomforing_id = ? AND leverandor = ?", (*felt.values(), gid, key))

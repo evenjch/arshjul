@@ -1,8 +1,13 @@
+import datetime as dt
+
 import bestilling
 import config
+import frister
 from hjelp import lag_bom, skriv_rader
 
 G = "/api/gjennomforinger"
+# «trenger mer» sjekkes bare før prosjektet starter: bruk neste skoleår, så testene ikke går ut på dato
+NESTE = frister.skolear_for(dt.date.today()) + 1
 
 
 def rad(besk, lev, bestill, pris=10.0, varenr=""):
@@ -78,7 +83,7 @@ RADER = [
 
 
 def oppsett(client):
-    g = client.post(G, json={"navn": "Testprosjekt", "skolear": 2026, "start": 44, "slutt": 44, "sett": 10}).get_json()
+    g = client.post(G, json={"navn": "Testprosjekt", "skolear": NESTE, "start": 44, "slutt": 44, "sett": 10}).get_json()
     fil = lag_bom(rader=RADER).name
     client.patch(f"{G}/{g['id']}", json={"bom": fil})
     return g["id"]
