@@ -68,15 +68,17 @@ TEST = r"""
   if (__el("status").textContent) log.push("status: " + __el("status").textContent);
   (globalThis.__consoleErrors || []).forEach((e) => log.push("console.error: " + e));
   tryit("renderAll(false)", () => t.renderAll(false));
+  const tabeller = [];
   for (const ar of t.years) {
     t.goSY(ar);
     for (const p of t.projects) {
       t.openOrders.add(p.id); t.tellOpen.set(p.id, true);
       tryit(`panel ${p.skolear} ${p.navn}`, () => t.drawTable());
     }
+    tabeller.push(__el("tbody").innerHTML);  // alle panelene i skoleåret er åpne nå
   }
   tryit("renderAll(true)", () => t.renderAll(true));
-  globalThis.__out = JSON.stringify({ errors: log, tbody: __el("tbody").innerHTML, stats: __el("stats").innerHTML,
+  globalThis.__out = JSON.stringify({ errors: log, tbody: tabeller.join("\n"), stats: __el("stats").innerHTML,
                                       history: __el("histTable").innerHTML });
 })().catch((e) => { globalThis.__out = JSON.stringify({ errors: ["uncaught: " + e.stack] }); });
 """
@@ -124,6 +126,14 @@ def test_siden_tegner_alle_tilstander(client):
     client.post(f"{G}/{skrevet}/bestilling", json={"handling": "bestilt", "leverandor": "kjell"})
     client.post(f"{G}/{skrevet}/telling", json={"linjer": [{"key": "a1", "telt": 10}]})
     assert client.post(f"{G}/{skrevet}/telling/skriv").status_code == 200
+    rettet = prosjekt("Rettet", start=4, slutt=4)
+    client.post(f"{G}/{rettet}/telling", json={"linjer": [{"key": "a1", "telt": 10}, {"key": "l1", "telt": 2}]})
+    client.post(f"{G}/{rettet}/telling/skriv")
+    client.post(f"{G}/{rettet}/telling", json={"linjer": [{"key": "a1", "telt": 9}, {"key": "l1", "telt": 2}]})
+    angret = prosjekt("Angret", start=5, slutt=5)
+    client.post(f"{G}/{angret}/telling", json={"linjer": [{"key": "a1", "telt": 10}]})
+    client.post(f"{G}/{angret}/telling/skriv")
+    client.post(f"{G}/{angret}/telling/angre")
     client.post("/api/skolear/2026/kopier")
 
     state = client.get("/api/state").get_json()
@@ -131,5 +141,7 @@ def test_siden_tegner_alle_tilstander(client):
     assert res["errors"] == []
     assert "Telling etter prosjektet" in res["tbody"]
     assert "Registrer bestilt" in res["tbody"]
+    assert "Skriv endringene til BOM-en" in res["tbody"] and "i BOM-en: 10" in res["tbody"]
+    assert "Angre – sett «På lager» tilbake" in res["tbody"] and "satt tilbake" in res["tbody"]
     assert "Historikk" not in res["history"]  # tabellen er tegnet (overskriften står i HTML-malen)
     assert "Sum" in res["history"]

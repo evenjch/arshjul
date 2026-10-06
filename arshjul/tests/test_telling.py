@@ -129,10 +129,10 @@ def test_tellingsflyt(client):
     # vår egen skriving vises ikke som «BOM-en er endret»
     assert client.get("/api/state").get_json()["prosjekter"][0]["bomStatus"]["endringer"] == []
 
-    # låst etter skriving
+    # ingenting nytt å skrive, og kan ikke slettes mens noe står i BOM-en
     assert client.post(f"{G}/{gid}/telling/skriv").status_code == 400
-    assert client.post(f"{G}/{gid}/telling", json={"linjer": [{"key": "a1", "telt": 1}]}).status_code == 400
     assert client.delete(f"{G}/{gid}/telling").status_code == 400
+    assert (L["iBom"], L["ventende"], len(L["logg"])) == (2, 0, 1)
 
 
 def test_neste_aar_bruker_ny_lagerbeholdning(client):
@@ -155,3 +155,100 @@ def test_slett_og_ugyldig_telling(client):
     client.post(f"{G}/{gid}/telling", json={"linjer": [{"key": "a1", "telt": 3}]})
     assert client.delete(f"{G}/{gid}/telling").status_code == 200
     assert tell(client)["lagret"] is None
+
+
+# ---------- rette, skrive på nytt og angre ----------
+
+def test_write_stock_konflikt_og_ingen_kopi_uten_endring():
+    path = lag_bom(rader=[("Arduino", "Elfa", "A1", 1, 4, 250.0), ("Ledning", "Kjell", "L1", 2, 0, 10.0)])
+    kopier = config.BOM_DIR / "Sikkerhetskopi"
+    res = bom.write_stock(path, {"a1": 9, "l1": 3}, kopier, forventet={"a1": 5, "l1": 0})
+    assert res["skrevet"] == ["l1"]
+    assert res["konflikt"] == [{"key": "a1", "forventet": 5.0, "faktisk": 4.0}]
+    assert [r["lager"] for r in bom.read_bom(path)["rader"]] == [4, 3]
+    # bare konflikter: ingenting skrives, ingen sikkerhetskopi
+    antall = len(list(kopier.iterdir()))
+    res = bom.write_stock(path, {"a1": 9}, kopier, forventet={"a1": 5})
+    assert res["skrevet"] == [] and res["backup"] is None and len(list(kopier.iterdir())) == antall
+
+
+def test_sikkerhetskopier_overskrives_aldri():
+    path = lag_bom(rader=[("Arduino", "Elfa", "A1", 1, 4, 250.0)])
+    kopier = config.BOM_DIR / "Sikkerhetskopi"
+    navn = {bom.write_stock(path, {"a1": n}, kopier)["backup"] for n in (5, 6, 7)}  # samme sekund
+    assert len(navn) == 3
+    assert sorted(bom.read_bom(kopier / n)["rader"][0]["lager"] for n in navn) == [4, 5, 6]
+
+
+def lager(fil):
+    return {r["varenummer"]: r["lager"] for r in bom.read_bom(config.BOM_DIR / fil)["rader"]}
+
+
+def test_rett_telling_og_skriv_bare_endringen(client):
+    gid, fil = oppsett(client)
+    client.post(f"{G}/{gid}/telling", json={"linjer": [{"key": "a1", "telt": 9}, {"key": "l1", "type": "forbruk", "telt": 4}]})
+    client.post(f"{G}/{gid}/telling/skriv")
+    assert lager(fil) == {"A1": 9, "L1": 4}
+
+    # rett Arduino til 7: «før»-tallene fra BOM-en er de opprinnelige, ikke de nye
+    client.post(f"{G}/{gid}/telling", json={"linjer": [{"key": "a1", "telt": 7}, {"key": "l1", "type": "forbruk", "telt": 4}]})
+    L = tell(client)["lagret"]
+    assert (L["ventende"], L["iBom"]) == (1, 2)
+    assert {l["key"]: l["lagerFor"] for l in L["linjer"]} == {"a1": 4, "l1": 0}
+    assert L["svinnKr"] == 750.0  # forventet 10, telt 7
+
+    r = client.post(f"{G}/{gid}/telling/skriv").get_json()
+    assert r["skrevet"] == ["a1"] and r["konflikt"] == []
+    assert lager(fil) == {"A1": 7, "L1": 4}
+    L = tell(client)["lagret"]
+    assert (L["ventende"], [x["handling"] for x in L["logg"]]) == (0, ["skrevet", "skrevet"])
+
+
+def test_endret_i_excel_overskrives_ikke(client):
+    gid, fil = oppsett(client)
+    client.post(f"{G}/{gid}/telling", json={"linjer": [{"key": "a1", "telt": 9}, {"key": "l1", "type": "forbruk", "telt": 4}]})
+    client.post(f"{G}/{gid}/telling/skriv")
+    # ingeniøren endrer Arduino i Excel etterpå
+    bom.write_stock(config.BOM_DIR / fil, {"a1": 12}, config.BOM_DIR / "Sikkerhetskopi")
+    client.post(f"{G}/{gid}/telling", json={"linjer": [{"key": "a1", "telt": 8}, {"key": "l1", "type": "forbruk", "telt": 5}]})
+    r = client.post(f"{G}/{gid}/telling/skriv").get_json()
+    assert r["skrevet"] == ["l1"]
+    assert [(k["beskrivelse"], k["faktisk"], k["forventet"]) for k in r["konflikt"]] == [("Arduino", 12, 9)]
+    assert lager(fil) == {"A1": 12, "L1": 5}
+    assert tell(client)["lagret"]["ventende"] == 1  # Arduino venter fortsatt
+
+
+def test_angre_setter_tilbake_og_aapner_for_sletting(client):
+    gid, fil = oppsett(client)
+    client.post(f"{G}/{gid}/telling", json={"linjer": [{"key": "a1", "telt": 9}, {"key": "l1", "type": "forbruk", "telt": 4}]})
+    client.post(f"{G}/{gid}/telling/skriv")
+    r = client.post(f"{G}/{gid}/telling/angre").get_json()
+    assert sorted(r["skrevet"]) == ["a1", "l1"]
+    assert lager(fil) == {"A1": 4, "L1": 0}  # som før tellingen
+    L = tell(client)["lagret"]
+    assert (L["iBom"], L["skrevet"], L["ventende"], L["logg"][-1]["handling"]) == (0, None, 2, "angret")
+    assert client.post(f"{G}/{gid}/telling/angre").status_code == 400
+    assert client.delete(f"{G}/{gid}/telling").status_code == 200
+
+
+def test_migrering_4_fyller_inn_det_som_er_skrevet(tmp_path, monkeypatch):
+    import json as _json
+
+    import db as dbmod
+    gammel = dbmod.MIGRERINGER[:3]
+    monkeypatch.setattr(dbmod, "MIGRERINGER", gammel)
+    d = dbmod.Db(tmp_path / "x.db")
+    d.init()
+    with d.tx() as con:
+        con.execute("INSERT INTO prosjekt (id, navn) VALUES ('p', 'P')")
+        con.execute("INSERT INTO gjennomforing (id, prosjekt_id, skolear, start, slutt) VALUES (1, 'p', 2026, 40, 40)")
+        con.execute("INSERT INTO telling (gjennomforing_id, dato, linjer, skrevet, backup) VALUES (1, '2026-10-06', ?, '2026-10-06', 'k.xlsx')",
+                    (_json.dumps([{"key": "a1", "telt": 9}, {"key": "l1", "telt": 4.5}]),))
+        con.execute("INSERT INTO gjennomforing (id, prosjekt_id, skolear, start, slutt) VALUES (2, 'p', 2027, 40, 40)")
+        con.execute("INSERT INTO telling (gjennomforing_id, dato, linjer) VALUES (2, '2026-10-06', '[]')")
+    monkeypatch.undo()
+    d.init()
+    t = d.tellinger()
+    assert t["1"]["skrevet_verdier"] == {"a1": 9, "l1": 4.5}
+    assert t["1"]["logg"][0]["backup"] == "k.xlsx"
+    assert (t["2"]["skrevet_verdier"], t["2"]["logg"]) == ({}, [])

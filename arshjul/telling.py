@@ -69,6 +69,12 @@ def lag(grunnlag_: list[dict], innspill: dict[str, dict]) -> list[dict]:
     return out
 
 
+def ventende(linjer: list[dict], skrevet_verdier: dict[str, float]) -> list[str]:
+    """Linjer der det telte ikke er det som sist ble skrevet til BOM-en."""
+    return [l["key"] for l in linjer
+            if l["key"] not in skrevet_verdier or abs(l["telt"] - skrevet_verdier[l["key"]]) > 1e-9]
+
+
 def oppsummering(linjer: list[dict]) -> dict:
     """Svinn regnes bare for utstyr; forbruk som ikke er brukt opp er bare et avvik."""
     svinn = [l for l in linjer if l["type"] == "utstyr" and l["telt"] < l["forventet"] - 1e-9]

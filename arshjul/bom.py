@@ -129,12 +129,17 @@ def diff(old: list[dict], new: list[dict]) -> list[dict]:
 
 # ---------- oppdatere lager etter telling ----------
 
-def write_stock(path: Path, verdier: dict[str, float], backup_dir: Path) -> dict:
+def write_stock(path: Path, verdier: dict[str, float], backup_dir: Path,
+                forventet: dict[str, float] | None = None) -> dict:
     """Skriv nye «På lager»-tall (kolonne H) i en eksisterende BOM.
 
-    verdier: {linje-nøkkel: antall}. Bare kolonne H endres. Linjer som ikke finnes,
-    eller der nøkkelen står på flere rader, hoppes over. Lager en sikkerhetskopi først.
+    verdier:   {linje-nøkkel: nytt antall}. Bare kolonne H endres.
+    forventet: {linje-nøkkel: antall cellen skal ha nå}. Står det noe annet der (endret i
+               Excel siden sist), skrives linjen ikke, men meldes som konflikt.
+    Linjer som ikke finnes, eller der nøkkelen står på flere rader, hoppes over.
+    Lager en sikkerhetskopi først, men bare hvis noe faktisk skal skrives.
     """
+    forventet = forventet or {}
     if (path.parent / f"~${path.name}").exists():
         raise BomError(f"«{path.name}» er åpen i Excel. Lukk den og prøv igjen.")
     try:
@@ -150,24 +155,33 @@ def write_stock(path: Path, verdier: dict[str, float], backup_dir: Path) -> dict
         besk = _txt(ws[f"C{r}"].value)
         if besk:
             rader.setdefault(rad_key({"beskrivelse": besk, "varenummer": _txt(ws[f"F{r}"].value)}), []).append(r)
-    skrevet, hoppet = [], []
+    skrevet, hoppet, konflikt = [], [], []
     for key, antall in verdier.items():
         rows = rader.get(key, [])
         if len(rows) != 1:
             hoppet.append(key)
             continue
-        ws[f"H{rows[0]}"] = int(antall) if float(antall).is_integer() else float(antall)
+        celle = ws[f"H{rows[0]}"]
+        if key in forventet and abs(_num(celle.value) - float(forventet[key])) > 1e-9:
+            konflikt.append({"key": key, "forventet": float(forventet[key]), "faktisk": _num(celle.value)})
+            continue
+        celle.value = int(antall) if float(antall).is_integer() else float(antall)
         skrevet.append(key)
+    if not skrevet:
+        return {"skrevet": [], "hoppet": hoppet, "konflikt": konflikt, "backup": None}
 
     backup_dir.mkdir(parents=True, exist_ok=True)
-    backup = backup_dir / f"{path.stem} {dt.datetime.now():%Y-%m-%d %H%M%S}{path.suffix}"
+    stamp = f"{path.stem} {dt.datetime.now():%Y-%m-%d %H%M%S}"
+    backup, n = backup_dir / f"{stamp}{path.suffix}", 2
+    while backup.exists():  # aldri overskriv en tidligere sikkerhetskopi
+        backup, n = backup_dir / f"{stamp} ({n}){path.suffix}", n + 1
     shutil.copy2(path, backup)
     wb.calculation.fullCalcOnLoad = True  # Excel regner ut «Å bestille» og «Total» på nytt
     try:
         wb.save(path)
     except PermissionError as e:
         raise BomError(f"«{path.name}» er låst. Lukk den i Excel og prøv igjen.") from e
-    return {"skrevet": skrevet, "hoppet": hoppet, "backup": backup.name}
+    return {"skrevet": skrevet, "hoppet": hoppet, "konflikt": konflikt, "backup": backup.name}
 
 
 # ---------- nye filer ----------

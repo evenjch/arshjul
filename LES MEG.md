@@ -36,6 +36,8 @@ Krever Python 3.10 eller nyere. Uten startfilen: `pip install -r requirements.tx
 | Sette opp neste skoleår        | «Kopier til 2027/28 …» over tabellen, velg prosjektene. Årshjulet minner deg på det om våren |
 | Telle etter prosjektet         | Åpne «Bestilling» → «Telling etter prosjektet». Velg utstyr/forbruk, før opp det du har igjen, «Lagre telling» |
 | Oppdatere lageret i BOM-en     | Etter tellingen: «Oppdater «På lager» i BOM-en …» og bekreft. Lukk BOM-en i Excel først |
+| Rette en telling               | Endre tallene, «Lagre endringer», så «Skriv endringene til BOM-en …». Bare det som er endret skrives |
+| Angre en telling               | «Angre – sett «På lager» tilbake …». Linjer du har endret i Excel siden, røres ikke |
 | Se hva prosjektene har kostet  | «Historikk» under tabellen: bestilt per prosjekt og skoleår, og per sett  |
 | Lage BOM for nytt prosjekt     | «Lag BOM-mal» – filen lages i BOM-mappen med navn, dato, frist og antall sett, og åpnes i Excel |
 | Koble til en BOM du allerede har | Legg filen i BOM-mappen, velg den i «Koble til fil …»                  |

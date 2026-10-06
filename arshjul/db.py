@@ -81,6 +81,17 @@ MIGRERINGER = [
         PRIMARY KEY (prosjekt_id, key)
     );
     """,
+    # 4: hva som sist ble skrevet til BOM-en per linje (for retting og angring), og en logg
+    """
+    ALTER TABLE telling ADD COLUMN skrevet_verdier TEXT NOT NULL DEFAULT '{}';
+    ALTER TABLE telling ADD COLUMN logg TEXT NOT NULL DEFAULT '[]';
+    UPDATE telling SET
+        skrevet_verdier = (SELECT json_group_object(json_extract(value, '$.key'), json_extract(value, '$.telt'))
+                           FROM json_each(telling.linjer)),
+        logg = json_array(json_object('tid', skrevet, 'handling', 'skrevet',
+                                      'linjer', json_array_length(linjer), 'backup', backup))
+    WHERE skrevet IS NOT NULL;
+    """,
 ]
 
 PROSJEKT_FELT = ("navn", "type", "lev", "buf", "notat", "color", "bom")
@@ -255,21 +266,28 @@ class Db:
             out = {}
             for r in con.execute("SELECT * FROM telling"):
                 d = dict(r)
-                d["linjer"] = json.loads(d["linjer"])
+                for k in ("linjer", "skrevet_verdier", "logg"):
+                    d[k] = json.loads(d[k])
                 out[str(d.pop("gjennomforing_id"))] = d
         return out
 
     def lagre_telling(self, gid: str, prosjekt_id: str, dato: str, linjer: list[dict]) -> None:
         """Lagre tellingen og husk utstyr/forbruk for prosjektet til neste år."""
         with self.tx() as con:
-            con.execute("INSERT OR REPLACE INTO telling (gjennomforing_id, dato, linjer) VALUES (?,?,?)",
+            # en rettet telling beholder det som er skrevet til BOM-en og loggen
+            con.execute("""INSERT INTO telling (gjennomforing_id, dato, linjer) VALUES (?,?,?)
+                           ON CONFLICT (gjennomforing_id) DO UPDATE SET dato = excluded.dato, linjer = excluded.linjer""",
                         (gid, dato, json.dumps(linjer, ensure_ascii=False)))
             con.executemany("INSERT OR REPLACE INTO linjetype (prosjekt_id, key, type) VALUES (?,?,?)",
                             [(prosjekt_id, l["key"], l["type"]) for l in linjer])
 
-    def telling_skrevet(self, gid: str, dato: str, backup: str) -> None:
+    def telling_skrevet(self, gid: str, skrevet_verdier: dict[str, float], logg: list[dict],
+                        dato: str | None, backup: str | None) -> None:
+        """Etter skriving eller angring: hva BOM-en nå har fra tellingen. Tomt = ingenting skrevet."""
         with self.tx() as con:
-            con.execute("UPDATE telling SET skrevet = ?, backup = ? WHERE gjennomforing_id = ?", (dato, backup, gid))
+            con.execute("UPDATE telling SET skrevet = ?, backup = ?, skrevet_verdier = ?, logg = ? WHERE gjennomforing_id = ?",
+                        (dato if skrevet_verdier else None, backup, json.dumps(skrevet_verdier, ensure_ascii=False),
+                         json.dumps(logg, ensure_ascii=False), gid))
 
     def slett_telling(self, gid: str) -> None:
         with self.tx() as con:

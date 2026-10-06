@@ -83,7 +83,8 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 - [x] Under «Bestilling» → «Telling etter prosjektet»: før opp det du har igjen per linje. Åpnes av seg selv når innleveringsuka er passert.
 - [x] **Utstyr** (skal komme tilbake) eller **forbruk** (brukes opp) velges per linje i tellingen og huskes for prosjektet til neste år (tabellen `linjetype`). Kategori-kolonnen brukes ikke – den beskriver hva slags komponent det er.
 - [x] Forventet = på lager + bestilt (registrert, ellers det BOM-en sa), minus det som er delt ut for forbruk. Avvik og **svinn** (utstyr som ikke kom tilbake, i kroner) vises, og svinn står også i historikken.
-- [x] **«Oppdater På lager i BOM-en»** skriver de telte tallene inn i kolonne H, etter bekreftelse. Bare kolonne H endres; formler, formatering og validering står (testet på kopi av en ekte BOM). Det lages alltid en sikkerhetskopi i `BOM/Sikkerhetskopi/` først, og filen må være lukket i Excel. Etter skriving er tellingen låst.
+- [x] **«Oppdater På lager i BOM-en»** skriver de telte tallene inn i kolonne H, etter bekreftelse. Bare kolonne H endres; formler, formatering og validering står (testet på kopi av en ekte BOM). Det lages alltid en sikkerhetskopi i `BOM/Sikkerhetskopi/` først, og filen må være lukket i Excel.
+- [x] **Rette og angre** (migrering 4). En telling kan rettes etter skriving; «før»-tallene fra den opprinnelige tellingen beholdes, så ingenting telles to ganger. Bare endrede linjer skrives på nytt. **«Angre»** setter «På lager» tilbake til tallene fra før tellingen. Begge sjekker først at cellen fortsatt har tallet årshjulet skrev sist; er den endret i Excel siden, røres den ikke, og du får beskjed. Hver skriving og angring logges med sikkerhetskopi. En telling som står i BOM-en kan ikke slettes – angre først.
 - [x] Neste års BOM-utregning bruker den nye lagerbeholdningen.
 
 ## Fase 4 – Server og faglærerpanel

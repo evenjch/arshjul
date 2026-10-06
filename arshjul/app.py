@@ -144,7 +144,10 @@ def telling_status(g: dict, c: dict | None, st: dict | None, lagret: dict, tell:
                    typer: dict) -> dict | None:
     """Lagret telling, eller grunnlaget for en ny (fra BOM-en slik den er nå)."""
     if tell:
-        return {"lagret": {**tell, **telling.oppsummering(tell["linjer"])}, "grunnlag": None, "antattBestilt": False}
+        lagret_ = {**tell, **telling.oppsummering(tell["linjer"]),
+                   "ventende": len(telling.ventende(tell["linjer"], tell["skrevet_verdier"])),
+                   "iBom": len(tell["skrevet_verdier"])}
+        return {"lagret": lagret_, "grunnlag": None, "antattBestilt": False}
     if not c or not c["linjer"]:
         return None
     sett = g.get("sett") or (st or {}).get("settFil") or 0
@@ -404,11 +407,13 @@ def acknowledge(gid):
 
 @app.post("/api/gjennomforinger/<gid>/telling")
 def save_count(gid):
-    """Lagre tellingen. linjer: [{key, type, telt}]. Tallene før prosjektet hentes fra BOM-en nå."""
+    """Lagre eller rett tellingen. linjer: [{key, type, telt}].
+
+    En ny telling henter «før»-tallene fra BOM-en nå. En rettet telling beholder tallene den
+    ble laget fra – ellers ville et lager som allerede er skrevet til BOM-en, blitt telt to ganger.
+    """
     g = store.gjennomforing(gid)
     gammel = store.tellinger().get(gid)
-    if gammel and gammel["skrevet"]:
-        raise bomlib.BomError("Tellingen er allerede skrevet til BOM-en og kan ikke endres.")
     body = request.get_json(force=True) or {}
     try:
         innspill = {str(l["key"]): {"type": l.get("type", "utstyr"), "telt": l["telt"]}
@@ -431,27 +436,68 @@ def save_count(gid):
     return jsonify(telling.oppsummering(linjer))
 
 
-@app.post("/api/gjennomforinger/<gid>/telling/skriv")
-def write_count(gid):
-    """Skriv de telte tallene inn i «På lager» i BOM-en (etter bekreftelse i nettleseren)."""
-    g = store.gjennomforing(gid)
-    tell = store.tellinger().get(gid)
-    if not tell:
-        raise bomlib.BomError("Lagre tellingen først.")
-    if tell["skrevet"]:
-        raise bomlib.BomError("Tellingen er allerede skrevet til BOM-en.")
-    path = bom_path(g)
+def _skriv_lager(g: dict, tell: dict, verdier: dict[str, float], forventet: dict[str, float]) -> dict:
+    """Skriv til «På lager» med konfliktsjekk, og hold «sist sett» i takt så vår egen endring
+    ikke vises som «BOM-en er endret». Konflikter får beskrivelse med til nettleseren."""
     with _lock:
-        res = bomlib.write_stock(path, {l["key"]: l["telt"] for l in tell["linjer"]}, BOM_DIR / "Sikkerhetskopi")
-        # vår egen endring skal ikke dukke opp som «BOM-en er endret»
+        res = bomlib.write_stock(bom_path(g), verdier, BOM_DIR / "Sikkerhetskopi", forventet)
         snaps = _read_json(SNAP_FILE, {})
-        if g["bom"] in snaps:
-            nye = {l["key"]: l["telt"] for l in tell["linjer"] if l["key"] in res["skrevet"]}
+        if g["bom"] in snaps and res["skrevet"]:
+            nye = {k: verdier[k] for k in res["skrevet"]}
             for r in snaps[g["bom"]]["rader"]:
                 if bomlib.rad_key(r) in nye:
                     r["lager"] = nye[bomlib.rad_key(r)]
             _write_json(SNAP_FILE, snaps)
-    store.telling_skrevet(gid, dt.date.today().isoformat(), res["backup"])
+    navn = {l["key"]: l["beskrivelse"] for l in tell["linjer"]}
+    for k in res["konflikt"]:
+        k["beskrivelse"] = navn.get(k["key"], k["key"])
+    return res
+
+
+def _logg(tell: dict, handling: str, res: dict) -> list[dict]:
+    return tell["logg"] + [{"tid": dt.datetime.now().isoformat(timespec="minutes"), "handling": handling,
+                            "linjer": len(res["skrevet"]), "konflikter": len(res["konflikt"]), "backup": res["backup"]}]
+
+
+@app.post("/api/gjennomforinger/<gid>/telling/skriv")
+def write_count(gid):
+    """Skriv det som er telt (og ikke allerede skrevet) inn i «På lager» i BOM-en.
+
+    Bare celler som fortsatt har verdien årshjulet sist kjente til, overskrives: det som ble
+    skrevet sist, eller «på lager» da tellingen ble gjort. Er cellen endret i Excel siden,
+    hoppes linjen over og meldes som konflikt.
+    """
+    g = store.gjennomforing(gid)
+    tell = store.tellinger().get(gid)
+    if not tell:
+        raise bomlib.BomError("Lagre tellingen først.")
+    sv = tell["skrevet_verdier"]
+    nye = telling.ventende(tell["linjer"], sv)
+    if not nye:
+        raise bomlib.BomError("Alt som er telt, står allerede i BOM-en.")
+    linjer = {l["key"]: l for l in tell["linjer"]}
+    res = _skriv_lager(g, tell, {k: linjer[k]["telt"] for k in nye},
+                       {k: sv.get(k, linjer[k]["lagerFor"]) for k in nye})
+    if res["skrevet"]:
+        sv = {**sv, **{k: linjer[k]["telt"] for k in res["skrevet"]}}
+        store.telling_skrevet(gid, sv, _logg(tell, "skrevet", res), dt.date.today().isoformat(), res["backup"])
+    return jsonify(res)
+
+
+@app.post("/api/gjennomforinger/<gid>/telling/angre")
+def undo_count(gid):
+    """Sett «På lager» tilbake til tallene fra før tellingen, for linjer årshjulet har skrevet."""
+    g = store.gjennomforing(gid)
+    tell = store.tellinger().get(gid)
+    if not tell or not tell["skrevet_verdier"]:
+        raise bomlib.BomError("Ingenting fra denne tellingen står i BOM-en.")
+    sv = tell["skrevet_verdier"]
+    linjer = {l["key"]: l for l in tell["linjer"]}
+    keys = [k for k in sv if k in linjer]
+    res = _skriv_lager(g, tell, {k: linjer[k]["lagerFor"] for k in keys}, {k: sv[k] for k in keys})
+    if res["skrevet"]:
+        sv = {k: v for k, v in sv.items() if k not in res["skrevet"]}
+        store.telling_skrevet(gid, sv, _logg(tell, "angret", res), tell["skrevet"], tell["backup"])
     return jsonify(res)
 
 
@@ -459,8 +505,8 @@ def write_count(gid):
 def delete_count(gid):
     store.gjennomforing(gid)
     tell = store.tellinger().get(gid)
-    if tell and tell["skrevet"]:
-        raise bomlib.BomError("Tellingen er skrevet til BOM-en og kan ikke slettes. Bruk sikkerhetskopien om noe ble feil.")
+    if tell and tell["skrevet_verdier"]:
+        raise bomlib.BomError("Noe fra tellingen står i BOM-en. Angre først, så kan den slettes.")
     store.slett_telling(gid)
     return jsonify({"ok": True})
 
