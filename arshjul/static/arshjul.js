@@ -28,8 +28,13 @@
     return loading;
   }
   async function doLoad() {
+    let st;
+    try { st = await api("GET", "/api/state"); }
+    catch (e) {
+      setStatus(e instanceof TypeError ? "Får ikke kontakt med årshjulet. Kjører «Start årshjul»-vinduet fortsatt?" : e.message);
+      return;
+    }
     try {
-      const st = await api("GET", "/api/state");
       CLOSED = st.stengte; ledigeBom = st.ledigeBom;
       SYS = st.skolear; IDAG = st.idag; NESTE8 = st.neste8; OPPSETT = st.oppsett;
       if (SY === null || !SYS.some((s) => s.ar === SY)) SY = st.skolearNa;
@@ -45,7 +50,9 @@
       renderAll(sameIds && !!typing);
       drawClosed();
     } catch (e) {
-      setStatus("Får ikke kontakt med årshjulet. Kjører «Start årshjul»-vinduet fortsatt?");
+      // en feil i årshjulets egen kode, ikke i kontakten med serveren
+      console.error(e);
+      setStatus("Noe gikk galt da siden skulle tegnes: " + e.message + ". Last siden på nytt, og si fra hvis det skjer igjen.");
     }
   }
 

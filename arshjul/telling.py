@@ -73,7 +73,7 @@ def oppsummering(linjer: list[dict]) -> dict:
     """Svinn regnes bare for utstyr; forbruk som ikke er brukt opp er bare et avvik."""
     svinn = [l for l in linjer if l["type"] == "utstyr" and l["telt"] < l["forventet"] - 1e-9]
     return {
-        "linjer": len(linjer),
+        "telte": len(linjer),
         "avvik": sum(1 for l in linjer if abs(l["telt"] - l["forventet"]) > 1e-9),
         "svinn": len(svinn),
         "svinnKr": round(sum((l["forventet"] - l["telt"]) * l["pris"] for l in svinn), 2),

@@ -1,2 +1,3 @@
 -r requirements.txt
 pytest~=8.0
+mini-racer~=0.14  # kjører nettsidens JavaScript i testene (tests/test_side.py)

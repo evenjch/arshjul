@@ -40,7 +40,7 @@ def test_lag_og_oppsummering():
     assert [l["key"] for l in linjer] == ["a1", "l1"]  # skrue er ikke telt
     o = telling.oppsummering(linjer)
     # Arduino: forventet 10, telt 8 → svinn 2 × 250; ledning: forventet 0, telt 3 → avvik, ikke svinn
-    assert o == {"linjer": 2, "avvik": 2, "svinn": 1, "svinnKr": 500.0}
+    assert o == {"telte": 2, "avvik": 2, "svinn": 1, "svinnKr": 500.0}
     with pytest.raises(ValueError):
         telling.lag(g, {"a1": {"type": "noe", "telt": 1}})
     with pytest.raises(ValueError):
@@ -104,9 +104,11 @@ def test_tellingsflyt(client):
 
     r = client.post(f"{G}/{gid}/telling", json={"linjer": [
         {"key": "a1", "type": "utstyr", "telt": 9}, {"key": "l1", "type": "forbruk", "telt": 4}]})
-    assert r.get_json() == {"linjer": 2, "avvik": 2, "svinn": 1, "svinnKr": 250.0}
+    assert r.get_json() == {"telte": 2, "avvik": 2, "svinn": 1, "svinnKr": 250.0}
     L = tell(client)["lagret"]
     assert (L["svinnKr"], L["skrevet"]) == (250.0, None)
+    # de telte linjene må følge med til nettleseren, ikke bare antallet
+    assert [l["key"] for l in L["linjer"]] == ["a1", "l1"] and L["telte"] == 2
 
     # typen huskes for prosjektet (neste år)
     import app as arshjul
