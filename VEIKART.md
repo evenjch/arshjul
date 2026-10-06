@@ -71,6 +71,8 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 - [x] «Trenger mer / bestilt for mye» sjekkes bare før prosjektet starter og før det er telt – etterpå endres BOM-en av tellinger og neste års innkjøp.
 - [ ] Prosjekter uten BOM kan ikke markeres som bestilt ennå.
 
+**En BOM-linje kjennes igjen på leverandør + varenummer** (eller leverandør + beskrivelse uten varenummer), fordi varenumre bare er unike hos én leverandør – RS og Farnell kan ha samme nummer på hver sin vare. Bytter en linje leverandør, regnes den som en ny linje. (Migrering 6 gjorde om lagrede bestillinger; tellinger fra testingen ble fjernet.)
+
 **Merk:** leverandørnavn må skrives likt i alle BOM-er («RS» og «RS-Online» er to leverandører). Det får betydning når bestillinger skal samles på tvers av prosjekter.
 
 ## Fase 2 – Skoleår og historikk ✓

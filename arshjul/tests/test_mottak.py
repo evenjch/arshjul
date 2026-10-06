@@ -33,7 +33,7 @@ def arduino_prosjekt(client, sy, lager_for=30):
 def test_tapt_to_bestill_to_motta_to(client):
     """Ingeniørens eksempel: 30 lånt ut, 28 kom tilbake, bestill 2, de kommer."""
     i_fjor, fil = arduino_prosjekt(client, NA - 1)
-    client.post(f"{G}/{i_fjor}/telling", json={"linjer": [{"key": "a1", "telt": 28}]})
+    client.post(f"{G}/{i_fjor}/telling", json={"linjer": [{"key": "elfa|a1", "telt": 28}]})
     client.post(f"{G}/{i_fjor}/telling/skriv")
     assert lager(fil) == {"A1": 28}
 
@@ -44,7 +44,7 @@ def test_tapt_to_bestill_to_motta_to(client):
 
     # de to kommer
     r = post(client, i_ar, handling="mottak", leverandor="elfa").get_json()
-    assert r["skrevet"] == ["a1"] and r["backup"]
+    assert r["skrevet"] == ["elfa|a1"] and r["backup"]
     assert lager(fil) == {"A1": 30}
     p = rad(client, NA)
     elfa = p["bestilling"]["grupper"][0]
@@ -54,7 +54,7 @@ def test_tapt_to_bestill_to_motta_to(client):
     assert [m["gjenstar"] for m in elfa["mottak"]] == [0]
 
     # tellingen etter neste prosjekt: før = 30, ikke 32
-    g = {l["key"]: l for l in p["telling"]["grunnlag"]}["a1"]
+    g = {l["key"]: l for l in p["telling"]["grunnlag"]}["elfa|a1"]
     assert (g["lagerFor"], g["bestilt"]) == (30, 0)
 
     # fjorårets gjennomføring sammenligner ikke lenger mot BOM-en
@@ -64,7 +64,7 @@ def test_tapt_to_bestill_to_motta_to(client):
 def test_delvis_mottak_og_angre(client):
     gid, fil = arduino_prosjekt(client, NA + 1, lager_for=27)  # 3 å bestille
     post(client, gid, handling="bestilt", leverandor="elfa")
-    assert post(client, gid, handling="mottak", leverandor="elfa", linjer={"a1": 1}).status_code == 200
+    assert post(client, gid, handling="mottak", leverandor="elfa", linjer={"elfa|a1": 1}).status_code == 200
     elfa = rad(client, NA + 1)["bestilling"]["grupper"][0]
     assert (elfa["status"], elfa["mottak"][0]["lagt"], elfa["mottak"][0]["gjenstar"]) == ("delvis", 1, 2)
     assert lager(fil) == {"A1": 28}
@@ -85,7 +85,7 @@ def test_delvis_mottak_og_angre(client):
     assert post(client, gid, handling="mottak", leverandor="elfa").status_code == 400  # ingenting igjen
 
     r = post(client, gid, handling="angre_mottak", leverandor="elfa").get_json()
-    assert r["skrevet"] == ["a1"]
+    assert r["skrevet"] == ["elfa|a1"]
     assert lager(fil) == {"A1": 27}
     elfa = rad(client, NA + 1)["bestilling"]["grupper"][0]
     assert (elfa["status"], elfa["mottak"][0]["lagt"]) == ("bestilt", 0)
@@ -96,7 +96,7 @@ def test_mottak_legger_til_det_som_star_i_excel(client):
     """Er «På lager» endret i Excel imens, legges mottaket til det nye tallet."""
     gid, fil = arduino_prosjekt(client, NA + 1, lager_for=28)
     post(client, gid, handling="bestilt", leverandor="elfa")
-    bom.write_stock(config.BOM_DIR / fil, {"a1": 25}, config.BOM_DIR / "Sikkerhetskopi")  # «Excel»
+    bom.write_stock(config.BOM_DIR / fil, {"elfa|a1": 25}, config.BOM_DIR / "Sikkerhetskopi")  # «Excel»
     post(client, gid, handling="mottak", leverandor="elfa")
     assert lager(fil) == {"A1": 27}
 
@@ -105,7 +105,7 @@ def test_angre_mottak_blir_ikke_negativt(client):
     gid, fil = arduino_prosjekt(client, NA + 1, lager_for=28)
     post(client, gid, handling="bestilt", leverandor="elfa")
     post(client, gid, handling="mottak", leverandor="elfa")  # 28 + 2 = 30
-    bom.write_stock(config.BOM_DIR / fil, {"a1": 1}, config.BOM_DIR / "Sikkerhetskopi")  # «Excel»: 1 igjen
+    bom.write_stock(config.BOM_DIR / fil, {"elfa|a1": 1}, config.BOM_DIR / "Sikkerhetskopi")  # «Excel»: 1 igjen
     r = post(client, gid, handling="angre_mottak", leverandor="elfa").get_json()
     assert r["skrevet"] == [] and r["konflikt"][0]["beskrivelse"] == "Arduino Uno"
     assert lager(fil) == {"A1": 1}
@@ -116,15 +116,15 @@ def test_ugyldig_mottak(client):
     gid, _ = arduino_prosjekt(client, NA + 1, lager_for=28)
     assert post(client, gid, handling="mottak", leverandor="elfa").status_code == 400  # ikke bestilt
     post(client, gid, handling="bestilt", leverandor="elfa")
-    assert post(client, gid, handling="mottak", leverandor="elfa", linjer={"a1": -1}).status_code == 400
+    assert post(client, gid, handling="mottak", leverandor="elfa", linjer={"elfa|a1": -1}).status_code == 400
     assert post(client, gid, handling="mottak", leverandor="elfa", linjer={"finnes-ikke": 1}).status_code == 400
-    assert post(client, gid, handling="mottak", leverandor="elfa", linjer={"a1": "mange"}).status_code == 400
+    assert post(client, gid, handling="mottak", leverandor="elfa", linjer={"elfa|a1": "mange"}).status_code == 400
     assert post(client, gid, handling="angre_mottak", leverandor="elfa").status_code == 400
 
 
 def test_write_stock_legg_til():
     path = lag_bom(rader=[("Arduino Uno", "Elfa", "A1", 1, 28, 250.0)])
-    res = bom.write_stock(path, {"a1": 2}, config.BOM_DIR / "Sikkerhetskopi", legg_til=True)
-    assert res["nye"] == {"a1": 30} and lager(path.name) == {"A1": 30}
-    res = bom.write_stock(path, {"a1": -31}, config.BOM_DIR / "Sikkerhetskopi", legg_til=True)
+    res = bom.write_stock(path, {"elfa|a1": 2}, config.BOM_DIR / "Sikkerhetskopi", legg_til=True)
+    assert res["nye"] == {"elfa|a1": 30} and lager(path.name) == {"A1": 30}
+    res = bom.write_stock(path, {"elfa|a1": -31}, config.BOM_DIR / "Sikkerhetskopi", legg_til=True)
     assert res["skrevet"] == [] and res["konflikt"][0]["faktisk"] == 30

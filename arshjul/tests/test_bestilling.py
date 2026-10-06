@@ -30,7 +30,7 @@ def test_grupper_etter_leverandor():
 
 def test_frys_tar_bare_med_det_som_skal_bestilles():
     linjer = bestilling.frys([rad("A", "Elfa", 6, varenr="A1"), rad("B", "Elfa", 0)])
-    assert [(l["key"], l["antall"]) for l in linjer] == [("a1", 6)]
+    assert [(l["key"], l["antall"]) for l in linjer] == [("elfa|a1", 6)]
 
 
 def test_avvik_tillegg_og_overskudd():
@@ -43,7 +43,7 @@ def test_avvik_tillegg_og_overskudd():
 def test_slaa_sammen_beholder_det_storste():
     gammel = bestilling.frys([rad("A", "Elfa", 6), rad("B", "Elfa", 5)])
     ny = bestilling.frys([rad("A", "Elfa", 8), rad("B", "Elfa", 3)])
-    assert {l["key"]: l["antall"] for l in bestilling.slaa_sammen(gammel, ny)} == {"a": 8, "b": 5}
+    assert {l["key"]: l["antall"] for l in bestilling.slaa_sammen(gammel, ny)} == {"elfa|a": 8, "elfa|b": 5}
 
 
 def test_oversikt_status():

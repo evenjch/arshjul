@@ -98,25 +98,43 @@ def calc(bom: dict, sett: int) -> dict:
 # ---------- endringer siden sist ----------
 
 def rad_key(r: dict) -> str:
-    return (r.get("varenummer") or r.get("beskrivelse") or "").strip().lower()
+    """Identiteten til en BOM-linje: leverandør + varenummer (eller beskrivelse uten varenummer).
+
+    Varenumre er bare unike hos én leverandør – RS og Farnell kan ha samme nummer på hver sin vare.
+    """
+    lev = (r.get("leverandor") or "").strip().lower()
+    return f"{lev}|{(r.get('varenummer') or r.get('beskrivelse') or '').strip().lower()}"
 
 
-FIELDS = [("beskrivelse", "beskrivelse"), ("leverandor", "leverandør"), ("prSett", "per sett"),
+def _unike(rader: list[dict]) -> list[tuple[str, dict]]:
+    """(nøkkel, rad) der like nøkler får «#2», «#3» … i rekkefølge, så to helt like linjer
+    i samme BOM ikke blandes sammen."""
+    sett: dict[str, int] = {}
+    out = []
+    for r in rader:
+        k = rad_key(r)
+        sett[k] = sett.get(k, 0) + 1
+        out.append((k if sett[k] == 1 else f"{k}#{sett[k]}", r))
+    return out
+
+
+# leverandør er en del av nøkkelen: bytte leverandør vises som en linje fjernet og en ny
+FIELDS = [("beskrivelse", "beskrivelse"), ("prSett", "per sett"),
           ("lager", "på lager"), ("pris", "pris"), ("kommentar", "kommentar")]
 
 
 def diff(old: list[dict], new: list[dict]) -> list[dict]:
-    a = {rad_key(r): r for r in old}
-    b = {rad_key(r): r for r in new}
+    old_k, new_k = _unike(old), _unike(new)
+    a, b = dict(old_k), dict(new_k)
     out = []
-    for r in new:
-        if rad_key(r) not in a:
+    for k, r in new_k:
+        if k not in a:
             out.append({"type": "ny", "beskrivelse": r["beskrivelse"], "varenummer": r["varenummer"], "prSett": r["prSett"]})
-    for r in old:
-        if rad_key(r) not in b:
+    for k, r in old_k:
+        if k not in b:
             out.append({"type": "fjernet", "beskrivelse": r["beskrivelse"], "varenummer": r["varenummer"]})
-    for r in new:
-        o = a.get(rad_key(r))
+    for k, r in new_k:
+        o = a.get(k)
         if not o:
             continue
         for k, label in FIELDS:
@@ -158,7 +176,8 @@ def write_stock(path: Path, verdier: dict[str, float], backup_dir: Path,
     for r in range(FIRST_ROW, LAST_ROW + 1):
         besk = _txt(ws[f"C{r}"].value)
         if besk:
-            rader.setdefault(rad_key({"beskrivelse": besk, "varenummer": _txt(ws[f"F{r}"].value)}), []).append(r)
+            rader.setdefault(rad_key({"beskrivelse": besk, "varenummer": _txt(ws[f"F{r}"].value),
+                                      "leverandor": _txt(ws[f"E{r}"].value)}), []).append(r)
     skrevet, hoppet, konflikt, nye = [], [], [], {}
     for key, antall in verdier.items():
         rows = rader.get(key, [])

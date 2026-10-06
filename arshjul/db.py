@@ -97,6 +97,19 @@ MIGRERINGER = [
     ALTER TABLE bestilling ADD COLUMN paa_lager TEXT NOT NULL DEFAULT '{}';
     ALTER TABLE bestilling ADD COLUMN lager_logg TEXT NOT NULL DEFAULT '[]';
     """,
+    # 6: linjenøkkelen er nå «leverandør|varenummer» (varenumre er bare unike per leverandør).
+    #    Bestillinger kjenner leverandøren sin, så de gjøres om nøyaktig. Tellinger og
+    #    utstyr/forbruk lagret ikke leverandøren og kan ikke gjøres om trygt; de slettes.
+    #    (Da dette ble innført, fantes det bare testdata, og ingeniøren godkjente det.)
+    """
+    UPDATE bestilling SET
+        linjer = (SELECT json_group_array(json_set(value, '$.key', bestilling.leverandor || '|' || json_extract(value, '$.key')))
+                  FROM json_each(bestilling.linjer)),
+        paa_lager = COALESCE((SELECT json_group_object(bestilling.leverandor || '|' || key, value)
+                              FROM json_each(bestilling.paa_lager)), '{}');
+    DELETE FROM telling;
+    DELETE FROM linjetype;
+    """,
 ]
 _JSON_BESTILLING = ("linjer", "paa_lager", "lager_logg")
 
