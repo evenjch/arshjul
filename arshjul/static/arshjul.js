@@ -12,11 +12,9 @@
   // innlogget bruker; ING = ingeniør (alt), ellers faglærer (egne prosjekter, ingen BOM/bestilling)
   let MEG = { rolle: document.body.dataset.rolle || "ingenior" }, ING = MEG.rolle === "ingenior";
   let ENDRINGER = [], SLETTEDE = [], FAGLARERE = [], INGENIORER = [], EMNER = [], PROGRAM = {}, BRUKERE = [];
-  // ALLE = alt serveren sendte; projects = det som vises. En ingeniør ser egne emner, eller hele instituttet.
+  // ALLE = alt serveren sendte, som bare er det du er involvert i (serveren filtrerer).
   let ALLE = [];
-  let VIS_ALLE = false;
-  try { VIS_ALLE = localStorage.getItem("arshjul.visAlle") === "1"; } catch (e) {}
-  const synlige = () => (ING && !VIS_ALLE ? ALLE.filter((p) => p.egen) : ALLE);
+  const synlige = () => ALLE;
   const hasBom = (p) => !!(p.bomStatus && p.bomStatus.finnes && !p.bomStatus.feil && p.bomStatus.linjer > 0);
   const nf2 = new Intl.NumberFormat("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -708,25 +706,10 @@
       + `</tbody><tfoot><tr><td><b>Sum</b></td>${years.map((y) => `<td class="num"><b>${nf0.format(sum(y))} kr</b></td>`).join("")}</tr></tfoot>`;
   }
 
-  // ---------- «Mine emner / Hele instituttet» (ingeniør) ----------
-  function drawScope() {
-    const andre = ING && ALLE.some((p) => !p.egen);
-    $("scope").hidden = !andre;
-    $("scope").textContent = VIS_ALLE ? "Viser hele instituttet" : "Viser mine emner";
-    $("scope").setAttribute("aria-pressed", String(VIS_ALLE));
-    $("scope").title = VIS_ALLE ? "Trykk for bare dine egne emner" : "Trykk for å se alle emner (andres kan bare ses, ikke endres)";
-  }
-  $("scope").addEventListener("click", () => {
-    VIS_ALLE = !VIS_ALLE;
-    try { localStorage.setItem("arshjul.visAlle", VIS_ALLE ? "1" : "0"); } catch (e) {}
-    projects = synlige(); highlight(null); renderAll(false);
-  });
-
   // ---------- emner (ingeniører) ----------
   let nyttEmne = false;
   function drawEmner() {
     if (!ING || mode === "loading" || $("emneTable").contains(document.activeElement)) return;
-    const brukt = (id) => new Set(ALLE.filter((p) => p.emneId === id).map((p) => p.prosjektId)).size;
     const velg = (navn, liste, valgt, lbl) => `<select data-ef="${navn}" aria-label="${lbl}"><option value="">–</option>`
       + liste.map((u) => `<option value="${u.id}"${u.id === valgt ? " selected" : ""}>${esc(u.navn)}</option>`).join("") + `</select>`;
     const program = (valgt) => `<select data-ef="program" aria-label="Studieprogram">`
@@ -737,7 +720,7 @@
       + `<td>${program(e ? e.program : "bachelor")}</td>`
       + `<td>${velg("faglarer", FAGLARERE, e && e.faglarerId, "Faglærer")}</td>`
       + `<td>${velg("ingenior", INGENIORER, e ? e.ingeniorId : MEG.id, "Ansvarlig ingeniør")}</td>`
-      + (e ? `<td class="num">${brukt(e.id)}</td><td><label class="aktiv"><input type="checkbox" data-ef="aktiv"${e.aktiv ? " checked" : ""}> aktiv</label></td>`
+      + (e ? `<td class="num">${e.prosjekter}</td><td><label class="aktiv"><input type="checkbox" data-ef="aktiv"${e.aktiv ? " checked" : ""}> aktiv</label></td>`
            : `<td></td><td><button type="button" class="mini" data-act="emnelagre">Lagre</button> <button type="button" class="mini quiet" data-act="emneavbryt">Avbryt</button></td>`)
       + `</tr>`;
     $("emneTable").innerHTML = `<thead><tr><th>Kode</th><th>Navn</th><th>Program</th><th>Faglærer</th><th>Ansvarlig ingeniør</th><th class="num">Prosjekter</th><th></th></tr></thead><tbody>`
@@ -823,7 +806,7 @@
   });
 
   function renderAll(keepTable) {
-    drawScope(); drawEmner(); drawBrukere();
+    drawEmner(); drawBrukere();
     drawWheel(); drawWeeks(); drawStats(); drawDiffs(); drawNotices(); drawCopyButton(); drawHistory();
     if (!keepTable) drawTable();
     else inSY().forEach((p) => { const cell = document.querySelector(`tr[data-id="${CSS.escape(p.id)}"] .fristcell`); if (cell) cell.innerHTML = fristHtml(p);

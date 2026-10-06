@@ -56,8 +56,11 @@ Siden oppdateres av seg selv når du går tilbake til nettleservinduet.
 
 Hvert prosjekt hører til et **emne** (f.eks. IELS1001, bachelor eller master). Emnet har **én faglærer** og **én ansvarlig ingeniør**:
 
-- **Ingeniøren** ser og jobber med prosjektene i sine egne emner – bestilling, varemottak, telling, BOM. «Viser mine emner / Viser hele instituttet» over hjulet viser alle emner; andre ingeniørers prosjekter kan da bare ses, ikke endres. Prosjekter uten emne kan alle ingeniører jobbe med, så ingenting blir liggende.
-- **Faglæreren** ser hele året, men endrer bare prosjektene i sine egne emner (navn, type, uker, antall sett, notat), og ser ikke BOM, bestillinger eller kostnader. Endringene dukker opp øverst hos **emnets ingeniør** med «OK, sett».
+**Du ser bare det du er involvert i.** Andres prosjekter vises ikke – hjulet, «Neste 8 uker» og tabellen gjelder dine emner.
+
+- **Ingeniøren** ser og jobber med prosjektene i sine egne emner – bestilling, varemottak, telling, BOM. I tillegg prosjekter uten emne (eller i et emne uten ingeniør), så et nytt prosjekt aldri blir usynlig for alle.
+- **Faglæreren** ser bare prosjektene i sine egne emner, og endrer navn, type, uker, antall sett og notat. Ser ikke BOM, bestillinger eller kostnader. Endringene dukker opp øverst hos **emnets ingeniør** med «OK, sett».
+- **Administratoren** ser alt.
 - **Emner** legges inn og endres under «Emner» nederst på siden, av hvilken som helst ingeniør. Bytter et emne ingeniør, overtar den nye varslene som ikke er kvittert. Emner deaktiveres i stedet for å slettes, så historikken står.
 
 **Alle logger inn**, også lokalt: administrator, ingeniør eller faglærer. Det finnes ingen bruker uten navn, så loggen viser alltid hvem som gjorde hva.

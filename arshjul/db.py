@@ -357,7 +357,8 @@ class Db:
 
     _EMNE = """SELECT e.id, e.kode, e.navn, e.program, e.aktiv,
                       e.faglarer_id AS faglarerId, f.navn AS faglarerNavn,
-                      e.ingenior_id AS ingeniorId, i.navn AS ingeniorNavn
+                      e.ingenior_id AS ingeniorId, i.navn AS ingeniorNavn,
+                      (SELECT COUNT(*) FROM prosjekt p WHERE p.emne_id = e.id) AS prosjekter
                FROM emne e LEFT JOIN bruker f ON f.id = e.faglarer_id LEFT JOIN bruker i ON i.id = e.ingenior_id"""
 
     def emner(self) -> list[dict]:

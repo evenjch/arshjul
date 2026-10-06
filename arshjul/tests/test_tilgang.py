@@ -147,7 +147,7 @@ def test_faglarer_ser_ikke_bom_eller_kostnader(innlogging):
     assert p["egen"] is True and p["faglarerNavn"] == "Ola Faglærer" and p["frister"]["frist"]["uke"]
     assert (st["ledigeBom"], st["mapper"], st["endringer"], st["slettede"], st["faglarere"], st["oppsett"]) == ([], {}, [], [], [], None)
     assert [e["kode"] for e in st["emner"]] == ["OLA1"]  # bare egne emner
-    assert state(logg_inn("kari"))["prosjekter"][0]["egen"] is False
+    assert state(logg_inn("kari"))["prosjekter"] == []  # ikke Karis emne: ser det ikke
 
 
 def test_faglarer_lager_og_endrer_egne_prosjekter(innlogging):
@@ -312,7 +312,7 @@ def test_siden_for_begge_roller(innlogging):
     assert "Fjern" in res["tbody"] and "OLA1 · faglærer Ola Faglærer (deg) · ingeniør Ingrid Ingeniør" in res["tbody"]
     assert "Registrer bestilt" not in res["tbody"] and "Lag BOM-mal" not in res["tbody"]
     assert 'data-k="lev"' not in res["tbody"]  # leveringstid kan ikke endres av faglærer
-    assert "Karis prosjekt" in res["tbody"]  # ser hele året
+    assert "Karis prosjekt" not in res["tbody"]  # ser bare egne emner
 
     res = kjor_siden(state(ing))
     assert res["errors"] == []

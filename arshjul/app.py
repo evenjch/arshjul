@@ -290,7 +290,9 @@ _OFFENTLIG = ("id", "prosjektId", "skolear", "start", "slutt", "sett", "navn", "
 @app.get("/api/state")
 def state():
     closed = store.stengte()
-    alle = store.gjennomforinger()
+    # Du ser bare det du er involvert i: faglærer egne emner, ingeniør egne emner (og prosjekter
+    # uten emne/ingeniør), administrator alt. Resten sendes ikke engang til nettleseren.
+    alle = [g for g in store.gjennomforinger() if kan_handle(g)]
     rader = [g for g in alle if not g["slettet"]]
     ing = auth.er_ingenior()
     meg = auth.meg()
@@ -340,15 +342,15 @@ def state():
     if ing:
         mine = [g for g in alle if kan_handle(g)]  # varsler og påminnelser gjelder egne emner
         mine_id = {int(g["id"]) for g in mine}
-        alle_id = {int(g["id"]) for g in alle}
-        linked = {g.get("bom") for g in alle}
+        finnes = {int(g["id"]) for g in store.gjennomforinger()}  # alle, også andres – for slettede prosjekter
+        linked = {g.get("bom") for g in store.gjennomforinger()}  # også andres – en BOM hører til ett prosjekt
         svar["ledigeBom"] = sorted(f.name for f in BOM_DIR.glob("*.xlsx")
                                    if not f.name.startswith("~$") and f.name not in linked) if BOM_DIR.exists() else []
         svar["oppsett"] = frister.oppsett_varsel([g for g in mine if not g["slettet"]], closed, idag)
         svar["mapper"] = {"bom": str(BOM_DIR), "lister": str(LIST_DIR)}
         # en ny ansvarlig ingeniør overtar varslene som ikke er kvittert
         svar["endringer"] = [e for e in store.endringer()
-                             if e["gjennomforing_id"] in mine_id or e["gjennomforing_id"] not in alle_id]
+                             if e["gjennomforing_id"] in mine_id or e["gjennomforing_id"] not in finnes]
         svar["slettede"] = [{k: g[k] for k in ("id", "navn", "skolear", "start", "slutt", "slettet", "slettetAv", "emneKode")}
                             for g in mine if g["slettet"]]
         brukere = [u for u in store.brukere() if u["aktiv"]]

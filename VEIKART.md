@@ -104,13 +104,13 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 - [x] **Rollene sjekkes på serveren**, ikke bare i nettleseren. En faglærer når bare de endepunktene som er listet som tillatt (`FAGLARER_TILLATT`) – alt annet er stengt som standard.
 
 **Faglærerpanelet**
-- [x] Faglæreren ser hele hjulet og alle prosjekter, men ikke BOM, bestillinger, telling eller kostnader (de sendes ikke engang til nettleseren).
+- [x] Faglæreren ser bare prosjektene i sine egne emner, og ikke BOM, bestillinger, telling eller kostnader (de sendes ikke engang til nettleseren).
 - [x] Faglæreren legger til, endrer og fjerner **sine egne** prosjekter: navn, type, uker, antall sett, notat. Leveringstid, buffer, BOM og farge er ingeniørens.
 - [x] ~~Faglærer per prosjekt~~ → erstattet av emner (under).
 
 **Emner og flere ingeniører** (migrering 8)
 - [x] Studieprogram (bachelor/master) → **emne** (én faglærer, én ansvarlig ingeniør) → prosjekt → gjennomføring per skoleår. En faglærer kan ha emner med ulike ingeniører.
-- [x] Ingeniøren ser egne emner som standard; «Hele instituttet» viser alt, andres bare til å se på. Prosjekter uten emne kan alle ingeniører jobbe med.
+- [x] **Alle ser bare det de er involvert i** – filtrert på serveren. Ingeniøren: egne emner, pluss prosjekter uten emne/ingeniør (så ingenting blir usynlig). Faglæreren: egne emner. Administratoren: alt. (En instituttoversikt – kollisjoner, felles lager – er parkert; se under.)
 - [x] **Eierskap sjekkes på serveren for alt som endrer en gjennomføring** (`kan_handle` i `_eierskap`): ingeniører kan ikke bestille, telle, endre eller slette i andres emner; faglærere bare i egne emner.
 - [x] Faglærerens endringer varsles til emnets ingeniør. Bytter emnet ingeniør, overtar den nye varslene som ikke er kvittert.
 - [x] Alle ingeniører kan legge inn og endre emner (seksjonen «Emner»). Emner deaktiveres, ikke slettes.
@@ -145,6 +145,8 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 8. Sett opp backup av datamappen.
 
 ## Parkert / senere
+
+- **Instituttoversikt**: se alle emner samtidig for å finne kollisjoner (travle uker, delte rom og utstyr) og felles lager. Bevisst tatt bort for nå – i et stort institutt blir det rot. Administratoren ser allerede alt; en egen visning kan komme senere.
 
 - Kalenderabonnement (ICS) med frister og prosjektuker i Outlook
 - Påminnelser på e-post eller Teams før frister som ikke er bestilt

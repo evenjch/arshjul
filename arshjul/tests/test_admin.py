@@ -79,7 +79,7 @@ def test_admin_har_alle_emner(client):
     g = client.post("/api/gjennomforinger", json={"navn": "Bjørns", "skolear": 2030, "emne": e}).get_json()
     assert client.get("/api/state").get_json()["prosjekter"][0]["egen"] is True  # admin
     a = som(ny_klient(), anne)
-    assert a.get("/api/state").get_json()["prosjekter"][0]["egen"] is False
+    assert a.get("/api/state").get_json()["prosjekter"] == []  # Anne ser ikke Bjørns emne i det hele tatt
     assert a.patch(f"/api/gjennomforinger/{g['id']}", json={"start": 40}).status_code == 403
     assert client.patch(f"/api/gjennomforinger/{g['id']}", json={"start": 40}).status_code == 200
 

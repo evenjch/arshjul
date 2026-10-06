@@ -45,8 +45,8 @@ def test_hver_ingenior_har_sine_emner(inst):
     assert egne(logg_inn("anne")) == ["Prosjekt A", "Prosjekt C", "Prosjekt uten emne"]
     assert egne(logg_inn("bjorn")) == ["Prosjekt B", "Prosjekt uten emne"]
     assert egne(logg_inn("cecilie")) == ["Prosjekt D", "Prosjekt uten emne"]
-    # alle ser hele instituttet (bryteren i nettleseren), men bare egne er «egen»
-    assert len(state(logg_inn("bjorn"))["prosjekter"]) == 5
+    # andres emner sendes ikke engang til nettleseren
+    assert len(state(logg_inn("bjorn"))["prosjekter"]) == 2
 
 
 def test_faglarer_eier_prosjektene_i_sine_emner(inst):
@@ -97,7 +97,7 @@ def test_fjernet_prosjekt_vises_for_emnets_ingenior(inst):
 
 def test_kopier_bare_egne_emner(inst):
     r = logg_inn("bjorn").post(f"/api/skolear/{SY}/kopier").get_json()
-    neste = {p["navn"] for p in state(logg_inn("anne"))["prosjekter"] if p["skolear"] == SY + 1}
+    neste = {g["navn"] for g in arshjul.store.gjennomforinger() if g["skolear"] == SY + 1}
     assert len(r["nye"]) == 2 and neste == {"Prosjekt B", "Prosjekt uten emne"}
     # ber om andres prosjekter: hoppes over
     r = logg_inn("bjorn").post(f"/api/skolear/{SY}/kopier", json={"ids": [inst["p"]["EMNE-A"]]}).get_json()
@@ -136,12 +136,31 @@ def test_siden_for_ingenior_med_andres_emner(inst):
     anne = logg_inn("anne")
     res = kjor_siden(state(anne))
     assert res["errors"] == []
-    assert "Prosjekt A" in res["tbody"] and "Prosjekt B" not in res["tbody"]  # «mine emner» som standard
+    assert "Prosjekt A" in res["tbody"] and "Prosjekt C" in res["tbody"] and "Prosjekt uten emne" in res["tbody"]
+    assert "Prosjekt B" not in res["tbody"] and "Prosjekt D" not in res["tbody"]  # bare egne emner
     assert 'data-act="emne"' in res["tbody"]
 
-    res = kjor_siden(state(anne), vis_alle=True)  # «hele instituttet»
+    res = kjor_siden(state(logg_inn("ola")))  # faglærer A: emne A og B
     assert res["errors"] == []
-    rader = {r.split("</b>")[0].rsplit(">", 1)[-1]: r for r in res["tbody"].split('<tr data-id=')[1:]}
-    assert 'data-k="start"' in rader["Prosjekt A"] and "Slett" in rader["Prosjekt A"]
-    assert 'data-k="start"' not in rader["Prosjekt B"] and "Slett" not in rader["Prosjekt B"]  # Bjørns: bare se
-    assert "EMNE-B · faglærer Ola · ingeniør Bjørn" in rader["Prosjekt B"]
+    assert "Prosjekt A" in res["tbody"] and "Prosjekt B" in res["tbody"]
+    assert "Prosjekt C" not in res["tbody"] and "Prosjekt uten emne" not in res["tbody"]
+
+
+def test_andres_varsler_lekker_ikke(inst):
+    """Varsler om prosjekter du ikke ser, skal heller ikke vises – selv om prosjektet finnes."""
+    logg_inn("kari").patch(f"{G}/{inst['p']['EMNE-D']}", json={"sett": 9})  # Ceciles emne
+    assert state(logg_inn("anne"))["endringer"] == []
+    assert len(state(logg_inn("cecilie"))["endringer"]) == 1
+
+
+def test_andres_bom_er_ikke_ledig(inst):
+    from hjelp import lag_bom
+    fil = lag_bom("Bjørns – BOM.xlsx").name
+    lag_bom("Ledig – BOM.xlsx")
+    logg_inn("bjorn").patch(f"{G}/{inst['p']['EMNE-B']}", json={"bom": fil})
+    assert state(logg_inn("anne"))["ledigeBom"] == ["Ledig – BOM.xlsx"]
+
+
+def test_emner_teller_prosjekter_for_alle(inst):
+    anne = state(logg_inn("anne"))
+    assert {e["kode"]: e["prosjekter"] for e in anne["emner"]} == {"EMNE-A": 1, "EMNE-B": 1, "EMNE-C": 1, "EMNE-D": 1}
