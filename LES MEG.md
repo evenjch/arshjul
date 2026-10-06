@@ -50,10 +50,28 @@ Krever Python 3.10 eller nyere. Uten startfilen: `pip install -r requirements.tx
 
 Siden oppdateres av seg selv når du går tilbake til nettleservinduet.
 
+## Brukere og faglærere
+
+Lokalt er du automatisk ingeniøren. Faglærere logger inn når årshjulet kjører på serveren. De ser hele året, men endrer bare sine egne prosjekter (navn, type, uker, antall sett, notat), og ser ikke BOM, bestillinger eller kostnader. Endringene deres dukker opp øverst hos deg med «OK, sett».
+
+Brukere lages fra kommandolinjen, i `arshjul/`:
+
+```
+.venv\Scripts\python manage.py ny-bruker ola "Ola Nordmann" faglarer
+.venv\Scripts\python manage.py liste
+.venv\Scripts\python manage.py passord ola        (nytt passord)
+.venv\Scripts\python manage.py deaktiver ola      (kan ikke logge inn)
+.venv\Scripts\python manage.py aktiver ola        (også: opphever låsing etter feil passord)
+```
+
+Vil du se hvordan det ser ut for en faglærer, lag en faglærer, sett `ARSHJUL_INNLOGGING=på` i `innstillinger.env`, og start årshjulet på nytt. Lag da også en ingeniørbruker til deg selv.
+
 ## Filene i programmet
 
 - `app.py`: Flask-appen og API-et
-- `config.py`: innstillinger fra miljøvariabler (datamappe, modus, port)
+- `config.py`: innstillinger fra miljøvariabler (datamappe, modus, port, innlogging)
+- `auth.py`: innlogging, roller og CSRF-beskyttelse
+- `manage.py`: brukere fra kommandolinjen
 - `frister.py`: uker, skoleår og frister – det eneste stedet de regnes ut
 - `db.py`: databasen (prosjekter, gjennomføringer per skoleår, bestillinger, stengte perioder) og oppgraderinger av den
 - `bestilling.py`: bestillingsstatus per leverandør, frossen kopi og hva som mangler

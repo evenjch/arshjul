@@ -56,7 +56,7 @@ function __el(id) {
   });
 }
 globalThis.document = { getElementById: __el, querySelector: () => null, querySelectorAll: () => [],
-                        activeElement: null, addEventListener() {}, hidden: false };
+                        activeElement: null, addEventListener() {}, hidden: false, body: { dataset: {} } };
 globalThis.window = { addEventListener() {} };
 globalThis.console = { error: (e) => { globalThis.__consoleErrors = (globalThis.__consoleErrors || []).concat(String(e && e.stack || e)); },
                        log() {}, warn() {} };
@@ -84,6 +84,7 @@ TEST = r"""
   }
   tryit("renderAll(true)", () => t.renderAll(true));
   globalThis.__out = JSON.stringify({ errors: log, tbody: tabeller.join("\n"), stats: __el("stats").innerHTML,
+                                      notices: __el("notices").innerHTML, wheel: __el("wheel").innerHTML,
                                       history: __el("histTable").innerHTML });
 })().catch((e) => { globalThis.__out = JSON.stringify({ errors: ["uncaught: " + e.stack] }); });
 """

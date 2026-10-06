@@ -21,7 +21,9 @@ Vi utvikler på egen PC, men slik at årshjulet når som helst kan flyttes til e
 | `ARSHJUL_MODUS` | `lokal` | `lokal` eller `server` |
 | `ARSHJUL_HOST` | `127.0.0.1` | adressen serveren lytter på |
 | `ARSHJUL_PORT` | `5057` | porten |
-| `ARSHJUL_SECRET_KEY` | tilfeldig lokalt | påkrevd i servermodus (innlogging) |
+| `ARSHJUL_SECRET_KEY` | tilfeldig lokalt | påkrevd i servermodus (innlogging), minst 32 tegn |
+| `ARSHJUL_INNLOGGING` | `av` lokalt, `på` på server | `på` lokalt for å teste faglærervisningen |
+| `ARSHJUL_BAK_PROXY` | `av` lokalt, `på` på server | stol på `X-Forwarded-*` fra Caddy/nginx |
 | `ARSHJUL_NO_OPEN` | ikke satt | satt = åpne aldri filer eller nettleser |
 
 Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.eksempel.env`). Satte miljøvariabler går foran.
@@ -92,28 +94,35 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 - [x] **Endret i Excel etter skriving:** tellingen endres ikke av seg selv (den er det som faktisk ble telt, og svinn regnes fra den), men linjen viser «endret i Excel: 30». Var endringen en retting av tellingen, henter **«Bruk tallene fra BOM-en i tellingen»** tallene inn.
 - [x] Neste års BOM-utregning bruker den nye lagerbeholdningen.
 
-## Fase 4 – Server og faglærerpanel
+## Fase 4 – Faglærerpanel ✓ (lokalt) · Server ⏳ (venter på IT)
 
-**Innlogging og roller**
-- Brukere lages fra kommandolinjen. Ingen selvregistrering. Start: 1 ingeniør og 1 faglærer.
-- Passord lagres som hash (`werkzeug.security`).
-- I lokal modus er du automatisk logget inn som ingeniør.
+**Innlogging og roller** (`auth.py`, `manage.py`, migrering 7)
+- [x] Brukere lages fra kommandolinjen: `python manage.py ny-bruker <brukernavn> "<Navn>" ingenior|faglarer`. Ingen selvregistrering. Også `passord`, `deaktiver`, `aktiver`, `liste`.
+- [x] Passord lagres som hash (scrypt), minst 10 tegn. Låst i 15 minutter etter 5 feil; i tillegg en grense per IP-adresse. Samme melding for feil brukernavn og feil passord.
+- [x] Innlogging er alltid på i servermodus. Lokalt er den av (du er ingeniøren); `ARSHJUL_INNLOGGING=på` slår den på for å teste faglærervisningen.
+- [x] Økten varer 12 timer, og slutter å gjelde når passordet endres eller brukeren deaktiveres.
+- [x] **Rollene sjekkes på serveren**, ikke bare i nettleseren. En faglærer når bare de endepunktene som er listet som tillatt (`FAGLARER_TILLATT`) – alt annet er stengt som standard.
 
 **Faglærerpanelet**
-- Faglæreren legger til, endrer og fjerner sine egne gjennomføringer (feltene står under «Beslutninger»).
-- Hele hjulet kan ses, men ikke endres, så det er lett å se kollisjoner.
-- Mens faglæreren endrer, vises konsekvensen: «Bestillingsfrist: uke 34, om 2 uker.»
-- Sletting er **myk**: gjennomføringen skjules, og du får varsel.
+- [x] Faglæreren ser hele hjulet og alle prosjekter, men ikke BOM, bestillinger, telling eller kostnader (de sendes ikke engang til nettleseren).
+- [x] Faglæreren legger til, endrer og fjerner **sine egne** prosjekter: navn, type, uker, antall sett, notat. Leveringstid, buffer, BOM og farge er ingeniørens.
+- [x] Ingeniøren velger faglærer for hvert prosjekt («Faglærer: …» under navnet). Prosjekter faglæreren lager, blir hans/hennes egne.
+- [x] Mens faglæreren endrer, vises konsekvensen ved fristen: «Fristen er om 1 uke – ingeniøren varsles».
+- [x] Fjerning er **myk**: prosjektet skjules, og ingeniøren kan gjenopprette eller bekrefte sletting.
+- [ ] Endre navn og notat i tabellen (i dag bare når prosjektet legges til).
 
 **Varsler til ingeniøren**
-- Hver endring logges (hvem, når, felt, fra → til).
-- Endringer vises som en boks med «OK, sett», samme mønster som BOM-endringene i dag.
-- **Sterkere varsel** når en endring flytter en frist forbi dagens dato eller innenfor 2 uker.
+- [x] Hver endring logges (hvem, når, felt, fra → til) – også ingeniørens, for sporbarhet. Bestilling, varemottak og telling lagrer hvem som gjorde det.
+- [x] Faglærernes endringer vises øverst som en boks per prosjekt med «OK, sett», og ny bestillingsfrist.
+- [x] **Rød** når fristen er passert eller innen 2 uker og ikke alt er bestilt, eller du må bestille mer.
 
 **Sikkerhet**
-- HTTPS via Caddy eller nginx foran waitress.
-- Sikre informasjonskapsler, CSRF-beskyttelse, låsing etter flere feil innlogginger.
-- Bare tilgjengelig på universitetsnettet eller via VPN.
+- [x] Informasjonskapsel HttpOnly, SameSite=Lax, og Secure i servermodus.
+- [x] CSRF-token på alt som endrer noe – også lokalt, så en annen nettside ikke kan få nettleseren din til å endre årshjulet. Nytt token ved innlogging.
+- [x] Sikkerhetshoder: Content-Security-Policy, X-Frame-Options, nosniff, ingen mellomlagring av API-svar.
+- [x] `ARSHJUL_SECRET_KEY` må være minst 32 tegn i servermodus.
+- [x] Bak Caddy/nginx: riktig klientadresse og https via `X-Forwarded-*` (`ARSHJUL_BAK_PROXY`, på som standard i servermodus).
+- [ ] HTTPS og tilgang bare fra universitetsnettet/VPN – settes opp på VPS-en.
 
 ## Flytte til VPS – sjekkliste
 
@@ -121,9 +130,10 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 2. Hent koden (`git clone`), og lag et Python-miljø: `python -m venv .venv` og `pip install -r requirements.txt`.
 3. Lag en datamappe, for eksempel `/srv/arshjul-data`, og kopier over `arshjul.db`. Stopp årshjulet lokalt først, så databasen er ferdig lagret.
 4. Monter BOM-fellesmappen (CIFS, med `iocharset=utf8` for æøå), for eksempel på `/mnt/arshjul-bom`.
-5. Sett `ARSHJUL_MODUS=server`, `ARSHJUL_DATA`, `ARSHJUL_BOM=/mnt/arshjul-bom`, `ARSHJUL_SECRET_KEY` (lang og tilfeldig), og eventuelt `ARSHJUL_HOST`/`ARSHJUL_PORT` – i `innstillinger.env` eller i systemd-tjenesten.
-6. Kjør `python app.py` som en systemd-tjeneste, med Caddy eller nginx foran for HTTPS.
-7. Sett opp backup av datamappen.
+5. Sett `ARSHJUL_MODUS=server`, `ARSHJUL_DATA`, `ARSHJUL_BOM=/mnt/arshjul-bom` og `ARSHJUL_SECRET_KEY` (lag med `python -c "import secrets; print(secrets.token_hex(32))"`) – i `innstillinger.env` (lesbar bare for tjenestebrukeren) eller i systemd-tjenesten. La `ARSHJUL_HOST=127.0.0.1`, så bare Caddy/nginx når appen.
+6. Lag brukere: `python manage.py ny-bruker <brukernavn> "<Navn>" ingenior` (og faglærere).
+7. Kjør `python app.py` som en systemd-tjeneste, med Caddy foran for HTTPS, f.eks. `arshjul.ntnu.no { reverse_proxy 127.0.0.1:5057 }`.
+8. Sett opp backup av datamappen.
 
 ## Parkert / senere
 

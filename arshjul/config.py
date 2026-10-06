@@ -9,7 +9,9 @@
                         filer, mapper eller nettleser på maskinen appen kjører på.
     ARSHJUL_HOST        standard 127.0.0.1
     ARSHJUL_PORT        standard 5057
-    ARSHJUL_SECRET_KEY  nøkkel for innlogging senere. Påkrevd i servermodus.
+    ARSHJUL_SECRET_KEY  nøkkel som signerer innloggingen. Påkrevd i servermodus (minst 32 tegn).
+    ARSHJUL_INNLOGGING  «på»/«av». Alltid på i servermodus; lokalt av (du er ingeniøren).
+    ARSHJUL_BAK_PROXY   «på» når Caddy/nginx står foran (standard i servermodus).
     ARSHJUL_NO_OPEN     satt = ikke åpne filer eller nettleser (også i lokal modus)
 
 Innstillingene kan også stå i arshjul/innstillinger.env, én per linje (NAVN=verdi,
@@ -68,6 +70,27 @@ if not SECRET_KEY:
     if not LOKAL:
         raise SystemExit("ARSHJUL_SECRET_KEY må settes i servermodus.")
     SECRET_KEY = secrets.token_hex(32)
+elif not LOKAL and len(SECRET_KEY) < 32:
+    raise SystemExit("ARSHJUL_SECRET_KEY må være minst 32 tegn i servermodus.")
+
+
+def _av_paa(navn: str, standard: bool) -> bool:
+    v = os.environ.get(navn, "").strip().lower()
+    if not v:
+        return standard
+    if v not in ("på", "pa", "av", "1", "0", "ja", "nei"):
+        raise SystemExit(f"{navn} må være «på» eller «av», ikke «{v}».")
+    return v in ("på", "pa", "1", "ja")
+
+
+# Innlogging: alltid på i servermodus. Lokalt av (du er ingeniøren), men kan slås på for å
+# teste faglærervisningen med brukere laget med manage.py.
+INNLOGGING = _av_paa("ARSHJUL_INNLOGGING", standard=not LOKAL)
+if not LOKAL and not INNLOGGING:
+    raise SystemExit("Innlogging kan ikke slås av i servermodus.")
+
+# Bak Caddy/nginx: stol på X-Forwarded-For/-Proto fra én proxy (HTTPS og klientens adresse).
+BAK_PROXY = _av_paa("ARSHJUL_BAK_PROXY", standard=not LOKAL)
 
 
 def move_old_cache() -> None:

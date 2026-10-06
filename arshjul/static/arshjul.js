@@ -9,13 +9,20 @@
   let mode = "loading", projects = [], ledigeBom = [];
   let LOKAL = true; // false når årshjulet kjører på en server: da kan vi ikke åpne Excel eller mapper
   let SYS = [], SY = null, IDAG = null, NESTE8 = [], OPPSETT = null;
+  // innlogget bruker; ING = ingeniør (alt), ellers faglærer (egne prosjekter, ingen BOM/bestilling)
+  let MEG = { rolle: document.body.dataset.rolle || "ingenior" }, ING = MEG.rolle === "ingenior";
+  let ENDRINGER = [], SLETTEDE = [], FAGLARERE = [];
   const hasBom = (p) => !!(p.bomStatus && p.bomStatus.finnes && !p.bomStatus.feil && p.bomStatus.linjer > 0);
   const nf2 = new Intl.NumberFormat("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // ---------- server ----------
+  const CSRF = (document.querySelector('meta[name="csrf"]') || {}).content || "";
   async function api(method, url, body) {
-    const res = await fetch(url, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+    const headers = { "X-CSRF-Token": CSRF };
+    if (body) headers["Content-Type"] = "application/json";
+    const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: "same-origin" });
     let data = {}; try { data = await res.json(); } catch (e) {}
+    if (res.status === 401 && data.login) { location.href = "/login?neste=" + encodeURIComponent(location.pathname); throw new Error(data.feil); }
     if (!res.ok) throw new Error(data.feil || "Noe gikk galt (" + res.status + ").");
     return data;
   }
@@ -37,10 +44,12 @@
     try {
       CLOSED = st.stengte; ledigeBom = st.ledigeBom;
       SYS = st.skolear; IDAG = st.idag; NESTE8 = st.neste8; OPPSETT = st.oppsett;
+      MEG = st.meg; ING = MEG.rolle === "ingenior"; document.body.dataset.rolle = MEG.rolle;
+      ENDRINGER = st.endringer; SLETTEDE = st.slettede; FAGLARERE = st.faglarere;
       if (SY === null || !SYS.some((s) => s.ar === SY)) SY = st.skolearNa;
       LOKAL = st.modus !== "server";
       $("openBomDir").hidden = $("openListDir").hidden = !LOKAL;
-      $("bomDir").textContent = st.mapper.bom; $("openBomDir").title = "Åpner " + st.mapper.bom;
+      $("bomDir").textContent = st.mapper.bom || ""; $("openBomDir").title = "Åpner " + (st.mapper.bom || "BOM-mappen");
       // behold verdier som venter på lagring
       st.prosjekter.forEach((p) => { const pend = pending[p.id]; if (pend) Object.assign(p, pend.patch); });
       const sameIds = st.prosjekter.length === projects.length && st.prosjekter.every((p) => projects.some((q) => q.id === p.id));
@@ -186,7 +195,7 @@
       const use = useSpan(p);
       s += `<path class="ring-hit" data-kind="use" d="${sector(ru, r1, use[0], use[1])}" fill="${c}"><title>${esc(p.navn)}: i bruk uke ${d.start.uke}${d.start.uke !== d.slutt.uke ? "–" + d.slutt.uke : ""}</title></path>`;
       const [fx, fy] = pt((r0 + rl) / 2, ang(pos(d.frist.dato) + .5));
-      const os = orderState(p), ring = STATE_COLOR[os];
+      const os = orderState(p), ring = ING ? STATE_COLOR[os] : null; // bestillingsstatus er ingeniørens sak
       if (ring) s += `<circle cx="${fx.toFixed(1)}" cy="${fy.toFixed(1)}" r="${(mr + 3).toFixed(1)}" fill="none" stroke="${ring}" stroke-width="2.5"/>`;
       s += `<circle cx="${fx.toFixed(1)}" cy="${fy.toFixed(1)}" r="${mr.toFixed(1)}" fill="${c}" stroke="var(--card)" stroke-width="2"><title>${esc(p.navn)}: bestillingsfrist uke ${d.frist.uke}, ${dfmtY.format(toD(d.frist.dato))} · ${esc(stateText(p))}</title></circle>`;
       if (p.type === "sett") {
@@ -259,6 +268,7 @@
   // ---------- neste 8 uker ----------
   const ORDER = { frist: 0, prep: 1, start: 2, retur: 3 };
   function evTag(e) {
+    if (!ING) return "";
     if (e.kind === "retur") return e.p.telling && e.p.telling.lagret ? ` <span class="tag ok">Telt</span>` : "";
     if (e.kind !== "prep" && e.kind !== "frist") return "";
     if (!hasBom(e.p)) return ` <span class="tag">BOM mangler</span>`;
@@ -290,19 +300,27 @@
     const list = inSY(), missing = list.filter((p) => !hasBom(p)).length;
     const u = n ? weeksBetween(IDAG.dato, n.dato) : 0;
     // på tvers av skoleår: en passert frist er like viktig uansett hvilket år du ser på
-    const late = projects.filter((p) => orderState(p) === "late");
-    const more = projects.filter((p) => orderState(p) === "tillegg");
+    const late = ING ? projects.filter((p) => orderState(p) === "late") : [];
+    const more = ING ? projects.filter((p) => orderState(p) === "tillegg") : [];
     const names = (list) => esc(list.map((p) => p.navn).join(", "));
     $("stats").innerHTML =
       (late.length ? `<div class="stat warn"><small>Frist passert, ikke bestilt</small><b>${late.length} ${late.length === 1 ? "prosjekt" : "prosjekter"}</b><div class="muted" style="font-size:12px">${names(late)}</div></div>` : "") +
       (more.length ? `<div class="stat soon"><small>Må bestille mer</small><b>${more.length} ${more.length === 1 ? "prosjekt" : "prosjekter"}</b><div class="muted" style="font-size:12px">${names(more)}</div></div>` : "") +
       (n ?`<div class="stat${u <= 2 ? " warn" : ""}"><small>Neste bestillingsfrist</small><b>${esc(n.p.navn)} · uke ${n.uke}</b><div class="muted" style="font-size:12px">${u === 0 ? "denne uken" : "om " + u + (u === 1 ? " uke" : " uker")}</div></div>` : "") +
-      (list.length ? `<div class="stat"><small>Med BOM ${esc(curSY().navn)}</small><b>${list.length - missing} av ${list.length}</b><div class="muted" style="font-size:12px">${missing} mangler BOM</div></div>` : "");
+      (ING && list.length ? `<div class="stat"><small>Med BOM ${esc(curSY().navn)}</small><b>${list.length - missing} av ${list.length}</b><div class="muted" style="font-size:12px">${missing} mangler BOM</div></div>` : "");
   }
 
 
   // ---------- tabell ----------
-  const fristHtml = (p) => `uke ${p.frister.frist.uke}<small>${dfmtY.format(toD(p.frister.frist.dato))}</small>`;
+  // faglæreren ser konsekvensen av å flytte et prosjekt: en frist som er nær eller passert
+  function fristVarsel(p) {
+    if (ING || !p.egen || !IDAG || p.frister.start.dato <= IDAG.dato) return "";
+    const u = weeksBetween(IDAG.dato, p.frister.frist.dato);
+    if (u < 0) return `<span class="fristvarsel">Fristen er passert – ingeniøren varsles</span>`;
+    if (u <= 2) return `<span class="fristvarsel">${u === 0 ? "Fristen er denne uken" : `Fristen er om ${u} ${u === 1 ? "uke" : "uker"}`} – ingeniøren varsles</span>`;
+    return "";
+  }
+  const fristHtml = (p) => `uke ${p.frister.frist.uke}<small>${dfmtY.format(toD(p.frister.frist.dato))}</small>${fristVarsel(p)}`;
   const bomSum = (b) => `${b.linjer} linjer · ${b.bestill} å bestille · ${nf0.format(b.eks)} kr`;
   function bomCell(p) {
     const b = p.bomStatus, id = esc(p.id);
@@ -488,19 +506,29 @@
     const list = sorted();
     if (!list.length) { $("tbody").innerHTML = `<tr><td colspan="${COLS}" class="blank">Ingen prosjekter dette skoleåret. Trykk «Legg til nytt prosjekt» for å legge inn det første.</td></tr>`; return; }
     $("tbody").innerHTML = list.map((p) => {
-      const num = (k, min, max, lbl) => `<input type="number" id="in-${esc(p.id)}-${k}" data-id="${esc(p.id)}" data-k="${k}" min="${min}" max="${max}" value="${p[k] ?? ""}" aria-label="${lbl}">`;
+      // faglærer: endre uker og sett på egne prosjekter; leveringstid og buffer er ingeniørens
+      const kan = (k) => ING || (p.egen && (k === "start" || k === "slutt" || k === "sett"));
+      const num = (k, min, max, lbl) => kan(k)
+        ? `<input type="number" id="in-${esc(p.id)}-${k}" data-id="${esc(p.id)}" data-k="${k}" min="${min}" max="${max}" value="${p[k] ?? ""}" aria-label="${lbl}">`
+        : `<span class="ro">${p[k] ?? "–"}</span>`;
       const warn = p.bomStatus && p.bomStatus.settFil && p.sett && p.bomStatus.settFil !== p.sett
         ? `<div class="muted" style="font-size:11.5px" title="Årshjulets tall brukes">BOM-filen: ${p.bomStatus.settFil}</div>` : "";
+      const eier = ING && FAGLARERE.length
+        ? `<label class="eier">Faglærer: <select data-act="faglarer" data-id="${esc(p.id)}" aria-label="Faglærer for ${esc(p.navn)}"><option value="">ingen</option>`
+          + FAGLARERE.map((f) => `<option value="${f.id}"${f.id === p.faglarerId ? " selected" : ""}>${esc(f.navn)}</option>`).join("") + `</select></label>`
+        : p.faglarerNavn ? `<span class="eier">Faglærer: ${esc(p.faglarerNavn)}${!ING && p.egen ? " (deg)" : ""}</span>` : "";
+      const slett = ING ? `<button type="button" class="del" data-id="${esc(p.id)}">Slett</button>`
+        : p.egen ? `<button type="button" class="del" data-id="${esc(p.id)}" title="Ingeniøren får beskjed og kan gjenopprette">Fjern</button>` : "";
       return `<tr data-id="${esc(p.id)}">
-        <td class="name"><b><span class="dot" style="background:${col(p)}"></span>${esc(p.navn)}</b>${p.notat ? `<small>${esc(p.notat)}</small>` : ""}</td>
+        <td class="name"><b><span class="dot" style="background:${col(p)}"></span>${esc(p.navn)}</b>${p.notat ? `<small>${esc(p.notat)}</small>` : ""}${eier}</td>
         <td>${p.type === "sett" ? "Semestersett" : "Hackathon / lab"}<div class="muted" style="font-size:12px">${esc(p.semester)} ${p.frister.start.ar}</div></td>
         <td>${num("start", 1, 53, "I bruk fra uke")}</td><td>${num("slutt", 1, 53, "Til uke")}</td><td>${num("lev", 0, 20, "Leveringstid i uker")}</td><td>${num("buf", 0, 20, "Buffer i uker")}</td>
         <td>${num("sett", 0, 999, "Antall sett")}${warn}</td>
         <td class="fristcell">${fristHtml(p)}</td>
-        <td class="ordercell">${orderCell(p)}</td>
-        <td>${bomCell(p)}</td>
-        <td><button type="button" class="del" data-id="${esc(p.id)}">Slett</button></td></tr>`
-        + (openOrders.has(p.id) && (p.bestilling || p.telling) ? orderDetail(p) : "");
+        <td class="ordercell ing">${ING ? orderCell(p) : ""}</td>
+        <td class="ing">${ING ? bomCell(p) : ""}</td>
+        <td>${slett}</td></tr>`
+        + (ING && openOrders.has(p.id) && (p.bestilling || p.telling) ? orderDetail(p) : "");
     }).join("");
   }
 
@@ -530,16 +558,71 @@
 
   // ---------- neste skoleår: varsel og kopiering ----------
   const syName = (ar) => { const s = SYS.find((x) => x.ar === ar); return s ? s.navn : `${ar}/${String((ar + 1) % 100).padStart(2, "0")}`; };
+  // ---------- faglærernes endringer (bare for ingeniøren) ----------
+  const tidFmt = (s) => { const d = new Date(s); return isNaN(d) ? esc(s) : d.toLocaleString("nb-NO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
+  const TYPENAVN = { hack: "Hackathon / lab", sett: "Semestersett" };
+  const verdi = (felt, v) => (v === null || v === undefined || v === "" ? "tom" : felt === "type" ? (TYPENAVN[v] || v) : String(v));
+  const HANDLING = { opprettet: "La til prosjektet", gjenopprettet: "Gjenopprettet", fjernet: "Fjernet prosjektet" };
+  function changeNotices() {
+    if (!ING) return "";
+    let h = "";
+    SLETTEDE.forEach((s) => {
+      h += `<div class="notice warn"><div><b>${esc(s.slettetAv || "En faglærer")} fjernet «${esc(s.navn)}» (${esc(syName(s.skolear))})</b> ${tidFmt(s.slettet)}. `
+        + `Det vises ikke i hjulet før du gjenoppretter det.</div><span class="noticeact">`
+        + `<button type="button" class="mini" data-act="gjenopprett" data-id="${esc(s.id)}">Gjenopprett</button>`
+        + `<button type="button" class="mini quiet" data-act="slettbekreft" data-id="${esc(s.id)}">Bekreft sletting …</button></span></div>`;
+    });
+    const fjernet = new Set(SLETTEDE.map((s) => String(s.id)));
+    const per = new Map();
+    ENDRINGER.forEach((e) => {
+      const gid = String(e.gjennomforing_id);
+      if (fjernet.has(gid)) return; // vises som «fjernet» over
+      if (!per.has(gid)) per.set(gid, []);
+      per.get(gid).push(e);
+    });
+    per.forEach((list, gid) => {
+      const p = projects.find((x) => x.id === gid);
+      const hvem = [...new Set(list.map((e) => e.bruker_navn))].join(", ");
+      const items = list.map((e) => `<li>${e.handling === "endret"
+        ? `${esc(e.felt)}: <span class="from">${esc(verdi(e.felt, e.fra))}</span> → <b>${esc(verdi(e.felt, e.til))}</b>`
+        : esc(HANDLING[e.handling] || e.handling)} <span class="muted">· ${tidFmt(e.tid)}</span></li>`).join("");
+      let konsekvens = "", sterk = false;
+      if (p && IDAG) {
+        const os = orderState(p), u = weeksBetween(IDAG.dato, p.frister.frist.dato);
+        konsekvens = `Bestillingsfrist nå: uke ${p.frister.frist.uke}, ${dfmtY.format(toD(p.frister.frist.dato))}`;
+        if (os === "late") { konsekvens += " – passert, og ikke bestilt"; sterk = true; }
+        else if (os === "soon") { konsekvens += u === 0 ? " – denne uken" : ` – om ${u} ${u === 1 ? "uke" : "uker"}`; sterk = true; }
+        else if (os === "tillegg") { konsekvens += " – du må bestille mer"; sterk = true; }
+        else if (os === "ok") konsekvens += " – alt er bestilt";
+      } else if (!p) konsekvens = "Prosjektet er slettet.";
+      h += `<div class="notice ${sterk ? "warn" : "info"}"><div><b>${esc(hvem)} endret «${esc(p ? p.navn : list[0].prosjekt_navn)}» (${esc(syName(list[0].skolear))})</b>`
+        + `<ul class="endr">${items}</ul>${konsekvens ? `<p>${konsekvens}</p>` : ""}</div>`
+        + `<button type="button" class="mini" data-act="kvitter" data-id="${esc(gid)}">OK, sett</button></div>`;
+    });
+    return h;
+  }
+
   function drawNotices() {
-    const o = OPPSETT;
-    if (!o || mode === "loading") { $("notices").innerHTML = ""; return; }
+    const o = OPPSETT, endr = mode === "loading" ? "" : changeNotices();
+    if (!o || mode === "loading") { $("notices").innerHTML = endr; return; }
     const naar = o.uker < 0 ? "fristen er allerede passert" : o.uker === 0 ? "denne uken" : `om ${o.uker} ${o.uker === 1 ? "uke" : "uker"}`;
-    $("notices").innerHTML = `<div class="notice ${o.uker <= 4 ? "warn" : "soon"}"><div>`
+    $("notices").innerHTML = endr + `<div class="notice ${o.uker <= 4 ? "warn" : "soon"}"><div>`
       + `<b>Skoleåret ${esc(o.navn)} er ikke satt opp.</b> ${o.mangler} ${o.mangler === 1 ? "prosjekt" : "prosjekter"} fra ${esc(o.fraNavn)} mangler. `
       + `Første bestillingsfrist blir uke ${o.frist.uke} for ${esc(o.prosjekt)} – ${naar}.</div>`
       + `<button type="button" class="mini" id="oppsettGo">Sett opp ${esc(o.navn)} …</button></div>`;
   }
   $("notices").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-act]");
+    if (b) {
+      const id = b.dataset.id, a = b.dataset.act;
+      if (a === "kvitter") act(() => api("POST", `/api/endringer/${encodeURIComponent(id)}/kvitter`), null, b);
+      if (a === "gjenopprett") act(() => api("POST", P(id) + "/gjenopprett"), "Prosjektet er gjenopprettet.", b);
+      if (a === "slettbekreft") {
+        if (!b.classList.contains("confirm")) { b.classList.add("confirm"); b.textContent = "Bekreft: slett for godt"; return; }
+        act(() => api("DELETE", P(id)), "Prosjektet er slettet.", b);
+      }
+      return;
+    }
     if (!e.target.closest("#oppsettGo") || !OPPSETT) return;
     goSY(OPPSETT.fra); openCopy(true);
     $("copybox").scrollIntoView({ block: "center", behavior: "smooth" });
@@ -657,6 +740,11 @@
     const t = e.target;
     const act = (fn, msg) => actVed(fn, msg, t); // feil vises ved feltet du endret
     if (t.matches("select[data-role=ttype]")) { tellEdit(t); return; }
+    if (t.matches("select[data-act=faglarer]")) {
+      act(() => api("PATCH", P(t.dataset.id), { faglarer: t.value || null }),
+        t.value ? `${t.selectedOptions[0].textContent} er faglærer for prosjektet, og kan nå endre det.` : "Prosjektet har ingen faglærer.");
+      return;
+    }
     if (t.matches("select[data-act=ostatus]")) {
       act(() => orderApi(t.dataset.id, { handling: "status", leverandor: t.dataset.lev, status: t.value }), "Status lagret.");
       return;
@@ -722,10 +810,11 @@
     }
     const d = e.target.closest("button.del"); if (!d) return;
     if (!d.classList.contains("confirm")) {
-      document.querySelectorAll("button.del.confirm").forEach((x) => { x.classList.remove("confirm"); x.textContent = "Slett"; });
-      d.classList.add("confirm"); d.textContent = "Bekreft sletting"; return;
+      document.querySelectorAll("button.del.confirm").forEach((x) => { x.classList.remove("confirm"); x.textContent = ING ? "Slett" : "Fjern"; });
+      d.classList.add("confirm"); d.textContent = ING ? "Bekreft sletting" : "Bekreft – fjern"; return;
     }
-    act(() => api("DELETE", P(d.dataset.id)), "Prosjektet er slettet fra dette skoleåret. BOM-filen ligger fortsatt i mappen.");
+    act(() => api("DELETE", P(d.dataset.id)), ING ? "Prosjektet er slettet fra dette skoleåret. BOM-filen ligger fortsatt i mappen."
+      : "Prosjektet er fjernet. Ingeniøren får beskjed, og kan gjenopprette det.", d);
   });
   $("diffs").addEventListener("click", (e) => {
     const v = e.target.closest("button[data-act=vis]");

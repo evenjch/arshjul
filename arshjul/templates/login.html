@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logg inn – Årshjul for innkjøp</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='arshjul.css') }}">
+</head>
+<body>
+<main class="loginbox">
+  <div class="eyebrow">Elektronikk · innkjøp til undervisning</div>
+  <h1>Årshjul for innkjøp</h1>
+  <form method="post" action="{{ url_for('auth.login', neste=neste) if neste else url_for('auth.login') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
+    <label>Brukernavn <input type="text" name="brukernavn" autocomplete="username" autofocus required></label>
+    <label>Passord <input type="password" name="passord" autocomplete="current-password" required></label>
+    {% if feil %}<p class="err" role="alert">{{ feil }}</p>{% endif %}
+    <button class="pbtn" type="submit">Logg inn</button>
+  </form>
+  <p class="muted">Har du ikke bruker? Spør ingeniøren.</p>
+</main>
+</body>
+</html>

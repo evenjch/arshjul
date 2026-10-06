@@ -5,15 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Årshjul for innkjøp</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<meta name="csrf" content="{{ csrf_token }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='arshjul.css') }}">
 </head>
-<body>
+<body data-rolle="{{ meg.rolle }}">
 <div class="wrap">
   <header>
     <div>
       <div class="eyebrow">Elektronikk · innkjøp til undervisning</div>
       <h1>Årshjul for innkjøp</h1>
       <div class="meta" id="today"></div>
+      {% if innlogging %}<div class="meg">Innlogget som <b>{{ meg.navn }}</b> ({{ rollenavn[meg.rolle] | lower }})
+        <form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button class="mini quiet" type="submit">Logg ut</button></form></div>{% endif %}
     </div>
     <div class="stats" id="stats"></div>
   </header>
@@ -37,9 +40,9 @@
         <span><span class="sw use"></span>I bruk</span>
         <span><span class="sq"></span>Innlevering / telling</span>
         <span><span class="sw closed"></span>Stengt periode</span>
-        <span><span class="ring ok"></span>Bestilt</span>
-        <span><span class="ring soon"></span>Frist snart / må bestille mer</span>
-        <span><span class="ring late"></span>Frist passert</span>
+        <span class="ing"><span class="ring ok"></span>Bestilt</span>
+        <span class="ing"><span class="ring soon"></span>Frist snart / må bestille mer</span>
+        <span class="ing"><span class="ring late"></span>Frist passert</span>
       </div>
     </div>
     <div class="panel">
@@ -53,9 +56,9 @@
       <h2>Prosjekter <span id="syTable"></span></h2>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <span class="status" id="status"></span>
-        <button class="tbtn" id="openBomDir" type="button" title="Åpner BOM-mappen i Utforsker">BOM-mappen</button>
-        <button class="tbtn" id="openListDir" type="button" title="Åpner mappen med bestillingslister">Bestillingslister</button>
-        <button class="tbtn" id="copyOpen" type="button" aria-expanded="false" aria-controls="copybox" hidden></button>
+        <button class="tbtn ing" id="openBomDir" type="button" title="Åpner BOM-mappen i Utforsker">BOM-mappen</button>
+        <button class="tbtn ing" id="openListDir" type="button" title="Åpner mappen med bestillingslister">Bestillingslister</button>
+        <button class="tbtn ing" id="copyOpen" type="button" aria-expanded="false" aria-controls="copybox" hidden></button>
         <button class="tbtn" id="addToggle" type="button" aria-expanded="false" aria-controls="addbox">+ Legg til nytt prosjekt</button>
       </div>
     </div>
@@ -74,8 +77,8 @@
         </label>
         <label>I bruk fra uke <input type="number" id="f-start" min="1" max="53" value="40"></label>
         <label>til uke <input type="number" id="f-slutt" min="1" max="53" value="40"></label>
-        <label>Leveringstid (uker) <input type="number" id="f-lev" min="0" max="20" value="2"></label>
-        <label>Buffer (uker) <input type="number" id="f-buf" min="0" max="20" value="2"></label>
+        <label class="ing">Leveringstid (uker) <input type="number" id="f-lev" min="0" max="20" value="2"></label>
+        <label class="ing">Buffer (uker) <input type="number" id="f-buf" min="0" max="20" value="2"></label>
         <label>Antall sett <input type="number" id="f-sett" min="0" max="999" placeholder="F.eks. 30"></label>
         <label class="wide">Notat <input type="text" id="f-notat" placeholder="Valgfritt, f.eks. emnekode" autocomplete="off"></label>
         <div class="actions">
@@ -86,7 +89,7 @@
       </form>
     </div>
 
-    <div class="addbox" id="copybox" hidden>
+    <div class="addbox ing" id="copybox" hidden>
       <h3 class="boxtitle" id="copyTitle"></h3>
       <p class="formnote">Ukene og antall sett kopieres; BOM, leveringstid og buffer følger prosjektet. Bestillinger kopieres ikke, så neste år starter som «ikke bestilt». Sjekk ukene etterpå – timeplanen kan ha endret seg.</p>
       <div class="copylist" id="copyList"></div>
@@ -97,19 +100,19 @@
       </div>
     </div>
 
-    <div id="diffs"></div>
+    <div id="diffs" class="ing"></div>
 
     <div class="tablebox">
       <table>
         <thead><tr>
-          <th>Prosjekt</th><th>Type</th><th>I bruk fra</th><th>til uke</th><th title="Leveringstid i uker">Levering</th><th title="Buffer i uker">Buffer</th><th>Sett</th><th>Bestillingsfrist</th><th>Bestilling</th><th>BOM</th><th></th>
+          <th>Prosjekt</th><th>Type</th><th>I bruk fra</th><th>til uke</th><th title="Leveringstid i uker">Levering</th><th title="Buffer i uker">Buffer</th><th>Sett</th><th>Bestillingsfrist</th><th class="ing">Bestilling</th><th class="ing">BOM</th><th></th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
     </div>
   </section>
 
-  <section class="history" id="historySec" hidden>
+  <section class="history ing" id="historySec" hidden>
     <h2>Historikk</h2>
     <p class="muted">Det som er registrert som bestilt per skoleår, eks. mva. Pris per sett i grått.</p>
     <div class="tablebox"><table id="histTable"></table></div>
@@ -119,15 +122,15 @@
     <div>
       <h2>Slik regnes fristen</h2>
       <p>Bestillingsfristen er første bruksuke minus leveringstid og buffer, begge i uker. Uker i en stengt periode telles ikke med, så fristen for høstens startsett havner før fellesferien. Buffer dekker godkjenning hos bestiller, mottak og pakking.</p>
-      <p style="margin-top:10px">Under «Bestilling» registrerer du hver leverandør som bestilt. Årshjulet husker hva som ble bestilt, og sier fra hvis BOM-en eller antall sett endres så du trenger mer.</p>
+      <p class="ing" style="margin-top:10px">Under «Bestilling» registrerer du hver leverandør som bestilt. Årshjulet husker hva som ble bestilt, og sier fra hvis BOM-en eller antall sett endres så du trenger mer.</p>
       <p style="margin-top:10px">Antall å bestille er antall per sett × antall sett − det som er på lager. Antall sett styres her i årshjulet; BOM-en gir komponentene, antall per sett, lagerstatus og pris.</p>
     </div>
-    <div>
+    <div class="ing">
       <h2>Filene dine</h2>
       <p>BOM-ene leses rett fra BOM-mappen hver gang siden oppdateres. Endre filen i Excel, lagre, og gå tilbake hit. Årshjulet lager nye maler, og skriver bare til en BOM når du ber det oppdatere «På lager» etter en telling – med sikkerhetskopi i BOM/Sikkerhetskopi først.</p>
       <p style="margin-top:10px">BOM-mappe: <code id="bomDir"></code></p>
       <p style="margin-top:10px">Stengte perioder: <span id="closedList"></span>.
-        <button class="mini quiet" id="closedToggle" type="button" aria-expanded="false" aria-controls="closedEdit">Endre</button></p>
+        <button class="mini quiet ing" id="closedToggle" type="button" aria-expanded="false" aria-controls="closedEdit">Endre</button></p>
       <div class="closededit" id="closedEdit" hidden></div>
     </div>
   </div>

@@ -21,8 +21,10 @@ import threading
 import webbrowser
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, g as req, jsonify, render_template, request
+from werkzeug.middleware.proxy_fix import ProxyFix
 
+import auth
 import bestilling
 import bom as bomlib
 import config
@@ -32,13 +34,31 @@ from config import BOM_DIR, DATA_FILE, LIST_DIR, SNAP_FILE, TEMPLATE_BOM, TEMPLA
 from db import Db
 
 FIELDS = {"navn": str, "type": str, "start": int, "slutt": int, "lev": int, "buf": int,
-          "sett": int, "notat": str, "color": int, "bom": str}
+          "sett": int, "notat": str, "color": int, "bom": str, "faglarer": int}
+# det en faglærer kan endre på sine egne prosjekter (ingeniøren eier leveringstid, buffer, BOM og farge)
+FAGLARER_FELT = {"navn", "type", "start", "slutt", "sett", "notat"}
+# endepunktene en faglærer kan bruke – alt annet er bare for ingeniøren
+FAGLARER_TILLATT = {"index", "state", "create", "update", "delete", "auth.login", "auth.logout", "static"}
 
 app = Flask(__name__)
 app.json.ensure_ascii = False
 app.secret_key = config.SECRET_KEY
+app.config.update(
+    SESSION_COOKIE_NAME="arshjul",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=not config.LOKAL,  # bare over HTTPS på serveren
+    PERMANENT_SESSION_LIFETIME=dt.timedelta(hours=12),
+)
+if config.BAK_PROXY:
+    # Caddy/nginx foran: riktig klientadresse (låsing per IP) og https-adresser
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 _lock = threading.Lock()
 store = Db(config.DB_FILE)
+
+
+class Nektet(Exception):
+    """Innlogget, men ikke lov (403)."""
 
 
 def init() -> None:
@@ -61,6 +81,55 @@ def _ensure_init():
             if not _ready:
                 init()
                 _ready = True
+
+
+auth.init(app, store)  # etter _ensure_init: innloggingen trenger databasen
+
+
+@app.before_request
+def _rolle():
+    if req.bruker and not auth.er_ingenior() and request.endpoint not in FAGLARER_TILLATT:
+        if request.path.startswith("/api/"):
+            return jsonify({"feil": "Bare ingeniøren kan gjøre dette."}), 403
+        return "Ikke tilgang", 403
+    return None
+
+
+@app.after_request
+def _sikkerhet(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    resp.headers.setdefault("Content-Security-Policy",
+                            "default-src 'self'; script-src 'self'; img-src 'self' data:; "
+                            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                            "font-src https://fonts.gstatic.com; frame-ancestors 'none'; form-action 'self'")
+    if request.path.startswith("/api/"):
+        resp.headers.setdefault("Cache-Control", "no-store")
+    return resp
+
+
+@app.errorhandler(Nektet)
+def nektet(e):
+    return jsonify({"feil": str(e)}), 403
+
+
+# ---------- endringslogg ----------
+
+FELTNAVN = {"navn": "navn", "type": "type", "start": "uke fra", "slutt": "uke til", "sett": "antall sett",
+            "notat": "notat", "lev": "leveringstid", "buf": "buffer", "bom": "BOM", "color": "farge",
+            "faglarerId": "faglærer"}
+
+
+def logg(g: dict, handling: str, endret: dict | None = None) -> None:
+    """Skriv i endringsloggen. endret: {felt: (fra, til)}. Bare faglærernes endringer varsles."""
+    meg = auth.meg()
+    felles = {"bruker_id": meg["id"], "bruker_navn": meg["navn"], "rolle": meg["rolle"],
+              "gjennomforing_id": int(g["id"]), "prosjekt_navn": g["navn"], "skolear": g["skolear"], "handling": handling}
+    if endret:
+        store.logg([{**felles, "felt": FELTNAVN.get(k, k), "fra": fra, "til": til} for k, (fra, til) in endret.items()])
+    else:
+        store.logg([felles])
 
 
 # ---------- lagring av «sist sett» ----------
@@ -170,31 +239,45 @@ def index():
     return render_template("index.html")
 
 
+# det en faglærer får se av en gjennomføring – ikke BOM, bestilling, telling eller kostnader
+_OFFENTLIG = ("id", "prosjektId", "skolear", "start", "slutt", "sett", "navn", "type", "lev", "buf", "notat",
+              "color", "faglarerId", "faglarerNavn")
+
+
 @app.get("/api/state")
 def state():
     closed = store.stengte()
-    rader = store.gjennomforinger()
-    bestilt = store.bestillinger()
-    tellinger = store.tellinger()
-    typer = store.linjetyper()
-    with _lock:
-        snaps = _read_json(SNAP_FILE, {})
-        dirty = False
-        out = []
+    alle = store.gjennomforinger()
+    rader = [g for g in alle if not g["slettet"]]
+    ing = auth.er_ingenior()
+    meg = auth.meg()
+    out = []
+    if ing:
+        bestilt = store.bestillinger()
+        tellinger = store.tellinger()
+        typer = store.linjetyper()
+        with _lock:
+            snaps = _read_json(SNAP_FILE, {})
+            dirty = False
+            for g in rader:
+                st, ch, c = bom_status(g, snaps)
+                dirty |= ch
+                f = frister.frister(g, closed)
+                lagret = bestilt.get(g["id"], {})
+                # «trenger mer» gir bare mening før prosjektet starter og før det er telt
+                sammenlign = f["start"]["dato"] > dt.date.today().isoformat() and g["id"] not in tellinger
+                best = bestilling.oversikt(c["rader"], lagret, sammenlign) if c and c["linjer"] else None
+                out.append({**g, "semester": frister.semester(g["start"]), "hendelser": f.pop("hendelser"),
+                            "frister": f, "bomStatus": st, "bestilling": best,
+                            "bestiltKr": bestilling.kostnad(lagret), "egen": True,
+                            "telling": telling_status(g, c, st, lagret, tellinger.get(g["id"]), typer)})
+            if dirty:
+                _write_json(SNAP_FILE, snaps)
+    else:
         for g in rader:
-            st, ch, c = bom_status(g, snaps)
-            dirty |= ch
             f = frister.frister(g, closed)
-            lagret = bestilt.get(g["id"], {})
-            # «trenger mer» gir bare mening før prosjektet starter og før det er telt
-            sammenlign = f["start"]["dato"] > dt.date.today().isoformat() and g["id"] not in tellinger
-            best = bestilling.oversikt(c["rader"], lagret, sammenlign) if c and c["linjer"] else None
-            out.append({**g, "semester": frister.semester(g["start"]), "hendelser": f.pop("hendelser"),
-                        "frister": f, "bomStatus": st, "bestilling": best,
-                        "bestiltKr": bestilling.kostnad(lagret),
-                        "telling": telling_status(g, c, st, lagret, tellinger.get(g["id"]), typer)})
-        if dirty:
-            _write_json(SNAP_FILE, snaps)
+            out.append({**{k: g[k] for k in _OFFENTLIG}, "semester": frister.semester(g["start"]),
+                        "hendelser": f.pop("hendelser"), "frister": f, "egen": g["faglarerId"] == meg["id"]})
 
     idag = dt.date.today()
     na = frister.skolear_for(idag)
@@ -204,13 +287,22 @@ def state():
     mandag = idag - dt.timedelta(days=idag.weekday())
     neste8 = [frister.uke_info(mandag + i * frister.UKE, closed) for i in range(8)]
 
-    linked = {g.get("bom") for g in rader}
-    ledige = sorted(f.name for f in BOM_DIR.glob("*.xlsx") if not f.name.startswith("~$") and f.name not in linked) \
-        if BOM_DIR.exists() else []
-    return jsonify({"prosjekter": out, "stengte": closed, "ledigeBom": ledige, "modus": config.MODUS,
-                    "idag": frister.uke_info(idag), "skolearNa": na, "skolear": skolear, "neste8": neste8,
-                    "oppsett": frister.oppsett_varsel(rader, closed, idag),
-                    "mapper": {"bom": str(BOM_DIR), "lister": str(LIST_DIR)}})
+    svar = {"prosjekter": out, "stengte": closed, "modus": config.MODUS,
+            "idag": frister.uke_info(idag), "skolearNa": na, "skolear": skolear, "neste8": neste8,
+            "meg": {"id": meg["id"], "navn": meg["navn"], "rolle": meg["rolle"], "innlogging": config.INNLOGGING},
+            "ledigeBom": [], "oppsett": None, "mapper": {}, "endringer": [], "slettede": [], "faglarere": []}
+    if ing:
+        linked = {g.get("bom") for g in alle}
+        svar["ledigeBom"] = sorted(f.name for f in BOM_DIR.glob("*.xlsx")
+                                   if not f.name.startswith("~$") and f.name not in linked) if BOM_DIR.exists() else []
+        svar["oppsett"] = frister.oppsett_varsel(rader, closed, idag)
+        svar["mapper"] = {"bom": str(BOM_DIR), "lister": str(LIST_DIR)}
+        svar["endringer"] = store.endringer()
+        svar["slettede"] = [{k: g[k] for k in ("id", "navn", "skolear", "start", "slutt", "slettet", "slettetAv")}
+                            for g in alle if g["slettet"]]
+        svar["faglarere"] = [{"id": u["id"], "navn": u["navn"]} for u in store.brukere()
+                             if u["rolle"] == "faglarer" and u["aktiv"]]
+    return jsonify(svar)
 
 
 @app.post("/api/skolear/<int:fra>/kopier")
@@ -229,7 +321,7 @@ def _clean(body: dict, partial: bool) -> dict:
         if k not in body:
             continue
         v = body[k]
-        if v in (None, "") and k in ("sett", "bom", "notat"):
+        if v in (None, "") and k in ("sett", "bom", "notat", "faglarer"):
             out[k] = None if k != "notat" else ""
             continue
         try:
@@ -270,19 +362,92 @@ def create():
         raise bomlib.BomError("Ugyldig skoleår.")
     if not 2000 <= sy <= 2100:
         raise bomlib.BomError("Ugyldig skoleår.")
+    meg = auth.meg()
+    if auth.er_ingenior():
+        body["faglarer_id"] = _faglarer(body.pop("faglarer", None))
+    else:
+        # faglæreren eier prosjektet; leveringstid, buffer og BOM får ingeniørens standard
+        body = {k: v for k, v in body.items() if k in FAGLARER_FELT or k == "color"}
+        body["faglarer_id"] = meg["id"]
     slug = re.sub(r"[^a-z0-9]+", "-", body["navn"].lower()).strip("-")[:24] or "prosjekt"
-    return jsonify(store.ny(f"{slug}-{secrets.token_hex(2)}", sy, body))
+    g = store.ny(f"{slug}-{secrets.token_hex(2)}", sy, body)
+    logg(g, "opprettet")
+    return jsonify(g)
+
+
+def _faglarer(fid) -> int | None:
+    if fid in (None, "", 0):
+        return None
+    u = store.bruker(id=int(fid))
+    if not u or u["rolle"] != "faglarer":
+        raise bomlib.BomError("Fant ikke faglæreren.")
+    return u["id"]
+
+
+def _aktiv(gid: str) -> dict:
+    """Gjennomføringen, hvis den ikke er fjernet; en faglærer får bare sine egne."""
+    g = store.gjennomforing(gid)
+    if g["slettet"]:
+        raise KeyError(gid)
+    if not auth.er_ingenior() and g["faglarerId"] != auth.meg()["id"]:
+        raise Nektet("Du kan bare endre dine egne prosjekter.")
+    return g
 
 
 @app.patch("/api/gjennomforinger/<gid>")
 def update(gid):
-    return jsonify(store.endre(gid, _clean(request.get_json(force=True), partial=True)))
+    body = _clean(request.get_json(force=True), partial=True)
+    g0 = _aktiv(gid)
+    if not auth.er_ingenior():
+        ulovlig = set(body) - FAGLARER_FELT
+        if ulovlig:
+            raise Nektet("Det er ingeniøren som endrer " + ", ".join(sorted(FELTNAVN.get(k, k) for k in ulovlig)) + ".")
+    if "faglarer" in body:
+        body["faglarer_id"] = _faglarer(body.pop("faglarer"))
+    g1 = store.endre(gid, body)
+    navn = {u["id"]: u["navn"] for u in store.brukere()}
+    vis = lambda k, v: navn.get(v, "ingen") if k == "faglarerId" else v  # noqa: E731
+    endret = {}
+    for k in body:
+        kol = "faglarerId" if k == "faglarer_id" else k
+        if g0[kol] != g1[kol]:
+            endret[kol] = (vis(kol, g0[kol]), vis(kol, g1[kol]))
+    if endret:
+        logg(g1, "endret", endret)
+    return jsonify(g1)
 
 
 @app.delete("/api/gjennomforinger/<gid>")
 def delete(gid):
-    store.slett(gid)
+    """Faglærer: fjernes (mykt) til ingeniøren bekrefter. Ingeniør: slettes – også et fjernet prosjekt."""
+    g = store.gjennomforing(gid)
+    if auth.er_ingenior():
+        store.slett(gid)
+        store.kvitter(gid)
+        logg(g, "slettet")
+        return jsonify({"ok": True})
+    g = _aktiv(gid)
+    store.myk_slett(gid, auth.meg()["navn"])
+    logg(g, "fjernet")
+    return jsonify({"ok": True, "venter": True})
+
+
+@app.post("/api/gjennomforinger/<gid>/gjenopprett")
+def restore(gid):
+    """Angre at en faglærer fjernet et prosjekt."""
+    g = store.gjennomforing(gid)
+    if not g["slettet"]:
+        raise bomlib.BomError("Prosjektet er ikke fjernet.")
+    store.gjenopprett(gid)
+    store.kvitter(gid)
+    logg(g, "gjenopprettet")
     return jsonify({"ok": True})
+
+
+@app.post("/api/endringer/<gid>/kvitter")
+def acknowledge_changes(gid):
+    """«OK, sett» på faglærerens endringer i en gjennomføring."""
+    return jsonify({"kvittert": store.kvitter(gid)})
 
 
 @app.post("/api/gjennomforinger/<gid>/mal")
@@ -368,7 +533,7 @@ def order_status(gid):
                 dt.date.fromisoformat(dato)
             except (TypeError, ValueError):
                 raise bomlib.BomError("Ugyldig dato.")
-            store.ny_bestilling(gid, key, gr["navn"], dato=dato, ordrenr=ordrenr, sett=sett, linjer=linjer)
+            store.ny_bestilling(gid, key, gr["navn"], dato=dato, ordrenr=ordrenr, sett=sett, linjer=linjer, av=auth.meg()["navn"])
         else:
             if not lagret:
                 raise bomlib.BomError("Registrer først den vanlige bestillingen.")
@@ -443,7 +608,7 @@ def _varemottak(g: dict, gid: str, key: str, lagret: dict | None, handling: str,
             alt = all(paa_lager.get(r["key"], 0.0) >= r["bestilt"] - 1e-9 for r in rader)
             status = "mottatt" if alt else "delvis"
         logg = lagret["lager_logg"] + [{"tid": dt.datetime.now().isoformat(timespec="minutes"),
-                                        "handling": "mottatt" if handling == "mottak" else "angret",
+                                        "handling": "mottatt" if handling == "mottak" else "angret", "av": auth.meg()["navn"],
                                         "linjer": {k: delta[k] for k in res["skrevet"]}, "backup": res["backup"]}]
         store.endre_bestilling(gid, key, paa_lager=paa_lager, lager_logg=logg, status=status,
                                mottatt_dato=None if status == "bestilt" else (lagret["mottatt_dato"] or dt.date.today().isoformat()))
@@ -512,7 +677,7 @@ def _skriv_lager(g: dict, linjer: list[dict], verdier: dict[str, float], forvent
 
 
 def _logg(tell: dict, handling: str, res: dict) -> list[dict]:
-    return tell["logg"] + [{"tid": dt.datetime.now().isoformat(timespec="minutes"), "handling": handling,
+    return tell["logg"] + [{"tid": dt.datetime.now().isoformat(timespec="minutes"), "handling": handling, "av": auth.meg()["navn"],
                             "linjer": len(res["skrevet"]), "konflikter": len(res["konflikt"]), "backup": res["backup"]}]
 
 
@@ -574,7 +739,7 @@ def adopt_count(gid):
         raise bomlib.BomError("Ingen linjer er endret i BOM-en siden tellingen ble skrevet.")
     linjer = [{**l, "telt": endret[l["key"]]} if l["key"] in endret else l for l in tell["linjer"]]
     store.lagre_telling(gid, g["prosjektId"], tell["dato"], linjer)
-    logg = tell["logg"] + [{"tid": dt.datetime.now().isoformat(timespec="minutes"), "handling": "hentet",
+    logg = tell["logg"] + [{"tid": dt.datetime.now().isoformat(timespec="minutes"), "handling": "hentet", "av": auth.meg()["navn"],
                             "linjer": len(endret), "konflikter": 0, "backup": None}]
     store.telling_skrevet(gid, {**tell["skrevet_verdier"], **endret}, logg, tell["skrevet"], tell["backup"])
     return jsonify({"hentet": len(endret), **telling.oppsummering(linjer)})

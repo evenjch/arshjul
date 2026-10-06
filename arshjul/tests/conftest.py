@@ -33,6 +33,15 @@ def tom_datamappe():
 
 @pytest.fixture
 def client():
+    """Testklient som ingeniør (innlogging av, som lokalt), med gyldig CSRF-token."""
     arshjul.app.config["TESTING"] = True
     with arshjul.app.test_client() as c:
+        med_csrf(c)
         yield c
+
+
+def med_csrf(c, token="test-csrf"):
+    with c.session_transaction() as s:
+        s["csrf"] = token
+    c.environ_base["HTTP_X_CSRF_TOKEN"] = token
+    return c

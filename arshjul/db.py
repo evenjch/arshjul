@@ -110,10 +110,44 @@ MIGRERINGER = [
     DELETE FROM telling;
     DELETE FROM linjetype;
     """,
+    # 7: brukere og roller, faglærer per prosjekt, myk sletting og endringslogg
+    """
+    CREATE TABLE bruker (
+        id         INTEGER PRIMARY KEY,
+        brukernavn TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        navn       TEXT NOT NULL,
+        rolle      TEXT NOT NULL CHECK (rolle IN ('ingenior', 'faglarer')),
+        passord    TEXT NOT NULL,
+        aktiv      INTEGER NOT NULL DEFAULT 1,
+        feilforsok INTEGER NOT NULL DEFAULT 0,
+        last_til   TEXT,
+        sist_inne  TEXT,
+        opprettet  TEXT NOT NULL
+    );
+    ALTER TABLE prosjekt ADD COLUMN faglarer_id INTEGER REFERENCES bruker(id) ON DELETE SET NULL;
+    ALTER TABLE gjennomforing ADD COLUMN slettet TEXT;
+    ALTER TABLE gjennomforing ADD COLUMN slettet_av TEXT;
+    CREATE TABLE endring (
+        id               INTEGER PRIMARY KEY,
+        tid              TEXT NOT NULL,
+        bruker_id        INTEGER,
+        bruker_navn      TEXT NOT NULL,
+        rolle            TEXT NOT NULL,
+        gjennomforing_id INTEGER,
+        prosjekt_navn    TEXT NOT NULL,
+        skolear          INTEGER,
+        handling         TEXT NOT NULL,
+        felt             TEXT,
+        fra              TEXT,
+        til              TEXT,
+        kvittert         TEXT
+    );
+    CREATE INDEX endring_ukvittert ON endring(kvittert, gjennomforing_id);
+    """,
 ]
 _JSON_BESTILLING = ("linjer", "paa_lager", "lager_logg")
 
-PROSJEKT_FELT = ("navn", "type", "lev", "buf", "notat", "color", "bom")
+PROSJEKT_FELT = ("navn", "type", "lev", "buf", "notat", "color", "bom", "faglarer_id")
 GJENNOMFORING_FELT = ("start", "slutt", "sett")
 
 
@@ -181,8 +215,11 @@ class Db:
     # ---------- gjennomføringer ----------
 
     _SELECT = """SELECT g.id, g.prosjekt_id AS prosjektId, g.skolear, g.start, g.slutt, g.sett,
-                        p.navn, p.type, p.lev, p.buf, p.notat, p.color, p.bom
-                 FROM gjennomforing g JOIN prosjekt p ON p.id = g.prosjekt_id"""
+                        g.slettet, g.slettet_av AS slettetAv,
+                        p.navn, p.type, p.lev, p.buf, p.notat, p.color, p.bom,
+                        p.faglarer_id AS faglarerId, f.navn AS faglarerNavn
+                 FROM gjennomforing g JOIN prosjekt p ON p.id = g.prosjekt_id
+                 LEFT JOIN bruker f ON f.id = p.faglarer_id"""
 
     @staticmethod
     def _rad(r) -> dict:
@@ -204,9 +241,10 @@ class Db:
     def ny(self, prosjekt_id: str, skolear: int, felt: dict) -> dict:
         """Nytt prosjekt med sin første gjennomføring."""
         with self.tx() as con:
-            con.execute("INSERT INTO prosjekt (id, navn, type, lev, buf, notat, color, bom) VALUES (?,?,?,?,?,?,?,?)",
+            con.execute("""INSERT INTO prosjekt (id, navn, type, lev, buf, notat, color, bom, faglarer_id)
+                           VALUES (?,?,?,?,?,?,?,?,?)""",
                         (prosjekt_id, felt["navn"], felt.get("type", "hack"), felt.get("lev", 2), felt.get("buf", 2),
-                         felt.get("notat", ""), felt.get("color", 0), felt.get("bom")))
+                         felt.get("notat", ""), felt.get("color", 0), felt.get("bom"), felt.get("faglarer_id")))
             cur = con.execute("INSERT INTO gjennomforing (prosjekt_id, skolear, start, slutt, sett) VALUES (?,?,?,?,?)",
                               (prosjekt_id, skolear, felt.get("start", 40), felt.get("slutt", felt.get("start", 40)),
                                felt.get("sett")))
@@ -235,7 +273,7 @@ class Db:
         """
         nye = []
         with self.tx() as con:
-            rader = con.execute("SELECT * FROM gjennomforing WHERE skolear = ?", (fra,)).fetchall()
+            rader = con.execute("SELECT * FROM gjennomforing WHERE skolear = ? AND slettet IS NULL", (fra,)).fetchall()
             finnes = {r[0] for r in con.execute("SELECT prosjekt_id FROM gjennomforing WHERE skolear = ?", (fra + 1,))}
             for r in rader:
                 if (ids is not None and str(r["id"]) not in ids) or r["prosjekt_id"] in finnes:
@@ -245,6 +283,72 @@ class Db:
                 finnes.add(r["prosjekt_id"])
                 nye.append(str(cur.lastrowid))
         return nye
+
+    def myk_slett(self, gid: str, av: str) -> None:
+        """Faglærer fjerner: gjennomføringen skjules til ingeniøren bekrefter eller gjenoppretter."""
+        with self.tx() as con:
+            con.execute("UPDATE gjennomforing SET slettet = ?, slettet_av = ? WHERE id = ?",
+                        (dt.datetime.now().isoformat(timespec="minutes"), av, gid))
+
+    def gjenopprett(self, gid: str) -> None:
+        with self.tx() as con:
+            con.execute("UPDATE gjennomforing SET slettet = NULL, slettet_av = NULL WHERE id = ?", (gid,))
+
+    # ---------- brukere ----------
+
+    def ny_bruker(self, brukernavn: str, navn: str, rolle: str, passord_hash: str) -> int:
+        with self.tx() as con:
+            cur = con.execute("INSERT INTO bruker (brukernavn, navn, rolle, passord, opprettet) VALUES (?,?,?,?,?)",
+                              (brukernavn, navn, rolle, passord_hash, dt.datetime.now().isoformat(timespec="seconds")))
+            return cur.lastrowid
+
+    def bruker(self, *, id: int | None = None, brukernavn: str | None = None) -> dict | None:
+        with self.tx() as con:
+            if id is not None:
+                r = con.execute("SELECT * FROM bruker WHERE id = ?", (id,)).fetchone()
+            else:
+                r = con.execute("SELECT * FROM bruker WHERE brukernavn = ?", (brukernavn,)).fetchone()
+        return dict(r) if r else None
+
+    def brukere(self) -> list[dict]:
+        with self.tx() as con:
+            return [dict(r) for r in con.execute(
+                "SELECT id, brukernavn, navn, rolle, aktiv, sist_inne, last_til FROM bruker ORDER BY rolle, navn")]
+
+    def endre_bruker(self, id: int, **felt) -> None:
+        with self.tx() as con:
+            con.execute(f"UPDATE bruker SET {', '.join(k + ' = ?' for k in felt)} WHERE id = ?", (*felt.values(), id))
+
+    # ---------- endringslogg ----------
+
+    def logg(self, rader: list[dict]) -> None:
+        """rader: {bruker_id, bruker_navn, rolle, gjennomforing_id, prosjekt_navn, skolear, handling, felt, fra, til}"""
+        tid = dt.datetime.now().isoformat(timespec="seconds")
+        with self.tx() as con:
+            con.executemany("""INSERT INTO endring (tid, bruker_id, bruker_navn, rolle, gjennomforing_id, prosjekt_navn,
+                                                    skolear, handling, felt, fra, til)
+                               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                            [(tid, r.get("bruker_id"), r["bruker_navn"], r["rolle"], r.get("gjennomforing_id"),
+                              r["prosjekt_navn"], r.get("skolear"), r["handling"], r.get("felt"),
+                              None if r.get("fra") is None else str(r["fra"]),
+                              None if r.get("til") is None else str(r["til"])) for r in rader])
+
+    def endringer(self, ukvitterte: bool = True, rolle: str | None = "faglarer") -> list[dict]:
+        sql = "SELECT * FROM endring WHERE 1=1"
+        args: list = []
+        if ukvitterte:
+            sql += " AND kvittert IS NULL"
+        if rolle:
+            sql += " AND rolle = ?"
+            args.append(rolle)
+        with self.tx() as con:
+            return [dict(r) for r in con.execute(sql + " ORDER BY id", args)]
+
+    def kvitter(self, gid: str) -> int:
+        with self.tx() as con:
+            return con.execute("""UPDATE endring SET kvittert = ?
+                                  WHERE gjennomforing_id = ? AND kvittert IS NULL AND rolle = 'faglarer'""",
+                               (dt.datetime.now().isoformat(timespec="seconds"), gid)).rowcount
 
     # ---------- bestillinger ----------
 
@@ -260,11 +364,11 @@ class Db:
         return out
 
     def ny_bestilling(self, gid: str, key: str, navn: str, *, dato: str, ordrenr: str, sett: int | None,
-                      linjer: list[dict]) -> None:
+                      linjer: list[dict], av: str | None = None) -> None:
         with self.tx() as con:
-            con.execute("""INSERT INTO bestilling (gjennomforing_id, leverandor, navn, status, bestilt_dato, ordrenr, sett, linjer)
-                           VALUES (?,?,?,?,?,?,?,?)""",
-                        (gid, key, navn, "bestilt", dato, ordrenr, sett, json.dumps(linjer, ensure_ascii=False)))
+            con.execute("""INSERT INTO bestilling (gjennomforing_id, leverandor, navn, status, bestilt_dato, ordrenr, sett, linjer, av)
+                           VALUES (?,?,?,?,?,?,?,?,?)""",
+                        (gid, key, navn, "bestilt", dato, ordrenr, sett, json.dumps(linjer, ensure_ascii=False), av))
 
     def endre_bestilling(self, gid: str, key: str, **felt) -> None:
         for k in _JSON_BESTILLING:
