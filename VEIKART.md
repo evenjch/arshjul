@@ -29,6 +29,7 @@ Vi utvikler på egen PC, men slik at årshjulet når som helst kan flyttes til e
 - Året regnes som **skoleår**: august til juli (uke 32 til uke 31).
 - Bestillingsstatus føres **per leverandør** i hver gjennomføring, med et eget steg for **innlevering og telling** etter prosjektet.
 - Tellingen kan oppdatere **kun «på lager»-kolonnen** i BOM-en, og **bare etter at du har bekreftet**. Dette er et bevisst unntak fra regelen om at årshjulet aldri skriver til en BOM.
+- Utstyr/forbruk lagres i årshjulet per prosjekt og linje, ikke i BOM-en.
 - **Faglæreren bestemmer *når* og *hvor mange*:** navn, type, semester, start- og sluttuke, antall sett og notat.
   **Ingeniøren bestemmer *hvor lang tid bestillingen trenger*:** leveringstid, buffer, hvilken BOM som er koblet til, og farge. Faglæreren ser disse, men kan ikke endre dem.
 
@@ -73,12 +74,13 @@ Vi utvikler på egen PC, men slik at årshjulet når som helst kan flyttes til e
 - [x] **Historikk**: hva som er registrert som bestilt (eks. mva.), per prosjekt og skoleår, med pris per sett og sum per år. Regnes fra de frosne kopiene, så tallene står seg selv om BOM-en endres eller fjernes.
 - [ ] Vise de enkelte linjene som ble bestilt et tidligere år (i dag: bla til året og åpne «Bestilling»).
 
-## Fase 3 – Telling etter prosjektet
+## Fase 3 – Telling etter prosjektet ✓
 
-- Før opp innlevert antall per linje.
-- Skill mellom **forbruk** (motstander, ledninger), som ventes brukt opp, og **utstyr** (Arduino, Zumo), som skal komme tilbake. Kanskje via Kategori-kolonnen, ellers en ny kolonne.
-- Gir **forslag til «på lager»** neste år. Etter bekreftelse skrives tallet inn i BOM-en (bare den kolonnen). `LES MEG.md` oppdateres med unntaket.
-- Viser svinn og slitasje per prosjekt.
+- [x] Under «Bestilling» → «Telling etter prosjektet»: før opp det du har igjen per linje. Åpnes av seg selv når innleveringsuka er passert.
+- [x] **Utstyr** (skal komme tilbake) eller **forbruk** (brukes opp) velges per linje i tellingen og huskes for prosjektet til neste år (tabellen `linjetype`). Kategori-kolonnen brukes ikke – den beskriver hva slags komponent det er.
+- [x] Forventet = på lager + bestilt (registrert, ellers det BOM-en sa), minus det som er delt ut for forbruk. Avvik og **svinn** (utstyr som ikke kom tilbake, i kroner) vises, og svinn står også i historikken.
+- [x] **«Oppdater På lager i BOM-en»** skriver de telte tallene inn i kolonne H, etter bekreftelse. Bare kolonne H endres; formler, formatering og validering står (testet på kopi av en ekte BOM). Det lages alltid en sikkerhetskopi i `BOM/Sikkerhetskopi/` først, og filen må være lukket i Excel. Etter skriving er tellingen låst.
+- [x] Neste års BOM-utregning bruker den nye lagerbeholdningen.
 
 ## Fase 4 – Server og faglærerpanel
 
@@ -127,5 +129,4 @@ Vi utvikler på egen PC, men slik at årshjulet når som helst kan flyttes til e
 - **Hvor skal BOM-ene ligge når årshjulet er på serveren?**
   - *Hybrid:* serveren eier prosjektene, PC-en din beholder BOM-ene og Excel-flyten og henter prosjektene fra serveren. Bevarer dagens arbeidsflyt, men det blir to deler å drive.
   - *Alt på serveren:* BOM-ene lastes opp og ned i nettleseren. Én app, men «åpne i Excel – lagre – tilbake» forsvinner.
-- Hvordan merke forbruk og utstyr i BOM-en?
 - Hva krever IT for en VPS (operativsystem, tilgang, backup, sikkerhetsgjennomgang)?

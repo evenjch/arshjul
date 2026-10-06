@@ -65,6 +65,22 @@ MIGRERINGER = [
         UNIQUE (gjennomforing_id, leverandor)
     );
     """,
+    # 3: telling etter prosjektet, og om en linje er utstyr eller forbruk (huskes per prosjekt)
+    """
+    CREATE TABLE telling (
+        gjennomforing_id INTEGER PRIMARY KEY REFERENCES gjennomforing(id) ON DELETE CASCADE,
+        dato             TEXT NOT NULL,
+        linjer           TEXT NOT NULL,
+        skrevet          TEXT,
+        backup           TEXT
+    );
+    CREATE TABLE linjetype (
+        prosjekt_id TEXT NOT NULL REFERENCES prosjekt(id) ON DELETE CASCADE,
+        key         TEXT NOT NULL,
+        type        TEXT NOT NULL,
+        PRIMARY KEY (prosjekt_id, key)
+    );
+    """,
 ]
 
 PROSJEKT_FELT = ("navn", "type", "lev", "buf", "notat", "color", "bom")
@@ -231,6 +247,41 @@ class Db:
     def slett_bestilling(self, gid: str, key: str) -> None:
         with self.tx() as con:
             con.execute("DELETE FROM bestilling WHERE gjennomforing_id = ? AND leverandor = ?", (gid, key))
+
+    # ---------- telling ----------
+
+    def tellinger(self) -> dict[str, dict]:
+        with self.tx() as con:
+            out = {}
+            for r in con.execute("SELECT * FROM telling"):
+                d = dict(r)
+                d["linjer"] = json.loads(d["linjer"])
+                out[str(d.pop("gjennomforing_id"))] = d
+        return out
+
+    def lagre_telling(self, gid: str, prosjekt_id: str, dato: str, linjer: list[dict]) -> None:
+        """Lagre tellingen og husk utstyr/forbruk for prosjektet til neste år."""
+        with self.tx() as con:
+            con.execute("INSERT OR REPLACE INTO telling (gjennomforing_id, dato, linjer) VALUES (?,?,?)",
+                        (gid, dato, json.dumps(linjer, ensure_ascii=False)))
+            con.executemany("INSERT OR REPLACE INTO linjetype (prosjekt_id, key, type) VALUES (?,?,?)",
+                            [(prosjekt_id, l["key"], l["type"]) for l in linjer])
+
+    def telling_skrevet(self, gid: str, dato: str, backup: str) -> None:
+        with self.tx() as con:
+            con.execute("UPDATE telling SET skrevet = ?, backup = ? WHERE gjennomforing_id = ?", (dato, backup, gid))
+
+    def slett_telling(self, gid: str) -> None:
+        with self.tx() as con:
+            con.execute("DELETE FROM telling WHERE gjennomforing_id = ?", (gid,))
+
+    def linjetyper(self) -> dict[str, dict[str, str]]:
+        """{prosjekt-id: {linje-nøkkel: «utstyr»/«forbruk»}}"""
+        out: dict[str, dict[str, str]] = {}
+        with self.tx() as con:
+            for r in con.execute("SELECT prosjekt_id, key, type FROM linjetype"):
+                out.setdefault(r["prosjekt_id"], {})[r["key"]] = r["type"]
+        return out
 
     def slett(self, gid: str) -> None:
         """Slett gjennomføringen. Prosjektet slettes også hvis det ikke har flere."""

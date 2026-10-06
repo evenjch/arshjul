@@ -40,7 +40,7 @@
       const sameIds = st.prosjekter.length === projects.length && st.prosjekter.every((p) => projects.some((q) => q.id === p.id));
       projects = st.prosjekter; mode = "ready";
       const ae = document.activeElement;
-      const typing = ae && ae.matches && ae.matches("#tbody input");
+      const typing = ae && ae.matches && ae.matches("#tbody input, #tbody select[data-role]");
       renderAll(sameIds && !!typing);
       drawClosed();
     } catch (e) {
@@ -251,6 +251,7 @@
   // ---------- neste 8 uker ----------
   const ORDER = { frist: 0, prep: 1, start: 2, retur: 3 };
   function evTag(e) {
+    if (e.kind === "retur") return e.p.telling && e.p.telling.lagret ? ` <span class="tag ok">Telt</span>` : "";
     if (e.kind !== "prep" && e.kind !== "frist") return "";
     if (!hasBom(e.p)) return ` <span class="tag">BOM mangler</span>`;
     const os = orderState(e.p);
@@ -316,16 +317,78 @@
   const openOrders = new Set();
   const COLS = 11;
   function orderCell(p) {
-    const b = p.bestilling;
-    if (!b) return `<span class="muted">${hasBom(p) ? "" : "—"}</span>`;
-    const cls = { ok: "ok", late: "late", soon: "soon", tillegg: "soon" }[orderState(p)] || "";
+    const b = p.bestilling, t = p.telling, L = t && t.lagret;
+    if (!b && !L) return `<span class="muted">${hasBom(p) ? "" : "—"}</span>`;
+    const cls = b ? ({ ok: "ok", late: "late", soon: "soon", tillegg: "soon" }[orderState(p)] || "") : "";
     const open = openOrders.has(p.id);
-    return `<button type="button" class="ostat ${cls}" data-act="vis" data-id="${esc(p.id)}" aria-expanded="${open}">${esc(stateText(p))}<span class="chev" aria-hidden="true">${open ? "▴" : "▾"}</span></button>`;
+    const sub = L ? (L.skrevet ? "Telt · lager oppdatert" : "Telt · ikke skrevet til BOM")
+      : t && returnReady(p) ? "Klar for telling" : "";
+    return `<button type="button" class="ostat ${cls}" data-act="vis" data-id="${esc(p.id)}" aria-expanded="${open}">${esc(b ? stateText(p) : "Telling")}<span class="chev" aria-hidden="true">${open ? "▴" : "▾"}</span></button>`
+      + (sub ? `<small class="tellnote${L && !L.skrevet ? " soon" : ""}">${sub}</small>` : "");
+  }
+  const returnReady = (p) => !!IDAG && p.frister.retur.dato <= IDAG.dato;
+
+  // ---------- telling etter prosjektet ----------
+  const tellDraft = {}, tellOpen = new Map();
+  const fv = (l, type) => (type === "forbruk" ? Math.max(0, l.lagerFor + l.bestilt - l.utdelt) : l.lagerFor + l.bestilt);
+  const signed = (x) => (Math.abs(x) < 1e-9 ? "0" : (x > 0 ? "+" : "−") + qty(Math.abs(x)));
+  function tellSection(p) {
+    const t = p.telling; if (!t) return "";
+    const id = esc(p.id), L = t.lagret, locked = !!(L && L.skrevet), draft = tellDraft[p.id] || {};
+    const lines = L ? L.linjer : t.grunnlag;
+    const summary = L
+      ? `Telt ${dfmtY.format(toD(L.dato))} · ${L.avvik} ${L.avvik === 1 ? "avvik" : "avvik"}${L.svinn ? ` · svinn ${nf0.format(L.svinnKr)} kr` : ""}`
+        + (L.skrevet ? ` · «På lager» oppdatert ${dfmtY.format(toD(L.skrevet))}` : " · ikke skrevet til BOM-en ennå")
+      : returnReady(p) ? "Klar for telling" : `Telles etter innlevering, uke ${p.frister.retur.uke}`;
+    const open = tellOpen.has(p.id) ? tellOpen.get(p.id) : !L && returnReady(p);
+    const rows = lines.map((l) => {
+      const d = draft[l.key] || {}, type = d.type || l.type, f = fv(l, type);
+      const telt = d.telt !== undefined ? d.telt : (L ? l.telt : f);
+      const k = `data-id="${id}" data-key="${esc(l.key)}"`;
+      const typeCell = locked ? (type === "forbruk" ? "Forbruk" : "Utstyr")
+        : `<select class="mini" data-role="ttype" ${k} aria-label="Utstyr eller forbruk: ${esc(l.beskrivelse)}">`
+          + `<option value="utstyr"${type === "utstyr" ? " selected" : ""}>Utstyr</option><option value="forbruk"${type === "forbruk" ? " selected" : ""}>Forbruk</option></select>`;
+      const teltCell = locked ? qty(telt)
+        : `<input type="number" min="0" step="any" data-role="telt" ${k} value="${esc(telt)}" aria-label="Telt: ${esc(l.beskrivelse)}">`;
+      const diff = (parseFloat(telt) || 0) - f;
+      return `<tr data-key="${esc(l.key)}" data-lager="${l.lagerFor}" data-bestilt="${l.bestilt}" data-utdelt="${l.utdelt}">`
+        + `<td>${esc(l.beskrivelse)}${l.varenummer ? `<small>${esc(l.varenummer)}</small>` : ""}</td><td>${typeCell}</td>`
+        + `<td class="num"${l.antatt ? ` title="Ingen registrert bestilling – antatt bestilt etter BOM-en"` : ""}>${qty(l.lagerFor + l.bestilt)}${l.antatt ? "*" : ""}</td><td class="num">${qty(l.utdelt)}</td>`
+        + `<td class="num tf">${qty(f)}</td><td class="num">${teltCell}</td>`
+        + `<td class="num td ${diff < -1e-9 && type === "utstyr" ? "loss" : ""}">${signed(diff)}</td></tr>`;
+    }).join("");
+    let actions = "";
+    if (!locked) {
+      actions = `<button type="button" class="mini" data-act="tlagre" data-id="${id}">${L ? "Lagre endringer" : "Lagre telling"}</button>`;
+      if (L) actions += `<button type="button" class="mini" data-act="tskriv" data-id="${id}">Oppdater «På lager» i BOM-en …</button>`
+        + `<button type="button" class="mini quiet" data-act="tslett" data-id="${id}">Slett telling</button>`;
+    } else actions = `<span class="muted">Sikkerhetskopi av BOM-en før endringen: BOM/Sikkerhetskopi/${esc(L.backup || "")}</span>`;
+    const note = !L && t.antattBestilt ? `<p class="muted">* Leverandøren er ikke registrert som bestilt, så «før» bruker det BOM-en sa skulle bestilles.</p>` : "";
+    return `<details class="tellbox" data-id="${id}"${open ? " open" : ""}><summary><b>Telling etter prosjektet</b> <span class="muted">· ${summary}</span></summary>`
+      + `<p class="muted">Tell det du har igjen etter prosjektet. Utstyr skal komme tilbake; forbruk brukes opp. Det telte blir nytt «På lager» i BOM-en.</p>${note}`
+      + `<div class="tellscroll"><table class="tell"><thead><tr><th>Linje</th><th>Type</th><th class="num" title="På lager + bestilt">Før</th><th class="num">Delt ut</th><th class="num">Forventet</th><th class="num">Telt</th><th class="num">Avvik</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      + `<div class="levact">${actions}</div></details>`;
+  }
+  // oppdater «forventet» og «avvik» på raden mens du skriver, og husk tallene til de er lagret
+  function tellRow(tr, id) {
+    const sel = tr.querySelector("[data-role=ttype]"), inp = tr.querySelector("[data-role=telt]");
+    const type = sel ? sel.value : "utstyr";
+    const l = { lagerFor: +tr.dataset.lager, bestilt: +tr.dataset.bestilt, utdelt: +tr.dataset.utdelt };
+    const f = fv(l, type), diff = (parseFloat(inp.value) || 0) - f;
+    tr.querySelector(".tf").textContent = qty(f);
+    const td = tr.querySelector(".td"); td.textContent = signed(diff); td.classList.toggle("loss", diff < -1e-9 && type === "utstyr");
+    (tellDraft[id] || (tellDraft[id] = {}))[tr.dataset.key] = { type, telt: inp.value };
+  }
+  function tellEdit(el) { tellRow(el.closest("tr"), el.dataset.id); }
+  function tellCollect(id) {
+    const box = document.querySelector(`details.tellbox[data-id="${CSS.escape(id)}"]`);
+    return [...box.querySelectorAll("tbody tr[data-key]")].map((tr) => ({
+      key: tr.dataset.key, type: tr.querySelector("[data-role=ttype]").value, telt: tr.querySelector("[data-role=telt]").value }));
   }
   const qty = (x) => fmtNum(Math.round(x * 100) / 100);
   function orderDetail(p) {
     const id = esc(p.id);
-    const rows = p.bestilling.grupper.map((g) => {
+    const rows = (p.bestilling ? p.bestilling.grupper : []).map((g) => {
       const k = `data-id="${id}" data-lev="${esc(g.key)}"`;
       let act;
       if (g.status === "lager") act = `<span class="muted">Ingenting å bestille</span>`;
@@ -349,7 +412,7 @@
       return `<div class="lev"><div class="levhead"><b>${esc(g.navn)}</b><span class="muted">${g.linjer} ${g.linjer === 1 ? "linje" : "linjer"} · ${nf0.format(g.eks)} kr</span></div>`
         + `<div class="levact" data-lev="${esc(g.key)}">${act}${liste}</div>${notes ? `<ul class="avvik">${notes}</ul>` : ""}</div>`;
     }).join("");
-    return `<tr class="detail" data-for="${id}"><td colspan="${COLS}"><div class="levs">${rows}</div></td></tr>`;
+    return `<tr class="detail" data-for="${id}"><td colspan="${COLS}">${rows ? `<div class="levs">${rows}</div>` : ""}${tellSection(p)}</td></tr>`;
   }
 
   function drawTable() {
@@ -369,7 +432,7 @@
         <td class="ordercell">${orderCell(p)}</td>
         <td>${bomCell(p)}</td>
         <td><button type="button" class="del" data-id="${esc(p.id)}">Slett</button></td></tr>`
-        + (openOrders.has(p.id) && p.bestilling ? orderDetail(p) : "");
+        + (openOrders.has(p.id) && (p.bestilling || p.telling) ? orderDetail(p) : "");
     }).join("");
   }
 
@@ -447,7 +510,7 @@
 
   // ---------- historikk: hva hvert prosjekt har kostet per skoleår ----------
   function drawHistory() {
-    const runs = projects.filter((p) => p.bestiltKr != null);
+    const runs = projects.filter((p) => p.bestiltKr != null || (p.telling && p.telling.lagret && p.telling.lagret.svinnKr));
     $("historySec").hidden = !runs.length;
     if (!runs.length) return;
     const years = [...new Set(runs.map((p) => p.skolear))].sort((a, b) => a - b);
@@ -459,7 +522,9 @@
     const cell = (p) => {
       if (!p) return `<td class="num muted">—</td>`;
       const sett = p.sett || (p.bomStatus && p.bomStatus.settFil);
-      return `<td class="num">${nf0.format(p.bestiltKr)} kr${sett ? `<small>${nf0.format(p.bestiltKr / sett)} kr/sett · ${sett} sett</small>` : ""}</td>`;
+      const L = p.telling && p.telling.lagret;
+      return `<td class="num">${nf0.format(p.bestiltKr)} kr${sett ? `<small>${nf0.format(p.bestiltKr / sett)} kr/sett · ${sett} sett</small>` : ""}`
+        + (L && L.svinnKr ? `<small class="loss">svinn ${nf0.format(L.svinnKr)} kr</small>` : "") + `</td>`;
     };
     const sum = (y) => runs.filter((p) => p.skolear === y).reduce((s, p) => s + p.bestiltKr, 0);
     $("histTable").innerHTML = `<thead><tr><th>Prosjekt</th>${years.map((y) => `<th class="num">${esc(syName(y))}</th>`).join("")}</tr></thead><tbody>`
@@ -485,7 +550,9 @@
 
   // ---------- redigering ----------
   $("tbody").addEventListener("input", (e) => {
-    const t = e.target; if (!t.matches("input[type=number]")) return;
+    const t = e.target;
+    if (t.matches("input[data-role=telt]")) { tellEdit(t); return; }
+    if (!t.matches("input[type=number][data-k]")) return;
     const p = projects.find((x) => x.id === t.dataset.id); if (!p) return;
     const k = t.dataset.k;
     if (t.value === "" && k === "sett") { p.sett = null; queueUpdate(p.id, { sett: null }); return; }
@@ -501,8 +568,12 @@
   const P = (id) => "/api/gjennomforinger/" + encodeURIComponent(id);
 
   const orderApi = (id, body) => api("POST", P(id) + "/bestilling", body);
+  $("tbody").addEventListener("toggle", (e) => {
+    const d = e.target; if (d.matches && d.matches("details.tellbox")) tellOpen.set(d.dataset.id, d.open);
+  }, true); // «toggle» bobler ikke
   $("tbody").addEventListener("change", (e) => {
     const t = e.target;
+    if (t.matches("select[data-role=ttype]")) { tellEdit(t); return; }
     if (t.matches("select[data-act=ostatus]")) {
       act(() => orderApi(t.dataset.id, { handling: "status", leverandor: t.dataset.lev, status: t.value }), "Status lagret.");
       return;
@@ -523,6 +594,17 @@
       if (a === "bestilt") act(() => orderApi(id, { handling: "bestilt", leverandor: lev, ordrenr: ordrenr() }), "Registrert som bestilt.");
       if (a === "tillegg") act(() => orderApi(id, { handling: "tillegg", leverandor: lev }), "Tilleggsbestillingen er registrert.");
       if (a === "lliste") act(() => api("POST", P(id) + "/liste", { leverandor: lev }), (r) => `Lagret «${r.fil}» i Bestillingslister (${r.linjer} linjer).`);
+      if (a === "tlagre") act(async () => { const r = await api("POST", P(id) + "/telling", { linjer: tellCollect(id) }); delete tellDraft[id]; return r; },
+        (r) => `Tellingen er lagret: ${r.avvik} avvik${r.svinn ? `, svinn ${nf0.format(r.svinnKr)} kr` : ""}. Oppdater «På lager» i BOM-en når du er fornøyd.`);
+      if (a === "tskriv") {
+        if (!b.classList.contains("confirm")) { b.classList.add("confirm"); b.textContent = "Bekreft: skriv telte tall inn i BOM-en"; return; }
+        act(() => api("POST", P(id) + "/telling/skriv"), (r) => `Oppdaterte «På lager» for ${r.skrevet.length} linjer i BOM-en.`
+          + (r.hoppet.length ? ` ${r.hoppet.length} linjer ble hoppet over (finnes ikke, eller står flere ganger).` : "") + ` Sikkerhetskopi: ${r.backup}.`);
+      }
+      if (a === "tslett") {
+        if (!b.classList.contains("confirm")) { b.classList.add("confirm"); b.textContent = "Bekreft sletting"; return; }
+        act(() => api("DELETE", P(id) + "/telling"), "Tellingen er slettet.");
+      }
       if (a === "angre") {
         if (!b.classList.contains("confirm")) { b.classList.add("confirm"); b.textContent = "Bekreft angre"; return; }
         act(() => orderApi(id, { handling: "angre", leverandor: lev }), "Bestillingen er fjernet. Leverandøren står som ikke bestilt.");

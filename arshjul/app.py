@@ -27,6 +27,7 @@ import bestilling
 import bom as bomlib
 import config
 import frister
+import telling
 from config import BOM_DIR, DATA_FILE, LIST_DIR, SNAP_FILE, TEMPLATE_BOM, TEMPLATE_LIST
 from db import Db
 
@@ -139,6 +140,18 @@ def bom_status(p: dict, snaps: dict) -> tuple[dict | None, bool, dict | None]:
     }, changed, c
 
 
+def telling_status(g: dict, c: dict | None, st: dict | None, lagret: dict, tell: dict | None,
+                   typer: dict) -> dict | None:
+    """Lagret telling, eller grunnlaget for en ny (fra BOM-en slik den er nå)."""
+    if tell:
+        return {"lagret": {**tell, **telling.oppsummering(tell["linjer"])}, "grunnlag": None, "antattBestilt": False}
+    if not c or not c["linjer"]:
+        return None
+    sett = g.get("sett") or (st or {}).get("settFil") or 0
+    grunnlag = telling.grunnlag(c["rader"], telling.bestilt_per_linje(lagret), typer.get(g["prosjektId"], {}), sett)
+    return {"lagret": None, "grunnlag": grunnlag, "antattBestilt": any(l["antatt"] for l in grunnlag)}
+
+
 def bom_path(g: dict) -> Path:
     path = BOM_DIR / (g.get("bom") or "")
     if not g.get("bom") or not path.exists():
@@ -158,6 +171,8 @@ def state():
     closed = store.stengte()
     rader = store.gjennomforinger()
     bestilt = store.bestillinger()
+    tellinger = store.tellinger()
+    typer = store.linjetyper()
     with _lock:
         snaps = _read_json(SNAP_FILE, {})
         dirty = False
@@ -166,10 +181,12 @@ def state():
             st, ch, c = bom_status(g, snaps)
             dirty |= ch
             f = frister.frister(g, closed)
-            best = bestilling.oversikt(c["rader"], bestilt.get(g["id"], {})) if c and c["linjer"] else None
+            lagret = bestilt.get(g["id"], {})
+            best = bestilling.oversikt(c["rader"], lagret) if c and c["linjer"] else None
             out.append({**g, "semester": frister.semester(g["start"]), "hendelser": f.pop("hendelser"),
                         "frister": f, "bomStatus": st, "bestilling": best,
-                        "bestiltKr": bestilling.kostnad(bestilt.get(g["id"], {}))})
+                        "bestiltKr": bestilling.kostnad(lagret),
+                        "telling": telling_status(g, c, st, lagret, tellinger.get(g["id"]), typer)})
         if dirty:
             _write_json(SNAP_FILE, snaps)
 
@@ -382,6 +399,69 @@ def acknowledge(gid):
         snaps = _read_json(SNAP_FILE, {})
         snaps[g["bom"]] = {"rader": b["rader"], "lest": b["endret"]}
         _write_json(SNAP_FILE, snaps)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/gjennomforinger/<gid>/telling")
+def save_count(gid):
+    """Lagre tellingen. linjer: [{key, type, telt}]. Tallene før prosjektet hentes fra BOM-en nå."""
+    g = store.gjennomforing(gid)
+    gammel = store.tellinger().get(gid)
+    if gammel and gammel["skrevet"]:
+        raise bomlib.BomError("Tellingen er allerede skrevet til BOM-en og kan ikke endres.")
+    body = request.get_json(force=True) or {}
+    try:
+        innspill = {str(l["key"]): {"type": l.get("type", "utstyr"), "telt": l["telt"]}
+                    for l in body.get("linjer", []) if l.get("telt") not in (None, "")}
+    except (TypeError, KeyError, AttributeError):
+        raise bomlib.BomError("Ugyldig telling.")
+    if not innspill:
+        raise bomlib.BomError("Fyll inn minst én linje.")
+    if gammel:  # endre en lagret telling: behold tallene den ble laget fra
+        grunnlag = gammel["linjer"]
+    else:
+        b, c, sett, _ = beregn(g)
+        grunnlag = telling.grunnlag(c["rader"], telling.bestilt_per_linje(store.bestillinger().get(gid, {})),
+                                    store.linjetyper().get(g["prosjektId"], {}), sett)
+    try:
+        linjer = telling.lag(grunnlag, innspill)
+    except (TypeError, ValueError) as e:
+        raise bomlib.BomError(f"Ugyldig telling: {e}")
+    store.lagre_telling(gid, g["prosjektId"], dt.date.today().isoformat(), linjer)
+    return jsonify(telling.oppsummering(linjer))
+
+
+@app.post("/api/gjennomforinger/<gid>/telling/skriv")
+def write_count(gid):
+    """Skriv de telte tallene inn i «På lager» i BOM-en (etter bekreftelse i nettleseren)."""
+    g = store.gjennomforing(gid)
+    tell = store.tellinger().get(gid)
+    if not tell:
+        raise bomlib.BomError("Lagre tellingen først.")
+    if tell["skrevet"]:
+        raise bomlib.BomError("Tellingen er allerede skrevet til BOM-en.")
+    path = bom_path(g)
+    with _lock:
+        res = bomlib.write_stock(path, {l["key"]: l["telt"] for l in tell["linjer"]}, BOM_DIR / "Sikkerhetskopi")
+        # vår egen endring skal ikke dukke opp som «BOM-en er endret»
+        snaps = _read_json(SNAP_FILE, {})
+        if g["bom"] in snaps:
+            nye = {l["key"]: l["telt"] for l in tell["linjer"] if l["key"] in res["skrevet"]}
+            for r in snaps[g["bom"]]["rader"]:
+                if bomlib.rad_key(r) in nye:
+                    r["lager"] = nye[bomlib.rad_key(r)]
+            _write_json(SNAP_FILE, snaps)
+    store.telling_skrevet(gid, dt.date.today().isoformat(), res["backup"])
+    return jsonify(res)
+
+
+@app.delete("/api/gjennomforinger/<gid>/telling")
+def delete_count(gid):
+    store.gjennomforing(gid)
+    tell = store.tellinger().get(gid)
+    if tell and tell["skrevet"]:
+        raise bomlib.BomError("Tellingen er skrevet til BOM-en og kan ikke slettes. Bruk sikkerhetskopien om noe ble feil.")
+    store.slett_telling(gid)
     return jsonify({"ok": True})
 
 

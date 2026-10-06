@@ -14,7 +14,7 @@ Innkjøp undervisning/
 
 - **Årshjulet viser ett skoleår om gangen**, fra uke 32 (august) til uke 31. Bla med ‹ og › over hjulet. Uke 32–53 er høsten, uke 1–31 er våren etter.
 - **Et prosjekt** (navn, type, leveringstid, buffer, BOM) går igjen fra år til år. **Ukene og antall sett** gjelder bare det skoleåret du ser på.
-- **Årshjulet skriver aldri til en eksisterende BOM.** Det leser dem, og det lager nye maler.
+- **Årshjulet skriver nesten aldri til en eksisterende BOM.** Det leser dem og lager nye maler. Eneste unntak: etter en telling kan du be det oppdatere «På lager» (kolonne H). Det skjer bare når du bekrefter, filen må være lukket i Excel, og det lages alltid en sikkerhetskopi i `BOM/Sikkerhetskopi/` først.
 - **Antall sett** styres i årshjulet. Å bestille = per sett × antall sett − på lager.
 - **Stengte perioder** (jul, påske, fellesferie) endres nederst på siden.
 - Legg gjerne hele mappen i OneDrive, så får du backup automatisk. Ta ikke backup av `arshjul.db` mens årshjulet kjører og lagrer.
@@ -34,6 +34,8 @@ Krever Python 3.10 eller nyere. Uten startfilen: `pip install -r requirements.tx
 |--------------------------------|---------------------------------------------------------------------------|
 | Legge til et prosjekt          | Bla til riktig skoleår, trykk «+ Legg til nytt prosjekt»                  |
 | Sette opp neste skoleår        | «Kopier til 2027/28 …» over tabellen, velg prosjektene. Årshjulet minner deg på det om våren |
+| Telle etter prosjektet         | Åpne «Bestilling» → «Telling etter prosjektet». Velg utstyr/forbruk, før opp det du har igjen, «Lagre telling» |
+| Oppdatere lageret i BOM-en     | Etter tellingen: «Oppdater «På lager» i BOM-en …» og bekreft. Lukk BOM-en i Excel først |
 | Se hva prosjektene har kostet  | «Historikk» under tabellen: bestilt per prosjekt og skoleår, og per sett  |
 | Lage BOM for nytt prosjekt     | «Lag BOM-mal» – filen lages i BOM-mappen med navn, dato, frist og antall sett, og åpnes i Excel |
 | Koble til en BOM du allerede har | Legg filen i BOM-mappen, velg den i «Koble til fil …»                  |
@@ -53,7 +55,8 @@ Siden oppdateres av seg selv når du går tilbake til nettleservinduet.
 - `frister.py`: uker, skoleår og frister – det eneste stedet de regnes ut
 - `db.py`: databasen (prosjekter, gjennomføringer per skoleår, bestillinger, stengte perioder) og oppgraderinger av den
 - `bestilling.py`: bestillingsstatus per leverandør, frossen kopi og hva som mangler
-- `bom.py`: lesing av BOM, utregning, endringer, mal og bestillingsliste
+- `telling.py`: telling etter prosjektet – forventet, avvik og svinn
+- `bom.py`: lesing av BOM, utregning, endringer, mal, bestillingsliste og oppdatering av «På lager»
 - `maler/`: BOM-malen og bestillingsliste-malen
 - `templates/index.html`, `static/`: selve årshjulet
 - `tests/`: automatiske tester
