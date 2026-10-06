@@ -15,7 +15,9 @@
       <div class="eyebrow">Elektronikk · innkjøp til undervisning</div>
       <h1>Årshjul for innkjøp</h1>
       <div class="meta" id="today"></div>
-      {% if meg %}<div class="meg">Innlogget som <b>{{ meg.navn }}</b> ({{ rollenavn[meg.rolle] | lower }}{% if meg.admin %}, administrator{% endif %})
+      {% if meg %}<div class="meg">Innlogget som <b>{{ meg.navn }}</b> ({{ rollenavn[meg.rolle] | lower }})
+        {% if meg.kanAdmin %}<button class="mini adminbryter" id="adminToggle" type="button" role="switch" aria-checked="{{ 'true' if meg.admin else 'false' }}"
+          title="{{ 'Tilbake til vanlig ingeniør: bare dine egne emner' if meg.admin else 'Se og endre alle emner, og styre brukerne' }}">Adminmodus: {{ 'på' if meg.admin else 'av' }}</button>{% endif %}
         <form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button class="mini quiet" type="submit">Logg ut</button></form></div>{% endif %}
     </div>
     <div class="stats" id="stats"></div>

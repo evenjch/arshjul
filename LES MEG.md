@@ -66,7 +66,8 @@ Hvert prosjekt hører til et **emne** (f.eks. IELS1001, bachelor eller master). 
 
 **Alle logger inn**, også lokalt: administrator, ingeniør eller faglærer. Det finnes ingen bruker uten navn, så loggen viser alltid hvem som gjorde hva.
 
-- **Administrator** (deg) er en ingeniør med alle emner, og den eneste som ser «Brukere» nederst på siden. Der lager du ingeniører og faglærere, gir nytt passord, gjør andre til administrator, og deaktiverer brukere. Det må alltid finnes minst én aktiv administrator.
+- **Administrator** (deg) er en ingeniør som kan slå på **«Adminmodus»** øverst ved navnet ditt. Til vanlig (av) er du en helt vanlig ingeniør med dine egne emner. I adminmodus (rød strek øverst) ser og endrer du alle emner, og ser «Brukere» nederst på siden. Du starter alltid uten adminmodus når du logger inn.
+- I adminmodus ser du «Brukere». Der lager du ingeniører og faglærere, gir nytt passord, gjør andre til administrator, og deaktiverer brukere. Det må alltid finnes minst én aktiv administrator.
 - Deaktiverte brukere kan ikke logge inn, men navnet står fortsatt i loggene.
 
 **Reserve fra kommandolinjen**, i `arshjul/` – f.eks. hvis du glemmer passordet ditt:

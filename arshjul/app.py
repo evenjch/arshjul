@@ -335,7 +335,8 @@ def state():
 
     svar = {"prosjekter": out, "stengte": closed, "modus": config.MODUS,
             "idag": frister.uke_info(idag), "skolearNa": na, "skolear": skolear, "neste8": neste8,
-            "meg": {"id": meg["id"], "navn": meg["navn"], "rolle": meg["rolle"], "admin": meg["admin"]},
+            "meg": {"id": meg["id"], "navn": meg["navn"], "rolle": meg["rolle"], "admin": meg["admin"],
+                    "kanAdmin": meg["kanAdmin"]},
             "brukere": [],
             "ledigeBom": [], "oppsett": None, "mapper": {}, "endringer": [], "slettede": [],
             "emner": [], "faglarere": [], "ingeniorer": [], "program": PROGRAM}

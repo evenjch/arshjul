@@ -97,6 +97,7 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 
 **Innlogging og roller** (`auth.py`, `manage.py`, migrering 7)
 - [x] **Administrator** (migrering 9): en ingeniør med alle emner, som styrer brukerne under «Brukere» på nettsiden (lage, nytt passord, admin, deaktivere). Det må alltid finnes minst én aktiv administrator. Ingen selvregistrering.
+- [x] **Adminmodus** slås av og på per økt med bryteren øverst. Uten den er administratoren en vanlig ingeniør – samme regler på serveren, bare egne emner, ingen «Brukere». Innlogging starter alltid uten adminmodus (unntak: rett etter første oppsett).
 - [x] Første administrator: lokalt på siden «Velkommen til årshjulet» når det ikke finnes brukere; på serveren bare med `python manage.py ny-bruker <brukernavn> "<Navn>" ingenior --admin`, så ingen andre rekker det først. `manage.py` er også reserve (`passord`, `admin`, `aktiver`, `deaktiver`, `liste`).
 - [x] Passord lagres som hash (scrypt), minst 10 tegn. Låst i 15 minutter etter 5 feil; i tillegg en grense per IP-adresse. Samme melding for feil brukernavn og feil passord.
 - [x] **Innlogging er alltid på – lokalt også.** Ingen bruker uten navn, så det som testes lokalt er det som kjører på serveren, og loggen viser alltid hvem. Lokalt lagres nøkkelen i datamappen, og du forblir innlogget i 30 dager (serveren: 12 timer).

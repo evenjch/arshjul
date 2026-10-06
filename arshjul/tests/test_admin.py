@@ -169,3 +169,55 @@ def test_siden_som_admin(client):
     bruker("anne")
     res = kjor_siden(client.get("/api/state").get_json())
     assert res["errors"] == []
+
+
+# ---------- adminmodus ----------
+
+def test_adminmodus_av_er_vanlig_ingenior(client):
+    """Administratoren uten adminmodus har akkurat en vanlig ingeniørs rettigheter."""
+    admin = arshjul.store.bruker(brukernavn="admin")["id"]
+    bjorn = bruker("bjorn")
+    e = arshjul.store.nytt_emne({"kode": "E1", "ingenior_id": bjorn})["id"]
+    g = client.post("/api/gjennomforinger", json={"navn": "Bjørns", "skolear": 2030, "emne": e}).get_json()
+
+    vanlig = som(ny_klient(), admin)  # ny økt: adminmodus av
+    st = vanlig.get("/api/state").get_json()
+    assert (st["meg"]["admin"], st["meg"]["kanAdmin"]) == (False, True)
+    assert st["prosjekter"] == [] and st["brukere"] == []  # ser ikke Bjørns emne, ingen brukerliste
+    assert vanlig.patch(f"/api/gjennomforinger/{g['id']}", json={"start": 40}).status_code == 403
+    assert vanlig.post("/api/brukere", json={"brukernavn": "x", "navn": "X", "rolle": "faglarer", "passord": PASSORD}).status_code == 403
+
+    assert vanlig.post("/api/adminmodus", json={"på": True}).get_json() == {"adminmodus": True}
+    st = vanlig.get("/api/state").get_json()
+    assert st["meg"]["admin"] is True and [p["navn"] for p in st["prosjekter"]] == ["Bjørns"] and st["brukere"]
+    assert vanlig.patch(f"/api/gjennomforinger/{g['id']}", json={"start": 40}).status_code == 200
+
+    vanlig.post("/api/adminmodus", json={"på": False})
+    assert vanlig.get("/api/state").get_json()["prosjekter"] == []
+
+
+@pytest.mark.parametrize("rolle", ["ingenior", "faglarer"])
+def test_bare_administratorer_har_adminmodus(rolle):
+    c = som(ny_klient(), bruker("vanlig", rolle))
+    assert c.post("/api/adminmodus", json={"på": True}).status_code == 403
+    assert c.get("/api/state").get_json()["meg"]["admin"] is False
+
+
+def test_innlogging_starter_uten_adminmodus(client):
+    c = ny_klient()
+    c.get("/login")
+    with c.session_transaction() as s:
+        token = s["csrf"]
+    c.post("/login", data={"brukernavn": "admin", "passord": ADMIN_PASSORD, "csrf": token})
+    with c.session_transaction() as s:
+        c.environ_base["HTTP_X_CSRF_TOKEN"] = s["csrf"]
+    assert c.get("/api/state").get_json()["meg"]["admin"] is False
+    html = c.get("/").get_data(as_text=True)
+    assert 'id="adminToggle"' in html and "Adminmodus: av" in html and 'data-admin="0"' in html
+
+
+def test_adminmodus_krever_csrf(client):
+    admin = arshjul.store.bruker(brukernavn="admin")["id"]
+    c = som(ny_klient(), admin)
+    c.environ_base.pop("HTTP_X_CSRF_TOKEN")
+    assert c.post("/api/adminmodus", json={"på": True}).status_code == 400

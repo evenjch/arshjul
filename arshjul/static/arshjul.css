@@ -254,6 +254,10 @@
   .meg form { margin: 0; }
   [data-rolle="faglarer"] .ing { display: none !important; }
   [data-admin="0"] .adm { display: none !important; }
+  /* adminmodus: tydelig så du alltid vet hvilke rettigheter du har */
+  .adminbryter[aria-checked="true"] { background: var(--warn); border-color: var(--warn); color: var(--card); }
+  [data-admin="1"] header { border-bottom-color: var(--warn); }
+  [data-admin="1"] header .eyebrow::after { content: " · adminmodus"; color: var(--warn); }
   [data-rolle="ingenior"] .fag { display: none !important; }
   #brukerTable { min-width: 760px; }
   #brukerTable input[type=text], #brukerTable input[type=password], #brukerTable select {

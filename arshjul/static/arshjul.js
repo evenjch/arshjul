@@ -1054,6 +1054,14 @@
   $("today").textContent = dfmtY.format(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()));
   renderAll(false);
   load().then(() => { if (IDAG) $("today").textContent = "I dag: uke " + IDAG.uke + ", " + dfmtY.format(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate())); });
+  // adminmodus av/på: last siden på nytt, så alt (også toppen) viser de nye rettighetene
+  const adminBryter = document.getElementById("adminToggle");
+  if (adminBryter) adminBryter.addEventListener("click", async () => {
+    const pa = adminBryter.getAttribute("aria-checked") !== "true";
+    try { await api("POST", "/api/adminmodus", { "på": pa }); location.reload(); }
+    catch (e) { setStatus(e.message); }
+  });
+
   // feil i sidens egen kode (f.eks. i et klikk) skal synes, ikke bare stoppe stille
   const showError = (e) => setStatus("Noe gikk galt: " + ((e && e.message) || e) + ". Last siden på nytt, og si fra hvis det skjer igjen.");
   window.addEventListener("error", (ev) => showError(ev.error || ev.message));

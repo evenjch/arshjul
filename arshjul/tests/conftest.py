@@ -43,15 +43,16 @@ def client():
     arshjul.app.config["TESTING"] = True
     uid = arshjul.store.ny_bruker("admin", "Admin Testesen", "ingenior", auth.hash_passord(ADMIN_PASSORD), admin=True)
     with arshjul.app.test_client() as c:
-        som(c, uid)
+        som(c, uid, adminmodus=True)
         yield c
 
 
-def som(c, uid, token="test-csrf"):
+def som(c, uid, token="test-csrf", adminmodus=False):
     """Logg testklienten inn som brukeren uid (uten å gå via innloggingssiden)."""
     u = arshjul.store.bruker(id=uid)
     with c.session_transaction() as s:
         s["uid"], s["pv"], s["csrf"] = uid, u["passord"][-16:], token
+        s["adminmodus"] = adminmodus
     c.environ_base["HTTP_X_CSRF_TOKEN"] = token
     return c
 

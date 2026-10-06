@@ -65,7 +65,7 @@ def test_ikke_innlogget(innlogging):
 def test_logg_inn_og_ut(innlogging):
     c = logg_inn("ola")
     assert c.svar.status_code == 302 and c.svar.headers["Location"] == "/"
-    assert state(c)["meg"] == {"id": innlogging["ola"], "navn": "Ola Faglærer", "rolle": "faglarer", "admin": False}
+    assert state(c)["meg"] == {"id": innlogging["ola"], "navn": "Ola Faglærer", "rolle": "faglarer", "admin": False, "kanAdmin": False}
     assert "Ola Faglærer" in c.get("/").get_data(as_text=True)
     c.post("/logout", data={"csrf": c.environ_base["HTTP_X_CSRF_TOKEN"]})
     assert c.get("/api/state").status_code == 401
