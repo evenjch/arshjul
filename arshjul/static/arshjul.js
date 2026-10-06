@@ -629,9 +629,22 @@
     queueUpdate(p.id, { [k]: p[k] });
   });
 
-  async function act(fn, okMsg) {
+  // anker: elementet du klikket på. En feil vises da også rett ved det, ikke bare øverst –
+  // midt i en lang liste ser du ikke statuslinjen, men du ser knappen du trykket på.
+  async function act(fn, okMsg, anker) {
     try { const r = await fn(); if (okMsg) setStatus(typeof okMsg === "function" ? okMsg(r) : okMsg); await load(); }
-    catch (e) { setStatus(e.message); }
+    catch (e) { setStatus(e.message); if (anker) feilVed(anker, e.message); }
+  }
+  function feilVed(el, msg) {
+    const rad = el.closest(".levact, .mottak, .bomcell, .ordercell") || el.parentElement;
+    if (!rad || !rad.isConnected) return;
+    let p = rad.nextElementSibling;
+    if (!p || !p.classList.contains("inlineerr")) {
+      p = document.createElement("p");
+      p.className = "inlineerr"; p.setAttribute("role", "alert");
+      rad.after(p);
+    }
+    p.textContent = msg;
   }
   const P = (id) => "/api/gjennomforinger/" + encodeURIComponent(id);
 
@@ -639,8 +652,10 @@
   $("tbody").addEventListener("toggle", (e) => {
     const d = e.target; if (d.matches && d.matches("details.tellbox")) tellOpen.set(d.dataset.id, d.open);
   }, true); // «toggle» bobler ikke
+  const actVed = act;
   $("tbody").addEventListener("change", (e) => {
     const t = e.target;
+    const act = (fn, msg) => actVed(fn, msg, t); // feil vises ved feltet du endret
     if (t.matches("select[data-role=ttype]")) { tellEdit(t); return; }
     if (t.matches("select[data-act=ostatus]")) {
       act(() => orderApi(t.dataset.id, { handling: "status", leverandor: t.dataset.lev, status: t.value }), "Status lagret.");
@@ -656,6 +671,7 @@
   $("tbody").addEventListener("click", async (e) => {
     const b = e.target.closest("button[data-act]");
     if (b) {
+      const act = (fn, msg) => actVed(fn, msg, b); // feil vises ved knappen du trykket på
       const id = b.dataset.id, a = b.dataset.act, lev = b.dataset.lev;
       const ordrenr = () => { const i = b.closest(".levact") && b.closest(".levact").querySelector("[data-role=ordrenr]"); return i ? i.value : ""; };
       if (a === "vis") { openOrders.has(id) ? openOrders.delete(id) : openOrders.add(id); drawTable(); return; }

@@ -234,4 +234,6 @@
                       background: var(--card); color: var(--ink); text-align: right; }
   .mottakform small { color: var(--muted); }
   .mottak > .tlogg { flex-basis: 100%; margin-top: 2px; }
+  .inlineerr { flex-basis: 100%; margin: 6px 0 0; padding: 6px 10px; border-radius: 7px; font-size: 12.5px;
+               background: var(--warn-soft); color: var(--warn); border: 1px solid var(--warn); }
   .tlogg { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; color: var(--muted); display: grid; gap: 2px; }
