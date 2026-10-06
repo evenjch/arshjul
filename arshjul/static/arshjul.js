@@ -725,6 +725,10 @@
   $("today").textContent = dfmtY.format(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()));
   renderAll(false);
   load().then(() => { if (IDAG) $("today").textContent = "I dag: uke " + IDAG.uke + ", " + dfmtY.format(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate())); });
+  // feil i sidens egen kode (f.eks. i et klikk) skal synes, ikke bare stoppe stille
+  const showError = (e) => setStatus("Noe gikk galt: " + ((e && e.message) || e) + ". Last siden på nytt, og si fra hvis det skjer igjen.");
+  window.addEventListener("error", (ev) => showError(ev.error || ev.message));
+  window.addEventListener("unhandledrejection", (ev) => showError(ev.reason));
   // hent på nytt når du kommer tilbake fra Excel
   window.addEventListener("focus", load);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
