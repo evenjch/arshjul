@@ -90,7 +90,7 @@ TEST = r"""
 """
 
 
-def kjor_siden(state: dict) -> dict:
+def kjor_siden(state: dict, vis_alle: bool = False) -> dict:
     src = (Path(config.APP_DIR) / "static" / "arshjul.js").read_text(encoding="utf-8").rstrip()
     assert src.endswith("})();")
     src = src[:-5] + ("globalThis.__t = { renderAll, drawTable, openOrders, tellOpen, load, goSY,"
@@ -98,6 +98,7 @@ def kjor_siden(state: dict) -> dict:
     ctx = MiniRacer()
     ctx.eval("const STATE = " + json.dumps(state) + ";")
     ctx.eval(STUB)
+    ctx.eval("globalThis.localStorage = { getItem: () => %s, setItem() {} };" % ('"1"' if vis_alle else "null"))
     ctx.eval(src)
     ctx.eval(TEST)
     for _ in range(100):

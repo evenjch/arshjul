@@ -106,7 +106,16 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 **Faglærerpanelet**
 - [x] Faglæreren ser hele hjulet og alle prosjekter, men ikke BOM, bestillinger, telling eller kostnader (de sendes ikke engang til nettleseren).
 - [x] Faglæreren legger til, endrer og fjerner **sine egne** prosjekter: navn, type, uker, antall sett, notat. Leveringstid, buffer, BOM og farge er ingeniørens.
-- [x] Ingeniøren velger faglærer for hvert prosjekt («Faglærer: …» under navnet). Prosjekter faglæreren lager, blir hans/hennes egne.
+- [x] ~~Faglærer per prosjekt~~ → erstattet av emner (under).
+
+**Emner og flere ingeniører** (migrering 8)
+- [x] Studieprogram (bachelor/master) → **emne** (én faglærer, én ansvarlig ingeniør) → prosjekt → gjennomføring per skoleår. En faglærer kan ha emner med ulike ingeniører.
+- [x] Ingeniøren ser egne emner som standard; «Hele instituttet» viser alt, andres bare til å se på. Prosjekter uten emne kan alle ingeniører jobbe med.
+- [x] **Eierskap sjekkes på serveren for alt som endrer en gjennomføring** (`kan_handle` i `_eierskap`): ingeniører kan ikke bestille, telle, endre eller slette i andres emner; faglærere bare i egne emner.
+- [x] Faglærerens endringer varsles til emnets ingeniør. Bytter emnet ingeniør, overtar den nye varslene som ikke er kvittert.
+- [x] Alle ingeniører kan legge inn og endre emner (seksjonen «Emner»). Emner deaktiveres, ikke slettes.
+- [x] «Kopier til neste skoleår» og vårpåminnelsen gjelder egne emner.
+- Lager og BOM er fortsatt per prosjekt (felles lager på tvers av emner er parkert).
 - [x] Mens faglæreren endrer, vises konsekvensen ved fristen: «Fristen er om 1 uke – ingeniøren varsles».
 - [x] Fjerning er **myk**: prosjektet skjules, og ingeniøren kan gjenopprette eller bekrefte sletting.
 - [ ] Endre navn og notat i tabellen (i dag bare når prosjektet legges til).

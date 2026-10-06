@@ -23,6 +23,8 @@ def innlogging(monkeypatch):
     for navn, fullt, rolle in (("ing", "Ingrid Ingeniør", "ingenior"), ("ola", "Ola Faglærer", "faglarer"),
                                ("kari", "Kari Faglærer", "faglarer")):
         ids[navn] = arshjul.store.ny_bruker(navn, fullt, rolle, auth.hash_passord(PASSORD))
+    ids["emne_ola"] = arshjul.store.nytt_emne({"kode": "OLA1", "faglarer_id": ids["ola"], "ingenior_id": ids["ing"]})["id"]
+    ids["emne_kari"] = arshjul.store.nytt_emne({"kode": "KARI1", "faglarer_id": ids["kari"], "ingenior_id": ids["ing"]})["id"]
     auth._ip_feil.clear()
     return ids
 
@@ -136,7 +138,7 @@ def prosjekt_med_bom(c, navn="Insektsløp", **kw):
 
 def test_faglarer_ser_ikke_bom_eller_kostnader(innlogging):
     ing = logg_inn("ing")
-    g = prosjekt_med_bom(ing, faglarer=innlogging["ola"])
+    g = prosjekt_med_bom(ing, emne=innlogging["emne_ola"])
     ing.post(f"{G}/{g['id']}/bestilling", json={"handling": "bestilt", "leverandor": "elfa"})
     ola = logg_inn("ola")
     st = state(ola)
@@ -145,24 +147,28 @@ def test_faglarer_ser_ikke_bom_eller_kostnader(innlogging):
         assert felt not in p
     assert p["egen"] is True and p["faglarerNavn"] == "Ola Faglærer" and p["frister"]["frist"]["uke"]
     assert (st["ledigeBom"], st["mapper"], st["endringer"], st["slettede"], st["faglarere"], st["oppsett"]) == ([], {}, [], [], [], None)
+    assert [e["kode"] for e in st["emner"]] == ["OLA1"]  # bare egne emner
     assert state(logg_inn("kari"))["prosjekter"][0]["egen"] is False
 
 
 def test_faglarer_lager_og_endrer_egne_prosjekter(innlogging):
     ola = logg_inn("ola")
-    r = ola.post(G, json={"navn": "Lodding", "skolear": SY, "start": 40, "lev": 9, "buf": 9, "bom": "x.xlsx", "color": 3})
+    assert ola.post(G, json={"navn": "Uten emne", "skolear": SY}).status_code == 403
+    assert ola.post(G, json={"navn": "Karis emne", "skolear": SY, "emne": innlogging["emne_kari"]}).status_code == 403
+    r = ola.post(G, json={"navn": "Lodding", "skolear": SY, "start": 40, "lev": 9, "buf": 9, "bom": "x.xlsx", "color": 3,
+                          "emne": innlogging["emne_ola"]})
     g = r.get_json()
-    assert (g["faglarerId"], g["lev"], g["buf"], g["bom"], g["color"]) == (innlogging["ola"], 2, 2, None, 3)
+    assert (g["faglarerId"], g["emneKode"], g["lev"], g["buf"], g["bom"], g["color"]) == (innlogging["ola"], "OLA1", 2, 2, None, 3)
 
     assert ola.patch(f"{G}/{g['id']}", json={"start": 42, "sett": 12, "notat": "IELS1001"}).status_code == 200
     r = ola.patch(f"{G}/{g['id']}", json={"lev": 1})
     assert r.status_code == 403 and "leveringstid" in r.get_json()["feil"]
     assert ola.patch(f"{G}/{g['id']}", json={"bom": "annen.xlsx"}).status_code == 403
-    assert ola.patch(f"{G}/{g['id']}", json={"faglarer": innlogging["kari"]}).status_code == 403
+    assert ola.patch(f"{G}/{g['id']}", json={"emne": innlogging["emne_kari"]}).status_code == 403
 
     kari = logg_inn("kari")
     r = kari.patch(f"{G}/{g['id']}", json={"start": 30})
-    assert r.status_code == 403 and "egne" in r.get_json()["feil"]
+    assert r.status_code == 403 and "egne emner" in r.get_json()["feil"]
     assert kari.delete(f"{G}/{g['id']}").status_code == 403
 
 
@@ -174,7 +180,7 @@ def test_faglarer_lager_og_endrer_egne_prosjekter(innlogging):
 ])
 def test_faglarer_kan_ikke_ingeniorens_handlinger(innlogging, metode, sti, body):
     ing = logg_inn("ing")
-    g = prosjekt_med_bom(ing, faglarer=innlogging["ola"])
+    g = prosjekt_med_bom(ing, emne=innlogging["emne_ola"])
     ola = logg_inn("ola")
     r = getattr(ola, metode)(G + sti.format(id=g["id"]), json=body)
     assert r.status_code == 403
@@ -192,7 +198,7 @@ def test_faglarer_kan_ikke_globale_handlinger(innlogging):
 
 def test_endringer_varsles_og_kvitteres(innlogging):
     ing = logg_inn("ing")
-    g = prosjekt_med_bom(ing, faglarer=innlogging["ola"])
+    g = prosjekt_med_bom(ing, emne=innlogging["emne_ola"])
     assert state(ing)["endringer"] == []  # ingeniørens egne endringer varsles ikke
 
     ola = logg_inn("ola")
@@ -211,21 +217,23 @@ def test_endringer_varsles_og_kvitteres(innlogging):
     assert state(ing)["endringer"] == []
 
 
-def test_ingenior_setter_faglarer(innlogging):
+def test_ingenior_velger_emne(innlogging):
     ing = logg_inn("ing")
-    g = ing.post(G, json={"navn": "Uten faglærer", "skolear": SY}).get_json()
-    assert g["faglarerId"] is None
-    assert ing.patch(f"{G}/{g['id']}", json={"faglarer": innlogging["ing"]}).status_code == 400  # ikke faglærer
-    assert ing.patch(f"{G}/{g['id']}", json={"faglarer": 9999}).status_code == 400
-    r = ing.patch(f"{G}/{g['id']}", json={"faglarer": innlogging["kari"]})
-    assert r.get_json()["faglarerNavn"] == "Kari Faglærer"
+    g = ing.post(G, json={"navn": "Uten emne", "skolear": SY}).get_json()
+    assert (g["emneId"], g["faglarerId"]) == (None, None)
+    assert logg_inn("kari").patch(f"{G}/{g['id']}", json={"start": 30}).status_code == 403  # ingen faglærer ennå
+    assert ing.patch(f"{G}/{g['id']}", json={"emne": 9999}).status_code == 400
+    r = ing.patch(f"{G}/{g['id']}", json={"emne": innlogging["emne_kari"]})
+    assert (r.get_json()["emneKode"], r.get_json()["faglarerNavn"]) == ("KARI1", "Kari Faglærer")
     assert logg_inn("kari").patch(f"{G}/{g['id']}", json={"start": 30}).status_code == 200
-    assert [f["navn"] for f in state(ing)["faglarere"]] == ["Kari Faglærer", "Ola Faglærer"]
+    st = state(ing)
+    assert [f["navn"] for f in st["faglarere"]] == ["Kari Faglærer", "Ola Faglærer"]
+    assert [f["navn"] for f in st["ingeniorer"]] == ["Ingrid Ingeniør"]
 
 
 def test_faglarer_fjerner_ingenior_gjenoppretter_eller_sletter(innlogging):
     ing = logg_inn("ing")
-    g = prosjekt_med_bom(ing, faglarer=innlogging["ola"])
+    g = prosjekt_med_bom(ing, emne=innlogging["emne_ola"])
     ola = logg_inn("ola")
     assert ola.delete(f"{G}/{g['id']}").get_json() == {"ok": True, "venter": True}
     assert state(ola)["prosjekter"] == [] and state(ing)["prosjekter"] == []
@@ -244,7 +252,7 @@ def test_faglarer_fjerner_ingenior_gjenoppretter_eller_sletter(innlogging):
 
 def test_fjernet_prosjekt_kopieres_ikke(innlogging):
     ing = logg_inn("ing")
-    g = ing.post(G, json={"navn": "Kurs", "skolear": SY, "faglarer": innlogging["ola"]}).get_json()
+    g = ing.post(G, json={"navn": "Kurs", "skolear": SY, "emne": innlogging["emne_ola"]}).get_json()
     logg_inn("ola").delete(f"{G}/{g['id']}")
     assert ing.post(f"/api/skolear/{SY}/kopier").get_json()["nye"] == []
 
@@ -290,19 +298,19 @@ def test_siden_for_begge_roller(innlogging):
     from test_side import kjor_siden
 
     ing = logg_inn("ing")
-    g = prosjekt_med_bom(ing, faglarer=innlogging["ola"])
+    g = prosjekt_med_bom(ing, emne=innlogging["emne_ola"])
     ing.post(f"{G}/{g['id']}/bestilling", json={"handling": "bestilt", "leverandor": "elfa"})
-    annen = ing.post(G, json={"navn": "Smart City", "skolear": SY, "start": 15, "faglarer": innlogging["ola"]}).get_json()
-    ing.post(G, json={"navn": "Karis prosjekt", "skolear": SY, "faglarer": innlogging["kari"]})
+    annen = ing.post(G, json={"navn": "Smart City", "skolear": SY, "start": 15, "emne": innlogging["emne_ola"]}).get_json()
+    ing.post(G, json={"navn": "Karis prosjekt", "skolear": SY, "emne": innlogging["emne_kari"]})
 
     ola = logg_inn("ola")
     ola.patch(f"{G}/{g['id']}", json={"start": 40, "sett": 35})
-    ola.post(G, json={"navn": "Olas nye", "skolear": SY, "start": 20})
+    assert ola.post(G, json={"navn": "Olas nye", "skolear": SY, "start": 20, "emne": innlogging["emne_ola"]}).status_code == 200
     ola.delete(f"{G}/{annen['id']}")
 
     res = kjor_siden(state(ola))
     assert res["errors"] == []
-    assert "Fjern" in res["tbody"] and "Faglærer: Ola Faglærer (deg)" in res["tbody"]
+    assert "Fjern" in res["tbody"] and "OLA1 · faglærer Ola Faglærer (deg) · ingeniør Ingrid Ingeniør" in res["tbody"]
     assert "Registrer bestilt" not in res["tbody"] and "Lag BOM-mal" not in res["tbody"]
     assert 'data-k="lev"' not in res["tbody"]  # leveringstid kan ikke endres av faglærer
     assert "Karis prosjekt" in res["tbody"]  # ser hele året
@@ -313,4 +321,4 @@ def test_siden_for_begge_roller(innlogging):
     assert "Ola Faglærer endret «Insektsløp»" in n and "uke fra" in n and "OK, sett" in n
     assert "Ola Faglærer fjernet «Smart City»" in n and "Gjenopprett" in n
     assert "La til prosjektet" in n  # Olas nye
-    assert 'data-act="faglarer"' in res["tbody"]
+    assert 'data-act="emne"' in res["tbody"]

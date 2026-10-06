@@ -11,7 +11,12 @@
   let SYS = [], SY = null, IDAG = null, NESTE8 = [], OPPSETT = null;
   // innlogget bruker; ING = ingeniør (alt), ellers faglærer (egne prosjekter, ingen BOM/bestilling)
   let MEG = { rolle: document.body.dataset.rolle || "ingenior" }, ING = MEG.rolle === "ingenior";
-  let ENDRINGER = [], SLETTEDE = [], FAGLARERE = [];
+  let ENDRINGER = [], SLETTEDE = [], FAGLARERE = [], INGENIORER = [], EMNER = [], PROGRAM = {};
+  // ALLE = alt serveren sendte; projects = det som vises. En ingeniør ser egne emner, eller hele instituttet.
+  let ALLE = [];
+  let VIS_ALLE = false;
+  try { VIS_ALLE = localStorage.getItem("arshjul.visAlle") === "1"; } catch (e) {}
+  const synlige = () => (ING && !VIS_ALLE ? ALLE.filter((p) => p.egen) : ALLE);
   const hasBom = (p) => !!(p.bomStatus && p.bomStatus.finnes && !p.bomStatus.feil && p.bomStatus.linjer > 0);
   const nf2 = new Intl.NumberFormat("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -46,14 +51,17 @@
       SYS = st.skolear; IDAG = st.idag; NESTE8 = st.neste8; OPPSETT = st.oppsett;
       MEG = st.meg; ING = MEG.rolle === "ingenior"; document.body.dataset.rolle = MEG.rolle;
       ENDRINGER = st.endringer; SLETTEDE = st.slettede; FAGLARERE = st.faglarere;
+      INGENIORER = st.ingeniorer; EMNER = st.emner; PROGRAM = st.program;
       if (SY === null || !SYS.some((s) => s.ar === SY)) SY = st.skolearNa;
       LOKAL = st.modus !== "server";
       $("openBomDir").hidden = $("openListDir").hidden = !LOKAL;
       $("bomDir").textContent = st.mapper.bom || ""; $("openBomDir").title = "Åpner " + (st.mapper.bom || "BOM-mappen");
       // behold verdier som venter på lagring
       st.prosjekter.forEach((p) => { const pend = pending[p.id]; if (pend) Object.assign(p, pend.patch); });
-      const sameIds = st.prosjekter.length === projects.length && st.prosjekter.every((p) => projects.some((q) => q.id === p.id));
-      projects = st.prosjekter; mode = "ready";
+      ALLE = st.prosjekter;
+      const nye = synlige();
+      const sameIds = nye.length === projects.length && nye.every((p) => projects.some((q) => q.id === p.id));
+      projects = nye; mode = "ready";
       const ae = document.activeElement;
       const typing = ae && ae.matches && ae.matches("#tbody input, #tbody select[data-role]");
       renderAll(sameIds && !!typing);
@@ -501,34 +509,49 @@
     return `<tr class="detail" data-for="${id}"><td colspan="${COLS}">${rows ? `<div class="levs">${rows}</div>` : ""}${tellSection(p)}</td></tr>`;
   }
 
+  // «Emne: IELS1001 · Faglærer · Ingeniør» under prosjektnavnet; ingeniøren velger emne på egne prosjekter
+  function emneLinje(p) {
+    const folk = [p.faglarerNavn && `faglærer ${esc(p.faglarerNavn)}${!ING && p.egen ? " (deg)" : ""}`,
+                  p.ingeniorNavn && `ingeniør ${esc(p.ingeniorNavn)}${ING && MEG.id && p.ingeniorId === MEG.id ? " (deg)" : ""}`]
+      .filter(Boolean).join(" · ");
+    if (ING && p.egen) {
+      const valg = EMNER.filter((e) => e.aktiv || e.id === p.emneId);
+      return `<label class="eier${p.emneId ? "" : " mangler"}">Emne: <select data-act="emne" data-id="${esc(p.id)}" aria-label="Emne for ${esc(p.navn)}">`
+        + `<option value="">${p.emneId ? "uten emne" : "Velg emne …"}</option>`
+        + valg.map((e) => `<option value="${e.id}"${e.id === p.emneId ? " selected" : ""}>${esc(e.kode)}${e.navn ? " – " + esc(e.navn) : ""}</option>`).join("")
+        + `</select>${folk ? ` · ${folk}` : ""}</label>`;
+    }
+    if (!p.emneKode) return ING ? `<span class="eier mangler">Uten emne</span>` : "";
+    return `<span class="eier">${esc(p.emneKode)}${folk ? ` · ${folk}` : ""}</span>`;
+  }
+
   function drawTable() {
     if (mode === "loading") { $("tbody").innerHTML = `<tr><td colspan="${COLS}" class="blank">Henter prosjekter …</td></tr>`; return; }
     const list = sorted();
     if (!list.length) { $("tbody").innerHTML = `<tr><td colspan="${COLS}" class="blank">Ingen prosjekter dette skoleåret. Trykk «Legg til nytt prosjekt» for å legge inn det første.</td></tr>`; return; }
     $("tbody").innerHTML = list.map((p) => {
-      // faglærer: endre uker og sett på egne prosjekter; leveringstid og buffer er ingeniørens
-      const kan = (k) => ING || (p.egen && (k === "start" || k === "slutt" || k === "sett"));
+      // egne prosjekter kan endres; faglærer bare uker og sett, leveringstid og buffer er ingeniørens
+      const kan = (k) => p.egen && (ING || k === "start" || k === "slutt" || k === "sett");
       const num = (k, min, max, lbl) => kan(k)
         ? `<input type="number" id="in-${esc(p.id)}-${k}" data-id="${esc(p.id)}" data-k="${k}" min="${min}" max="${max}" value="${p[k] ?? ""}" aria-label="${lbl}">`
         : `<span class="ro">${p[k] ?? "–"}</span>`;
       const warn = p.bomStatus && p.bomStatus.settFil && p.sett && p.bomStatus.settFil !== p.sett
         ? `<div class="muted" style="font-size:11.5px" title="Årshjulets tall brukes">BOM-filen: ${p.bomStatus.settFil}</div>` : "";
-      const eier = ING && FAGLARERE.length
-        ? `<label class="eier">Faglærer: <select data-act="faglarer" data-id="${esc(p.id)}" aria-label="Faglærer for ${esc(p.navn)}"><option value="">ingen</option>`
-          + FAGLARERE.map((f) => `<option value="${f.id}"${f.id === p.faglarerId ? " selected" : ""}>${esc(f.navn)}</option>`).join("") + `</select></label>`
-        : p.faglarerNavn ? `<span class="eier">Faglærer: ${esc(p.faglarerNavn)}${!ING && p.egen ? " (deg)" : ""}</span>` : "";
-      const slett = ING ? `<button type="button" class="del" data-id="${esc(p.id)}">Slett</button>`
-        : p.egen ? `<button type="button" class="del" data-id="${esc(p.id)}" title="Ingeniøren får beskjed og kan gjenopprette">Fjern</button>` : "";
+      const eier = emneLinje(p);
+      const slett = !p.egen ? "" : ING ? `<button type="button" class="del" data-id="${esc(p.id)}">Slett</button>`
+        : `<button type="button" class="del" data-id="${esc(p.id)}" title="Ingeniøren får beskjed og kan gjenopprette">Fjern</button>`;
+      // en annen ingeniørs prosjekt (hele instituttet): bare til å se på
+      const andres = ING && !p.egen ? `<span class="muted">${esc(p.ingeniorNavn || "")}</span>` : "";
       return `<tr data-id="${esc(p.id)}">
         <td class="name"><b><span class="dot" style="background:${col(p)}"></span>${esc(p.navn)}</b>${p.notat ? `<small>${esc(p.notat)}</small>` : ""}${eier}</td>
         <td>${p.type === "sett" ? "Semestersett" : "Hackathon / lab"}<div class="muted" style="font-size:12px">${esc(p.semester)} ${p.frister.start.ar}</div></td>
         <td>${num("start", 1, 53, "I bruk fra uke")}</td><td>${num("slutt", 1, 53, "Til uke")}</td><td>${num("lev", 0, 20, "Leveringstid i uker")}</td><td>${num("buf", 0, 20, "Buffer i uker")}</td>
         <td>${num("sett", 0, 999, "Antall sett")}${warn}</td>
         <td class="fristcell">${fristHtml(p)}</td>
-        <td class="ordercell ing">${ING ? orderCell(p) : ""}</td>
-        <td class="ing">${ING ? bomCell(p) : ""}</td>
+        <td class="ordercell ing">${ING && p.egen ? orderCell(p) : andres}</td>
+        <td class="ing">${ING && p.egen ? bomCell(p) : ""}</td>
         <td>${slett}</td></tr>`
-        + (ING && openOrders.has(p.id) && (p.bestilling || p.telling) ? orderDetail(p) : "");
+        + (ING && p.egen && openOrders.has(p.id) && (p.bestilling || p.telling) ? orderDetail(p) : "");
     }).join("");
   }
 
@@ -629,7 +652,7 @@
   });
 
   function drawCopyButton() {
-    const has = inSY().length > 0;
+    const has = inSY().some((p) => p.egen);
     $("copyOpen").hidden = !has || mode === "loading";
     $("copyOpen").textContent = `Kopier til ${syName(SY + 1)} …`;
     if (!has) openCopy(false);
@@ -637,9 +660,9 @@
   function openCopy(open) {
     $("copybox").hidden = !open; $("copyOpen").setAttribute("aria-expanded", String(open)); $("copyErr").textContent = "";
     if (!open) return;
-    const neste = new Set(projects.filter((p) => p.skolear === SY + 1).map((p) => p.prosjektId));
+    const neste = new Set(ALLE.filter((p) => p.skolear === SY + 1).map((p) => p.prosjektId));
     $("copyTitle").textContent = `Kopier fra ${syName(SY)} til ${syName(SY + 1)}`;
-    $("copyList").innerHTML = sorted().map((p) => {
+    $("copyList").innerHTML = sorted().filter((p) => p.egen).map((p) => { // bare egne emner kopieres
       const finnes = neste.has(p.prosjektId);
       return `<label class="copyrow${finnes ? " done" : ""}"><input type="checkbox" value="${esc(p.id)}"${finnes ? " disabled" : " checked"}>`
         + `<span class="dot" style="background:${col(p)}"></span><span><b>${esc(p.navn)}</b> <span class="muted">· uke ${p.start}${p.start !== p.slutt ? "–" + p.slutt : ""}${p.sett ? " · " + p.sett + " sett" : ""}${finnes ? " · finnes allerede" : ""}</span></span></label>`;
@@ -684,7 +707,65 @@
       + `</tbody><tfoot><tr><td><b>Sum</b></td>${years.map((y) => `<td class="num"><b>${nf0.format(sum(y))} kr</b></td>`).join("")}</tr></tfoot>`;
   }
 
+  // ---------- «Mine emner / Hele instituttet» (ingeniør) ----------
+  function drawScope() {
+    const andre = ING && ALLE.some((p) => !p.egen);
+    $("scope").hidden = !andre;
+    $("scope").textContent = VIS_ALLE ? "Viser hele instituttet" : "Viser mine emner";
+    $("scope").setAttribute("aria-pressed", String(VIS_ALLE));
+    $("scope").title = VIS_ALLE ? "Trykk for bare dine egne emner" : "Trykk for å se alle emner (andres kan bare ses, ikke endres)";
+  }
+  $("scope").addEventListener("click", () => {
+    VIS_ALLE = !VIS_ALLE;
+    try { localStorage.setItem("arshjul.visAlle", VIS_ALLE ? "1" : "0"); } catch (e) {}
+    projects = synlige(); highlight(null); renderAll(false);
+  });
+
+  // ---------- emner (ingeniører) ----------
+  let nyttEmne = false;
+  function drawEmner() {
+    if (!ING || mode === "loading" || $("emneTable").contains(document.activeElement)) return;
+    const brukt = (id) => new Set(ALLE.filter((p) => p.emneId === id).map((p) => p.prosjektId)).size;
+    const velg = (navn, liste, valgt, lbl) => `<select data-ef="${navn}" aria-label="${lbl}"><option value="">–</option>`
+      + liste.map((u) => `<option value="${u.id}"${u.id === valgt ? " selected" : ""}>${esc(u.navn)}</option>`).join("") + `</select>`;
+    const program = (valgt) => `<select data-ef="program" aria-label="Studieprogram">`
+      + Object.entries(PROGRAM).map(([k, v]) => `<option value="${k}"${k === valgt ? " selected" : ""}>${esc(v)}</option>`).join("") + `</select>`;
+    const rad = (e) => `<tr data-emne="${e ? e.id : "ny"}"${e && !e.aktiv ? ' class="inaktiv"' : ""}>`
+      + `<td><input type="text" data-ef="kode" value="${esc(e ? e.kode : "")}" placeholder="IELS1001" aria-label="Emnekode" maxlength="20"></td>`
+      + `<td><input type="text" data-ef="navn" value="${esc(e ? e.navn : "")}" placeholder="Emnenavn" aria-label="Emnenavn"></td>`
+      + `<td>${program(e ? e.program : "bachelor")}</td>`
+      + `<td>${velg("faglarer", FAGLARERE, e && e.faglarerId, "Faglærer")}</td>`
+      + `<td>${velg("ingenior", INGENIORER, e ? e.ingeniorId : MEG.id, "Ansvarlig ingeniør")}</td>`
+      + (e ? `<td class="num">${brukt(e.id)}</td><td><label class="aktiv"><input type="checkbox" data-ef="aktiv"${e.aktiv ? " checked" : ""}> aktiv</label></td>`
+           : `<td></td><td><button type="button" class="mini" data-act="emnelagre">Lagre</button> <button type="button" class="mini quiet" data-act="emneavbryt">Avbryt</button></td>`)
+      + `</tr>`;
+    $("emneTable").innerHTML = `<thead><tr><th>Kode</th><th>Navn</th><th>Program</th><th>Faglærer</th><th>Ansvarlig ingeniør</th><th class="num">Prosjekter</th><th></th></tr></thead><tbody>`
+      + (nyttEmne ? rad(null) : "") + EMNER.map(rad).join("")
+      + (!EMNER.length && !nyttEmne ? `<tr><td colspan="7" class="blank">Ingen emner ennå. Trykk «+ Nytt emne».</td></tr>` : "") + `</tbody>`;
+    $("emneNy").hidden = nyttEmne;
+  }
+  const emneVerdier = (tr) => {
+    const v = {};
+    tr.querySelectorAll("[data-ef]").forEach((el) => { v[el.dataset.ef] = el.type === "checkbox" ? el.checked : (el.value || null); });
+    return v;
+  };
+  $("emneNy").addEventListener("click", () => { nyttEmne = true; drawEmner(); const k = $("emneTable").querySelector('tr[data-emne="ny"] [data-ef=kode]'); if (k) k.focus(); });
+  $("emneTable").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-act]"); if (!b) return;
+    if (b.dataset.act === "emneavbryt") { nyttEmne = false; b.blur(); drawEmner(); return; }
+    const v = emneVerdier(b.closest("tr"));
+    act(async () => { const r = await api("POST", "/api/emner", v); nyttEmne = false; b.blur(); return r; },
+      (r) => `Emnet ${r.kode} er lagt til. Velg det under navnet på prosjektene som hører til.`, $("emneTable"));
+  });
+  $("emneTable").addEventListener("change", (e) => {
+    const tr = e.target.closest("tr[data-emne]"); if (!tr || tr.dataset.emne === "ny") return;
+    const felt = e.target.dataset.ef, v = emneVerdier(tr);
+    e.target.blur(); // så tabellen kan tegnes på nytt etter lagring
+    act(() => api("PATCH", `/api/emner/${tr.dataset.emne}`, { [felt]: v[felt] }), "Emnet er lagret.", $("emneTable"));
+  });
+
   function renderAll(keepTable) {
+    drawScope(); drawEmner();
     drawWheel(); drawWeeks(); drawStats(); drawDiffs(); drawNotices(); drawCopyButton(); drawHistory();
     if (!keepTable) drawTable();
     else inSY().forEach((p) => { const cell = document.querySelector(`tr[data-id="${CSS.escape(p.id)}"] .fristcell`); if (cell) cell.innerHTML = fristHtml(p);
@@ -740,9 +821,11 @@
     const t = e.target;
     const act = (fn, msg) => actVed(fn, msg, t); // feil vises ved feltet du endret
     if (t.matches("select[data-role=ttype]")) { tellEdit(t); return; }
-    if (t.matches("select[data-act=faglarer]")) {
-      act(() => api("PATCH", P(t.dataset.id), { faglarer: t.value || null }),
-        t.value ? `${t.selectedOptions[0].textContent} er faglærer for prosjektet, og kan nå endre det.` : "Prosjektet har ingen faglærer.");
+    if (t.matches("select[data-act=emne]")) {
+      const e = EMNER.find((x) => String(x.id) === t.value);
+      act(() => api("PATCH", P(t.dataset.id), { emne: t.value || null }),
+        !e ? "Prosjektet har ikke noe emne." : `Prosjektet hører nå til ${e.kode}`
+          + (e.ingeniorNavn ? ` (ingeniør: ${e.ingeniorNavn}${MEG.id && e.ingeniorId !== MEG.id ? " – du ser det ikke lenger under «Mine emner»" : ""})` : "") + ".");
       return;
     }
     if (t.matches("select[data-act=ostatus]")) {
@@ -865,7 +948,15 @@
   function openAdd(open) {
     $("addbox").hidden = !open; $("addToggle").setAttribute("aria-expanded", String(open));
     $("f-err").textContent = "";
-    if (open) { $("f-sy").textContent = curSY() ? curSY().navn : ""; $("f-navn").focus(); }
+    if (open) {
+      $("f-sy").textContent = curSY() ? curSY().navn : "";
+      // faglærer: velg blant egne emner (påkrevd); ingeniør: alle aktive emner, eller uten emne
+      const valg = EMNER.filter((e) => e.aktiv);
+      $("f-emne").innerHTML = (ING ? `<option value="">Uten emne</option>` : valg.length ? "" : `<option value="">Du har ingen emner – spør ingeniøren</option>`)
+        + valg.map((e) => `<option value="${e.id}"${ING && MEG.id && e.ingeniorId === MEG.id ? " data-mitt" : ""}>${esc(e.kode)}${e.navn ? " – " + esc(e.navn) : ""}</option>`).join("");
+      const mitt = $("f-emne").querySelector("[data-mitt]"); if (mitt) mitt.selected = true;
+      $("f-navn").focus();
+    }
   }
   $("addToggle").addEventListener("click", () => openAdd($("addbox").hidden));
   $("f-cancel").addEventListener("click", () => openAdd(false));
@@ -885,7 +976,8 @@
     if (used.has(color)) color = projects.length % NCOLORS;
     const body = { navn, type: $("f-type").value, skolear: SY,
       start: num("f-start", 1, 53), slutt: num("f-slutt", 1, 53), lev: num("f-lev", 0, 20), buf: num("f-buf", 0, 20),
-      notat: $("f-notat").value.trim(), color, sett: parseInt($("f-sett").value, 10) || null };
+      notat: $("f-notat").value.trim(), color, sett: parseInt($("f-sett").value, 10) || null, emne: $("f-emne").value || null };
+    if (!ING && !body.emne) { $("f-err").textContent = "Velg hvilket emne prosjektet hører til."; return; }
     $("f-save").disabled = true;
     try { await api("POST", "/api/gjennomforinger", body); $("addForm").reset(); openAdd(false); setStatus("Lagt til: " + navn); await load(); }
     catch (err) { $("f-err").textContent = err.message; }

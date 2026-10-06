@@ -50,9 +50,15 @@ Krever Python 3.10 eller nyere. Uten startfilen: `pip install -r requirements.tx
 
 Siden oppdateres av seg selv når du går tilbake til nettleservinduet.
 
-## Brukere og faglærere
+## Emner, faglærere og ingeniører
 
-Lokalt er du automatisk ingeniøren. Faglærere logger inn når årshjulet kjører på serveren. De ser hele året, men endrer bare sine egne prosjekter (navn, type, uker, antall sett, notat), og ser ikke BOM, bestillinger eller kostnader. Endringene deres dukker opp øverst hos deg med «OK, sett».
+Hvert prosjekt hører til et **emne** (f.eks. IELS1001, bachelor eller master). Emnet har **én faglærer** og **én ansvarlig ingeniør**:
+
+- **Ingeniøren** ser og jobber med prosjektene i sine egne emner – bestilling, varemottak, telling, BOM. «Viser mine emner / Viser hele instituttet» over hjulet viser alle emner; andre ingeniørers prosjekter kan da bare ses, ikke endres. Prosjekter uten emne kan alle ingeniører jobbe med, så ingenting blir liggende.
+- **Faglæreren** ser hele året, men endrer bare prosjektene i sine egne emner (navn, type, uker, antall sett, notat), og ser ikke BOM, bestillinger eller kostnader. Endringene dukker opp øverst hos **emnets ingeniør** med «OK, sett».
+- **Emner** legges inn og endres under «Emner» nederst på siden, av hvilken som helst ingeniør. Bytter et emne ingeniør, overtar den nye varslene som ikke er kvittert. Emner deaktiveres i stedet for å slettes, så historikken står.
+
+Lokalt uten innlogging er du «ingeniøren» og ser og gjør alt, som før.
 
 Brukere lages fra kommandolinjen, i `arshjul/`:
 
@@ -74,13 +80,13 @@ Brukere lages fra kommandolinjen, i `arshjul/`:
    Passordet spørres om i terminalen (minst 10 tegn).
 2. **Slå på innlogging**: legg til `ARSHJUL_INNLOGGING=på` i `arshjul/innstillinger.env`.
 3. **Start årshjulet på nytt** (lukk svartvinduet, dobbeltklikk `Start årshjul.bat`). Vinduet viser fortsatt BOM-mappen; siden sender deg nå til innlogging.
-4. **Logg inn som deg selv**, og velg «Faglærer: Ola Testlærer» under navnet på et prosjekt, så Ola eier det.
+4. **Logg inn som deg selv.** Under «Emner» nederst: «+ Nytt emne», f.eks. `TEST1001` med faglærer Ola Testlærer og deg selv som ansvarlig ingeniør. Velg så «Emne: TEST1001» under navnet på et prosjekt, så kan Ola endre det.
 5. **Logg inn som faglæreren i et annet vindu** – et privat/inkognito-vindu, eller en annen nettleser – så kan du være begge samtidig. Endre uker eller antall sett, legg til eller fjern et prosjekt.
 6. **Gå tilbake til ditt eget vindu**: endringene står øverst med «OK, sett», og fjernede prosjekter med «Gjenopprett».
 
 Godt å vite:
 - Lokalt lages en ny hemmelig nøkkel ved hver oppstart, så du må logge inn på nytt etter omstart. (På serveren er nøkkelen fast, `ARSHJUL_SECRET_KEY`.)
-- Testbrukerne og endringene havner i den vanlige databasen. Fjern testlæreren etterpå med `manage.py deaktiver ola`, og sett faglærer tilbake til «ingen» på prosjektet.
+- Testbrukerne og endringene havner i den vanlige databasen. Fjern testlæreren etterpå med `manage.py deaktiver ola`, og ta bort haken «aktiv» på testemnet.
 - **Tilbake til normalen:** fjern linjen `ARSHJUL_INNLOGGING=på` (eller sett `#` foran) og start på nytt – da er du automatisk ingeniøren igjen.
 
 ## Filene i programmet

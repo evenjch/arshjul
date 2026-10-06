@@ -144,10 +144,27 @@ MIGRERINGER = [
     );
     CREATE INDEX endring_ukvittert ON endring(kvittert, gjennomforing_id);
     """,
+    # 8: emner. Et prosjekt hører til et emne; emnet har én faglærer og én ansvarlig ingeniør.
+    #    prosjekt.faglarer_id brukes ikke lenger (kan ikke droppes – den har en fremmednøkkel);
+    #    eksisterende prosjekter får ikke emne ennå og vises for alle ingeniører til de får et.
+    """
+    CREATE TABLE emne (
+        id          INTEGER PRIMARY KEY,
+        kode        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        navn        TEXT NOT NULL DEFAULT '',
+        program     TEXT NOT NULL DEFAULT 'bachelor' CHECK (program IN ('bachelor', 'master')),
+        faglarer_id INTEGER REFERENCES bruker(id) ON DELETE SET NULL,
+        ingenior_id INTEGER REFERENCES bruker(id) ON DELETE SET NULL,
+        aktiv       INTEGER NOT NULL DEFAULT 1
+    );
+    ALTER TABLE prosjekt ADD COLUMN emne_id INTEGER REFERENCES emne(id) ON DELETE SET NULL;
+    UPDATE prosjekt SET faglarer_id = NULL;
+    """,
 ]
 _JSON_BESTILLING = ("linjer", "paa_lager", "lager_logg")
 
-PROSJEKT_FELT = ("navn", "type", "lev", "buf", "notat", "color", "bom", "faglarer_id")
+PROSJEKT_FELT = ("navn", "type", "lev", "buf", "notat", "color", "bom", "emne_id")
+EMNE_FELT = ("kode", "navn", "program", "faglarer_id", "ingenior_id", "aktiv")
 GJENNOMFORING_FELT = ("start", "slutt", "sett")
 
 
@@ -217,9 +234,13 @@ class Db:
     _SELECT = """SELECT g.id, g.prosjekt_id AS prosjektId, g.skolear, g.start, g.slutt, g.sett,
                         g.slettet, g.slettet_av AS slettetAv,
                         p.navn, p.type, p.lev, p.buf, p.notat, p.color, p.bom,
-                        p.faglarer_id AS faglarerId, f.navn AS faglarerNavn
+                        p.emne_id AS emneId, e.kode AS emneKode, e.navn AS emneNavn, e.program,
+                        e.faglarer_id AS faglarerId, f.navn AS faglarerNavn,
+                        e.ingenior_id AS ingeniorId, i.navn AS ingeniorNavn
                  FROM gjennomforing g JOIN prosjekt p ON p.id = g.prosjekt_id
-                 LEFT JOIN bruker f ON f.id = p.faglarer_id"""
+                 LEFT JOIN emne e ON e.id = p.emne_id
+                 LEFT JOIN bruker f ON f.id = e.faglarer_id
+                 LEFT JOIN bruker i ON i.id = e.ingenior_id"""
 
     @staticmethod
     def _rad(r) -> dict:
@@ -241,10 +262,10 @@ class Db:
     def ny(self, prosjekt_id: str, skolear: int, felt: dict) -> dict:
         """Nytt prosjekt med sin første gjennomføring."""
         with self.tx() as con:
-            con.execute("""INSERT INTO prosjekt (id, navn, type, lev, buf, notat, color, bom, faglarer_id)
+            con.execute("""INSERT INTO prosjekt (id, navn, type, lev, buf, notat, color, bom, emne_id)
                            VALUES (?,?,?,?,?,?,?,?,?)""",
                         (prosjekt_id, felt["navn"], felt.get("type", "hack"), felt.get("lev", 2), felt.get("buf", 2),
-                         felt.get("notat", ""), felt.get("color", 0), felt.get("bom"), felt.get("faglarer_id")))
+                         felt.get("notat", ""), felt.get("color", 0), felt.get("bom"), felt.get("emne_id")))
             cur = con.execute("INSERT INTO gjennomforing (prosjekt_id, skolear, start, slutt, sett) VALUES (?,?,?,?,?)",
                               (prosjekt_id, skolear, felt.get("start", 40), felt.get("slutt", felt.get("start", 40)),
                                felt.get("sett")))
@@ -318,6 +339,39 @@ class Db:
     def endre_bruker(self, id: int, **felt) -> None:
         with self.tx() as con:
             con.execute(f"UPDATE bruker SET {', '.join(k + ' = ?' for k in felt)} WHERE id = ?", (*felt.values(), id))
+
+    # ---------- emner ----------
+
+    _EMNE = """SELECT e.id, e.kode, e.navn, e.program, e.aktiv,
+                      e.faglarer_id AS faglarerId, f.navn AS faglarerNavn,
+                      e.ingenior_id AS ingeniorId, i.navn AS ingeniorNavn
+               FROM emne e LEFT JOIN bruker f ON f.id = e.faglarer_id LEFT JOIN bruker i ON i.id = e.ingenior_id"""
+
+    def emner(self) -> list[dict]:
+        with self.tx() as con:
+            return [dict(r) for r in con.execute(self._EMNE + " ORDER BY e.aktiv DESC, e.kode")]
+
+    def emne(self, eid: int) -> dict:
+        with self.tx() as con:
+            r = con.execute(self._EMNE + " WHERE e.id = ?", (eid,)).fetchone()
+        if r is None:
+            raise KeyError(eid)
+        return dict(r)
+
+    def nytt_emne(self, felt: dict) -> dict:
+        with self.tx() as con:
+            cur = con.execute("INSERT INTO emne (kode, navn, program, faglarer_id, ingenior_id) VALUES (?,?,?,?,?)",
+                              (felt["kode"], felt.get("navn", ""), felt.get("program", "bachelor"),
+                               felt.get("faglarer_id"), felt.get("ingenior_id")))
+            eid = cur.lastrowid
+        return self.emne(eid)
+
+    def endre_emne(self, eid: int, felt: dict) -> dict:
+        felt = {k: v for k, v in felt.items() if k in EMNE_FELT}
+        if felt:
+            with self.tx() as con:
+                con.execute(f"UPDATE emne SET {', '.join(k + ' = ?' for k in felt)} WHERE id = ?", (*felt.values(), eid))
+        return self.emne(eid)
 
     # ---------- endringslogg ----------
 

@@ -28,6 +28,7 @@
       <div class="row">
         <h2>Skoleåret <span id="syName"></span></h2>
         <div class="synav">
+          <button class="mini scope ing" id="scope" type="button" aria-pressed="false" hidden></button>
           <button class="mini" id="syPrev" type="button" aria-label="Forrige skoleår">‹</button>
           <button class="mini" id="syNow" type="button">I år</button>
           <button class="mini" id="syNext" type="button" aria-label="Neste skoleår">›</button>
@@ -66,6 +67,9 @@
     <div class="addbox" id="addbox" hidden>
       <form id="addForm" novalidate>
         <p class="wide formnote">Legges inn i skoleåret <b id="f-sy"></b>. Uke 32–53 er høsten, uke 1–31 er våren etter.</p>
+        <label class="wide">Emne
+          <select id="f-emne"></select>
+        </label>
         <label class="wide">Navn på prosjekt
           <input type="text" id="f-navn" placeholder="F.eks. Lodde-workshop" autocomplete="off">
         </label>
@@ -110,6 +114,15 @@
         <tbody id="tbody"></tbody>
       </table>
     </div>
+  </section>
+
+  <section class="emner ing" id="emnerSec">
+    <div class="row">
+      <h2>Emner</h2>
+      <button class="tbtn" id="emneNy" type="button">+ Nytt emne</button>
+    </div>
+    <p class="muted">Hvert prosjekt hører til et emne. Emnet bestemmer hvilken faglærer som kan endre prosjektene, og hvilken ingeniør som har ansvaret og får varslene. Endringer lagres med en gang.</p>
+    <div class="tablebox"><table id="emneTable"></table></div>
   </section>
 
   <section class="history ing" id="historySec" hidden>
