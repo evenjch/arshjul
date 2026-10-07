@@ -4,8 +4,8 @@ Innlogging er alltid på – lokalt og på serveren – så det som testes lokal
 
 Roller:
     ingenior        prosjekter i egne emner (og prosjekter uten emne)
-    ingenior+admin  i adminmodus: alle emner, og styrer brukerne. Adminmodus slås på per økt
-                    (bryteren øverst); uten den er administratoren en vanlig ingeniør.
+    ingenior+admin  en vanlig ingeniør på hovedsiden, pluss administratorpanelet (/admin):
+                    ser og retter alt, styrer brukere, rydder og tar sikkerhetskopi
     faglarer        ser hele hjulet; legger til, endrer og fjerner prosjektene i sine egne emner
                     (navn, type, uker, antall sett, notat). Ser ikke BOM, bestilling, telling eller kostnader.
 
@@ -129,11 +129,9 @@ def _vakt():
     if session.get("uid"):
         u = _store.bruker(id=session["uid"])
         if u and u["aktiv"] and session.get("pv") == _passordversjon(u):
-            # kanAdmin: kontoen er administrator. admin: adminmodus er slått på i denne økten.
-            # Uten adminmodus er du en vanlig ingeniør – med akkurat de samme reglene.
-            kan = bool(u["admin"]) and u["rolle"] == "ingenior"
+            # admin: kontoen har administratorpanelet (/admin). På hovedsiden er du en vanlig ingeniør.
             g.bruker = {"id": u["id"], "navn": u["navn"], "brukernavn": u["brukernavn"], "rolle": u["rolle"],
-                        "kanAdmin": kan, "admin": kan and bool(session.get("adminmodus"))}
+                        "admin": bool(u["admin"]) and u["rolle"] == "ingenior"}
         else:
             session.clear()
 
@@ -233,18 +231,8 @@ def oppsett():
                 feil = "Brukernavnet er tatt."
             else:
                 _logg_inn(_store.bruker(id=uid))
-                session["adminmodus"] = True  # første gang: du skal lage brukere
-                return redirect("/")
+                return redirect("/admin#brukere")  # første gang: lag brukere til de andre
     return render_template("oppsett.html", feil=feil, min_passord=MIN_PASSORD), (400 if feil else 200)
-
-
-@bp.post("/api/adminmodus")
-def adminmodus():
-    """Slå adminmodus av eller på for denne økten. Bare for administratorer."""
-    if g.bruker is None or not g.bruker["kanAdmin"]:
-        return jsonify({"feil": "Du er ikke administrator."}), 403
-    session["adminmodus"] = bool((request.get_json(silent=True) or {}).get("på"))
-    return jsonify({"adminmodus": session["adminmodus"]})
 
 
 @bp.post("/logout")

@@ -253,11 +253,38 @@
   .meg { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); margin-top: 6px; }
   .meg form { margin: 0; }
   [data-rolle="faglarer"] .ing { display: none !important; }
-  [data-admin="0"] .adm { display: none !important; }
-  /* adminmodus: tydelig så du alltid vet hvilke rettigheter du har */
-  .adminbryter[aria-checked="true"] { background: var(--warn); border-color: var(--warn); color: var(--card); }
-  [data-admin="1"] header { border-bottom-color: var(--warn); }
-  [data-admin="1"] header .eyebrow::after { content: " · adminmodus"; color: var(--warn); }
+  a.adminlenke { text-decoration: none; }
+
+  /* administratorpanelet */
+  body.admin header { border-bottom-color: var(--warn); }
+  body.admin .eyebrow { color: var(--warn); }
+  .faner { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 18px; border-bottom: 1px solid var(--line); }
+  .faner a { font: 600 13px var(--sans); color: var(--muted); text-decoration: none; padding: 8px 12px;
+             border: 1px solid transparent; border-bottom: 0; border-radius: 9px 9px 0 0; margin-bottom: -1px; }
+  .faner a:hover { color: var(--accent); }
+  .faner a[aria-current="page"] { color: var(--ink); background: var(--card); border-color: var(--line); }
+  .faner a .tall { font: 600 11px var(--mono); background: var(--warn-soft); color: var(--warn); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
+  .kort { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .kort > div { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .kort > div.ok { border-color: var(--ok); }
+  .kort > div.obs { border-color: var(--soon); background: var(--soon-soft); }
+  .kort h3 { margin: 0 0 6px; font-size: 13.5px; }
+  .kort ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+  .filtre { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; margin-bottom: 10px; }
+  .filtre label { display: grid; gap: 3px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .filtre input, .filtre select, .adm-tabell input, .adm-tabell select {
+    font: 400 13px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 4px 7px; min-width: 0; }
+  .adm-tabell { min-width: 900px; }
+  .adm-tabell td { padding: 6px 8px; font-size: 13px; vertical-align: middle; }
+  .adm-tabell th { padding: 8px; }
+  .adm-tabell input[type=number] { width: 64px; font-family: var(--mono); }
+  .adm-tabell input.navn { width: 100%; min-width: 140px; }
+  .adm-tabell tr.fjernet td { background: var(--warn-soft); }
+  .adm-tabell .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .adm-tabell small { display: block; color: var(--muted); font-size: 11.5px; }
+  .infotabell { min-width: 0; }
+  .infotabell th { background: none; color: var(--muted); text-align: left; width: 200px; }
+  .infotabell td code { overflow-wrap: anywhere; }
   [data-rolle="ingenior"] .fag { display: none !important; }
   #brukerTable { min-width: 760px; }
   #brukerTable input[type=text], #brukerTable input[type=password], #brukerTable select {

@@ -37,7 +37,7 @@ def test_forste_gang_lokalt_lages_administrator():
     assert oppsett(c, passord2="noe-annet-her").status_code == 400
     assert oppsett(c, passord="kort", passord2="kort").status_code == 400
     r = oppsett(c)
-    assert r.status_code == 302 and r.headers["Location"] == "/"
+    assert r.status_code == 302 and r.headers["Location"] == "/admin#brukere"  # rett til å lage brukere
     with c.session_transaction() as s:
         c.environ_base["HTTP_X_CSRF_TOKEN"] = s["csrf"]
     st = c.get("/api/state").get_json()
@@ -73,15 +73,16 @@ def test_hemmelig_nokkel_lagres_lokalt():
 
 # ---------- administrator ----------
 
-def test_admin_har_alle_emner(client):
-    anne, bjorn = bruker("anne"), bruker("bjorn")
+def test_admin_er_vanlig_ingenior_pa_hovedsiden(client):
+    """På hovedsiden har administratoren akkurat en vanlig ingeniørs rettigheter – panelet er stedet for alt."""
+    bjorn = bruker("bjorn")
     e = arshjul.store.nytt_emne({"kode": "E1", "ingenior_id": bjorn})["id"]
-    g = client.post("/api/gjennomforinger", json={"navn": "Bjørns", "skolear": 2030, "emne": e}).get_json()
-    assert client.get("/api/state").get_json()["prosjekter"][0]["egen"] is True  # admin
-    a = som(ny_klient(), anne)
-    assert a.get("/api/state").get_json()["prosjekter"] == []  # Anne ser ikke Bjørns emne i det hele tatt
-    assert a.patch(f"/api/gjennomforinger/{g['id']}", json={"start": 40}).status_code == 403
-    assert client.patch(f"/api/gjennomforinger/{g['id']}", json={"start": 40}).status_code == 200
+    g = som(ny_klient(), bjorn).post("/api/gjennomforinger", json={"navn": "Bjørns", "skolear": 2030, "emne": e}).get_json()
+    assert client.get("/api/state").get_json()["prosjekter"] == []  # ikke admins emne
+    assert client.patch(f"/api/gjennomforinger/{g['id']}", json={"start": 40}).status_code == 403
+    # men i panelet ser og retter administratoren alt
+    assert [r["navn"] for r in client.get("/api/admin/data").get_json()["gjennomforinger"]] == ["Bjørns"]
+    assert client.patch(f"/api/admin/gjennomforinger/{g['id']}", json={"start": 40}).status_code == 200
 
 
 def test_admin_lager_og_endrer_brukere(client):
@@ -96,7 +97,7 @@ def test_admin_lager_og_endrer_brukere(client):
     assert client.post("/api/brukere", json={"brukernavn": "x", "navn": "X", "rolle": "sjef", "passord": PASSORD}).status_code == 400
 
     assert client.patch(f"/api/brukere/{u['id']}", json={"navn": "Ola Nordmann"}).get_json()["navn"] == "Ola Nordmann"
-    brukere = client.get("/api/state").get_json()["brukere"]
+    brukere = client.get("/api/admin/data").get_json()["brukere"]
     assert {b["brukernavn"] for b in brukere} == {"admin", "ola"} and all("passord" not in b for b in brukere)
 
     # ny ingeniør som admin
@@ -144,7 +145,7 @@ def test_bare_admin_styrer_brukere(client, rolle):
     c = som(ny_klient(), bruker("vanlig", rolle))
     assert c.post("/api/brukere", json={"brukernavn": "x", "navn": "X", "rolle": "faglarer", "passord": PASSORD}).status_code == 403
     assert c.patch("/api/brukere/1", json={"admin": True}).status_code == 403
-    assert c.get("/api/state").get_json()["brukere"] == []
+    assert c.get("/api/admin/data").status_code == 403
 
 
 def test_manage_admin(capsys, monkeypatch):
@@ -169,55 +170,3 @@ def test_siden_som_admin(client):
     bruker("anne")
     res = kjor_siden(client.get("/api/state").get_json())
     assert res["errors"] == []
-
-
-# ---------- adminmodus ----------
-
-def test_adminmodus_av_er_vanlig_ingenior(client):
-    """Administratoren uten adminmodus har akkurat en vanlig ingeniørs rettigheter."""
-    admin = arshjul.store.bruker(brukernavn="admin")["id"]
-    bjorn = bruker("bjorn")
-    e = arshjul.store.nytt_emne({"kode": "E1", "ingenior_id": bjorn})["id"]
-    g = client.post("/api/gjennomforinger", json={"navn": "Bjørns", "skolear": 2030, "emne": e}).get_json()
-
-    vanlig = som(ny_klient(), admin)  # ny økt: adminmodus av
-    st = vanlig.get("/api/state").get_json()
-    assert (st["meg"]["admin"], st["meg"]["kanAdmin"]) == (False, True)
-    assert st["prosjekter"] == [] and st["brukere"] == []  # ser ikke Bjørns emne, ingen brukerliste
-    assert vanlig.patch(f"/api/gjennomforinger/{g['id']}", json={"start": 40}).status_code == 403
-    assert vanlig.post("/api/brukere", json={"brukernavn": "x", "navn": "X", "rolle": "faglarer", "passord": PASSORD}).status_code == 403
-
-    assert vanlig.post("/api/adminmodus", json={"på": True}).get_json() == {"adminmodus": True}
-    st = vanlig.get("/api/state").get_json()
-    assert st["meg"]["admin"] is True and [p["navn"] for p in st["prosjekter"]] == ["Bjørns"] and st["brukere"]
-    assert vanlig.patch(f"/api/gjennomforinger/{g['id']}", json={"start": 40}).status_code == 200
-
-    vanlig.post("/api/adminmodus", json={"på": False})
-    assert vanlig.get("/api/state").get_json()["prosjekter"] == []
-
-
-@pytest.mark.parametrize("rolle", ["ingenior", "faglarer"])
-def test_bare_administratorer_har_adminmodus(rolle):
-    c = som(ny_klient(), bruker("vanlig", rolle))
-    assert c.post("/api/adminmodus", json={"på": True}).status_code == 403
-    assert c.get("/api/state").get_json()["meg"]["admin"] is False
-
-
-def test_innlogging_starter_uten_adminmodus(client):
-    c = ny_klient()
-    c.get("/login")
-    with c.session_transaction() as s:
-        token = s["csrf"]
-    c.post("/login", data={"brukernavn": "admin", "passord": ADMIN_PASSORD, "csrf": token})
-    with c.session_transaction() as s:
-        c.environ_base["HTTP_X_CSRF_TOKEN"] = s["csrf"]
-    assert c.get("/api/state").get_json()["meg"]["admin"] is False
-    html = c.get("/").get_data(as_text=True)
-    assert 'id="adminToggle"' in html and "Adminmodus: av" in html and 'data-admin="0"' in html
-
-
-def test_adminmodus_krever_csrf(client):
-    admin = arshjul.store.bruker(brukernavn="admin")["id"]
-    c = som(ny_klient(), admin)
-    c.environ_base.pop("HTTP_X_CSRF_TOKEN")
-    assert c.post("/api/adminmodus", json={"på": True}).status_code == 400

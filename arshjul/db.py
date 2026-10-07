@@ -174,7 +174,7 @@ _JSON_BESTILLING = ("linjer", "paa_lager", "lager_logg")
 
 PROSJEKT_FELT = ("navn", "type", "lev", "buf", "notat", "color", "bom", "emne_id")
 EMNE_FELT = ("kode", "navn", "program", "faglarer_id", "ingenior_id", "aktiv")
-GJENNOMFORING_FELT = ("start", "slutt", "sett")
+GJENNOMFORING_FELT = ("start", "slutt", "sett", "skolear")  # skoleår endres bare i administratorpanelet
 
 
 class Db:
@@ -414,6 +414,47 @@ class Db:
             return [dict(r) for r in con.execute(
                 """SELECT * FROM endring WHERE kvittert IS NULL
                    AND ((rolle = 'faglarer' AND mottaker_id IS NULL) OR mottaker_id IS NOT NULL) ORDER BY id""")]
+
+    def logg_sok(self, *, bruker: str = "", prosjekt: str = "", rolle: str = "", fra: str = "", til: str = "",
+                 grense: int = 500) -> list[dict]:
+        """Hele endringsloggen, nyeste først, med filtre (for administratorpanelet)."""
+        sql, args = "SELECT * FROM endring WHERE 1=1", []
+        if bruker:
+            sql += " AND bruker_navn LIKE ?"
+            args.append(f"%{bruker}%")
+        if prosjekt:
+            sql += " AND prosjekt_navn LIKE ?"
+            args.append(f"%{prosjekt}%")
+        if rolle:
+            sql += " AND rolle = ?"
+            args.append(rolle)
+        if fra:
+            sql += " AND tid >= ?"
+            args.append(fra)
+        if til:
+            sql += " AND tid < ?"
+            args.append(til + "T99")  # hele dagen med
+        with self.tx() as con:
+            return [dict(r) for r in con.execute(sql + " ORDER BY id DESC LIMIT ?", (*args, grense))]
+
+    def kvitter_alle(self) -> int:
+        with self.tx() as con:
+            return con.execute("UPDATE endring SET kvittert = ? WHERE kvittert IS NULL",
+                               (dt.datetime.now().isoformat(timespec="seconds"),)).rowcount
+
+    def slett_bruker(self, uid: int) -> None:
+        with self.tx() as con:
+            con.execute("DELETE FROM bruker WHERE id = ?", (uid,))
+
+    def sikkerhetskopi(self, mal: Path) -> None:
+        """Kopi av databasen mens den er i bruk (SQLite sin egen backup – trygt midt i skriving)."""
+        mal.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(self.path)) as kilde, closing(sqlite3.connect(mal)) as kopi:
+            kilde.backup(kopi)
+
+    def versjon(self) -> int:
+        with self.tx() as con:
+            return con.execute("PRAGMA user_version").fetchone()[0]
 
     def kvitter_til(self, mottaker_id: int, ids: list[int]) -> int:
         """«OK, sett» på varsler som er til deg."""

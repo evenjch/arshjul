@@ -97,22 +97,23 @@ def _rolle():
         if request.path.startswith("/api/"):
             return jsonify({"feil": "Bare ingeniøren kan gjøre dette."}), 403
         return "Ikke tilgang", 403
-    if req.bruker and request.endpoint in ADMIN_ENDEPUNKT and not auth.er_admin():
-        return jsonify({"feil": "Bare administratoren kan gjøre dette."}), 403
+    er_admin_side = request.endpoint in ADMIN_ENDEPUNKT or (request.endpoint or "").startswith("adminpanel.")
+    if req.bruker and er_admin_side and not auth.er_admin():
+        if request.path.startswith("/api/"):
+            return jsonify({"feil": "Bare administratoren kan gjøre dette."}), 403
+        return "Ikke tilgang", 403
     return None
 
 
 def kan_handle(g: dict) -> bool:
     """Får den innloggede gjøre noe med denne gjennomføringen?
 
-    Administrator: alt.
-    Ingeniør: prosjekter i emner der hen er ansvarlig, og prosjekter uten emne eller uten
-    ansvarlig ingeniør (så ingenting blir liggende).
+    Ingeniør (også administratoren – på hovedsiden er hen en vanlig ingeniør): prosjekter i emner
+    der hen er ansvarlig, og prosjekter uten emne eller uten ansvarlig ingeniør (så ingenting blir liggende).
     Faglærer: prosjekter i egne emner.
+    Administratorpanelet (/api/admin/…) har egne endepunkter som ser og retter alt.
     """
     meg = auth.meg()
-    if auth.er_admin():
-        return True
     if auth.er_ingenior():
         return g["ingeniorId"] in (None, meg["id"])
     return g["faglarerId"] is not None and g["faglarerId"] == meg["id"]
@@ -124,6 +125,8 @@ def _eierskap():
     gid = (request.view_args or {}).get("gid")
     if gid is None or request.method in ("GET", "HEAD", "OPTIONS") or req.bruker is None:
         return None
+    if (request.endpoint or "").startswith("adminpanel.") and auth.er_admin():
+        return None  # administratorpanelet retter i alle prosjekter (og logger det)
     try:
         g = store.gjennomforing(gid)
     except KeyError:
@@ -164,10 +167,11 @@ FELTNAVN = {"navn": "navn", "type": "type", "start": "uke fra", "slutt": "uke ti
             "emneId": "emne"}
 
 
-def logg(g: dict, handling: str, endret: dict | None = None) -> None:
-    """Skriv i endringsloggen. endret: {felt: (fra, til)}. Bare faglærernes endringer varsles."""
+def logg(g: dict, handling: str, endret: dict | None = None, rolle: str | None = None) -> None:
+    """Skriv i endringsloggen. endret: {felt: (fra, til)}. Bare faglærernes endringer varsles.
+    rolle="admin" for rettinger gjort i administratorpanelet."""
     meg = auth.meg()
-    felles = {"bruker_id": meg["id"], "bruker_navn": meg["navn"], "rolle": meg["rolle"],
+    felles = {"bruker_id": meg["id"], "bruker_navn": meg["navn"], "rolle": rolle or meg["rolle"],
               "gjennomforing_id": int(g["id"]), "prosjekt_navn": g["navn"], "skolear": g["skolear"], "handling": handling}
     if endret:
         store.logg([{**felles, "felt": FELTNAVN.get(k, k), "fra": fra, "til": til} for k, (fra, til) in endret.items()])
@@ -335,8 +339,7 @@ def state():
 
     svar = {"prosjekter": out, "stengte": closed, "modus": config.MODUS,
             "idag": frister.uke_info(idag), "skolearNa": na, "skolear": skolear, "neste8": neste8,
-            "meg": {"id": meg["id"], "navn": meg["navn"], "rolle": meg["rolle"], "admin": meg["admin"],
-                    "kanAdmin": meg["kanAdmin"]},
+            "meg": {"id": meg["id"], "navn": meg["navn"], "rolle": meg["rolle"], "admin": meg["admin"]},
             "brukere": [],
             "ledigeBom": [], "oppsett": None, "mapper": {}, "endringer": [], "slettede": [],
             "emner": [], "faglarere": [], "ingeniorer": [], "program": PROGRAM}
@@ -362,8 +365,6 @@ def state():
         svar["faglarere"] = [{"id": u["id"], "navn": u["navn"]} for u in brukere if u["rolle"] == "faglarer"]
         svar["ingeniorer"] = [{"id": u["id"], "navn": u["navn"]} for u in brukere if u["rolle"] == "ingenior"]
         svar["emner"] = emner
-        if auth.er_admin():
-            svar["brukere"] = [{**u, "admin": bool(u["admin"]), "aktiv": bool(u["aktiv"])} for u in store.brukere()]
     else:
         # faglæreren styrer sine egne emner og velger ingeniør til dem
         svar["emner"] = [e for e in emner if e["faglarerId"] == meg["id"]]
@@ -1015,6 +1016,11 @@ def open_folder(hvilken):
     path.mkdir(exist_ok=True)
     open_path(path)
     return jsonify({"ok": True})
+
+
+import adminpanel  # noqa: E402  (etter alt det bruker)
+
+adminpanel.init(app, sys.modules[__name__])
 
 
 # ---------- oppstart ----------

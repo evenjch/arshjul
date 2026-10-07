@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Administrator – Årshjul for innkjøp</title>
+<meta name="csrf" content="{{ csrf_token }}">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='arshjul.css') }}">
+</head>
+<body class="admin" data-meg="{{ meg.id }}">
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Årshjul for innkjøp · administrator</div>
+      <h1>Administratorpanel</h1>
+      <div class="meg">Innlogget som <b>{{ meg.navn }}</b>
+        <a class="mini" href="/">← Til årshjulet</a>
+        <form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button class="mini quiet" type="submit">Logg ut</button></form>
+      </div>
+    </div>
+    <div class="status" id="status" role="status"></div>
+  </header>
+
+  <nav class="faner" id="faner" aria-label="Deler av panelet">
+    <a href="#oversikt">Oversikt</a>
+    <a href="#prosjekter">Prosjekter</a>
+    <a href="#emner">Emner</a>
+    <a href="#brukere">Brukere</a>
+    <a href="#registreringer">Bestillinger og tellinger</a>
+    <a href="#logg">Endringslogg</a>
+    <a href="#opprydding">Opprydding</a>
+    <a href="#system">System</a>
+  </nav>
+
+  <main id="innhold"><p class="muted">Henter …</p></main>
+
+  <p class="muted" style="margin-top:24px;font-size:12.5px">Alt du endrer her logges med navnet ditt som «admin». Det som er skrevet til en BOM («På lager»), angres – det slettes ikke bare fra årshjulet.</p>
+</div>
+<script src="{{ url_for('static', filename='admin.js') }}"></script>
+</body>
+</html>
