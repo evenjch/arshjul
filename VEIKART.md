@@ -148,6 +148,8 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 
 ## Parkert / senere
 
+- **Koden over på engelsk**: variabelnavn, funksjoner, kommentarer, commit-meldinger og API-felt. Tekst brukerne ser (grensesnitt, feilmeldinger, LES MEG) forblir norsk. Gjøres samlet, med testene som sikkerhetsnett – ikke bit for bit.
+
 - **Instituttoversikt**: se alle emner samtidig for å finne kollisjoner (travle uker, delte rom og utstyr) og felles lager. Bevisst tatt bort for nå – i et stort institutt blir det rot. Administratoren ser allerede alt; en egen visning kan komme senere.
 
 - Kalenderabonnement (ICS) med frister og prosjektuker i Outlook
