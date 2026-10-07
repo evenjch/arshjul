@@ -134,7 +134,8 @@
   function assignLanes(list) {
     const lanes = [], map = new Map();
     list.forEach((p) => {
-      const use = slots(useSpan(p)), lead = slots(leadSpan(p));
+      // faglæreren ser bare perioden prosjektet er i bruk – ikke bestilling og levering
+      const use = slots(useSpan(p)), lead = ING ? slots(leadSpan(p)) : [];
       let j = lanes.findIndex((L) => !use.some((w) => L.use[w]) && !lead.some((w) => L.lead[w]));
       if (j < 0) { lanes.push({ use: [], lead: [] }); j = lanes.length - 1; }
       use.forEach((w) => (lanes[j].use[w] = true)); lead.forEach((w) => (lanes[j].lead[w] = true));
@@ -194,12 +195,18 @@
     list.forEach((p) => {
       const d = p.frister, [r0, r1, rl, ru] = laneR(laneOf.get(p.id)), c = col(p);
       s += `<g class="proj" data-id="${esc(p.id)}">`;
+      const use = useSpan(p);
+      const brukTittel = `${esc(p.navn)}: i bruk uke ${d.start.uke}${d.start.uke !== d.slutt.uke ? "–" + d.slutt.uke : ""}`;
+      if (!ING) {
+        // faglærer: bare bruksperioden, over hele nivået
+        s += `<path class="ring-hit" data-kind="use" d="${sector(r0, r1, use[0], use[1])}" fill="${c}"><title>${brukTittel}</title></path></g>`;
+        return;
+      }
       const lead = leadSpan(p);
       if (lead[1] > lead[0]) {
         s += `<path class="ring-hit" data-kind="lead" d="${sector(r0, rl, lead[0], lead[1])}" fill="${c}" opacity=".45"><title>${esc(p.navn)}: bestilling og levering fra uke ${d.frist.uke}${d.frist.ar !== d.start.ar ? " " + d.frist.ar : ""}</title></path>`;
       }
-      const use = useSpan(p);
-      s += `<path class="ring-hit" data-kind="use" d="${sector(ru, r1, use[0], use[1])}" fill="${c}"><title>${esc(p.navn)}: i bruk uke ${d.start.uke}${d.start.uke !== d.slutt.uke ? "–" + d.slutt.uke : ""}</title></path>`;
+      s += `<path class="ring-hit" data-kind="use" d="${sector(ru, r1, use[0], use[1])}" fill="${c}"><title>${brukTittel}</title></path>`;
       const [fx, fy] = pt((r0 + rl) / 2, ang(pos(d.frist.dato) + .5));
       const os = orderState(p), ring = ING ? STATE_COLOR[os] : null; // bestillingsstatus er ingeniørens sak
       if (ring) s += `<circle cx="${fx.toFixed(1)}" cy="${fy.toFixed(1)}" r="${(mr + 3).toFixed(1)}" fill="none" stroke="${ring}" stroke-width="2.5"/>`;
@@ -223,7 +230,7 @@
       s += `<text x="${C}" y="${C + 26}" text-anchor="middle" font-size="11">Henter prosjekter …</text>`;
     } else if (!list.length) {
       s += `<text x="${C}" y="${C + 26}" text-anchor="middle" font-size="11">Ingen prosjekter dette skoleåret</text>`;
-    } else if (next && iAr) {
+    } else if (ING && next && iAr) {
       s += `<text x="${C}" y="${C + 26}" text-anchor="middle" font-size="11">neste frist: uke ${next.uke}</text>`;
       s += `<text x="${C}" y="${C + 41}" text-anchor="middle" font-size="11" font-weight="600" style="fill:var(--ink)">${esc(short(next.p.navn))}</text>`;
     }

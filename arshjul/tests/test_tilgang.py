@@ -313,6 +313,10 @@ def test_siden_for_begge_roller(innlogging):
     assert "Registrer bestilt" not in res["tbody"] and "Lag BOM-mal" not in res["tbody"]
     assert 'data-k="lev"' not in res["tbody"]  # leveringstid kan ikke endres av faglærer
     assert "Karis prosjekt" not in res["tbody"]  # ser bare egne emner
+    # hjulet: bare perioden prosjektet er i bruk – ingen bestilling/levering, frist eller telling
+    assert 'data-kind="use"' in res["wheel"]
+    assert 'data-kind="lead"' not in res["wheel"] and "bestillingsfrist" not in res["wheel"]
+    assert "neste frist" not in res["wheel"] and "innlevering og telling" not in res["wheel"]
 
     res = kjor_siden(state(ing))
     assert res["errors"] == []
@@ -321,3 +325,4 @@ def test_siden_for_begge_roller(innlogging):
     assert "Ola Faglærer fjernet «Smart City»" in n and "Gjenopprett" in n
     assert "La til prosjektet" in n  # Olas nye
     assert 'data-act="emne"' in res["tbody"]
+    assert 'data-kind="lead"' in res["wheel"] and "bestillingsfrist" in res["wheel"]  # ingeniøren ser alt
