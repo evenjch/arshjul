@@ -2,17 +2,17 @@ import datetime as dt
 import json
 
 import config
-import frister
-from db import DEFAULT_STENGT, MIGRERINGER, Db, antall_sett
+import deadlines
+from db import DEFAULT_CLOSED, MIGRATIONS, Db, set_count
 
 
-def test_ny_database_har_standard_stengte_perioder():
-    assert Db(config.DB_FILE).stengte() == DEFAULT_STENGT
+def test_new_database_has_default_closed_periods():
+    assert Db(config.DB_FILE).closed_periods() == DEFAULT_CLOSED
 
 
-def test_import_fra_arshjul_json(tmp_path):
-    gammel = tmp_path / "arshjul.json"
-    gammel.write_text(json.dumps({
+def test_import_from_arshjul_json(tmp_path):
+    old_file = tmp_path / "arshjul.json"
+    old_file.write_text(json.dumps({
         "stengte_perioder": [{"navn": "Jul", "fra": 51, "til": 2}],
         "prosjekter": [
             {"id": "kit", "navn": "Arduino starter kit", "type": "sett", "semester": "Høst", "start": 34, "slutt": 50,
@@ -22,66 +22,66 @@ def test_import_fra_arshjul_json(tmp_path):
         ],
     }), encoding="utf-8")
     db = Db(tmp_path / "arshjul.db")
-    db.init(gammel)
+    db.init(old_file)
 
-    rader = db.gjennomforinger()
-    assert [(g["prosjektId"], g["start"], g["slutt"], g["sett"]) for g in rader] == [("kit", 34, 50, 60), ("led", 46, 46, None)]
-    assert {g["skolear"] for g in rader} == {frister.skolear_for(dt.date.today())}
-    assert rader[0]["bom"] == "kit.xlsx" and rader[0]["notat"] == "Beholdes"
-    assert db.stengte() == [{"navn": "Jul", "fra": 51, "til": 2, "paske": False}]
-    # gammel fil er tatt vare på, men brukes ikke lenger
-    assert not gammel.exists() and (tmp_path / "arshjul.json.importert").exists()
+    rows = db.runs()
+    assert [(g["projectId"], g["start"], g["finish"], g["sets"]) for g in rows] == [("kit", 34, 50, 60), ("led", 46, 46, None)]
+    assert {g["school_year"] for g in rows} == {deadlines.school_year_for(dt.date.today())}
+    assert rows[0]["bom"] == "kit.xlsx" and rows[0]["note"] == "Beholdes"
+    assert db.closed_periods() == [{"name": "Jul", "from_week": 51, "to_week": 2, "easter": False}]
+    # the old file is kept, but no longer used
+    assert not old_file.exists() and (tmp_path / "arshjul.json.importert").exists()
 
-    db.init(gammel)  # andre oppstart: ingenting skjer
-    assert len(db.gjennomforinger()) == 2
+    db.init(old_file)  # andre oppstart: ingenting skjer
+    assert len(db.runs()) == 2
 
 
-def test_versjon(tmp_path):
+def test_version(tmp_path):
     db = Db(tmp_path / "x.db")
     db.init()
     with db.tx() as con:
-        assert con.execute("PRAGMA user_version").fetchone()[0] == len(MIGRERINGER)
+        assert con.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
 
 
-def test_prosjektfelt_gjelder_alle_ar():
+def test_project_fields_apply_to_every_year():
     db = Db(config.DB_FILE)
-    a = db.ny("p1", 2026, {"navn": "Test", "start": 40, "slutt": 40, "lev": 2})
+    a = db.new("p1", 2026, {"name": "Test", "start": 40, "finish": 40, "lead": 2})
     with db.tx() as con:
-        con.execute("INSERT INTO gjennomforing (prosjekt_id, skolear, start, slutt) VALUES ('p1', 2027, 41, 41)")
-    db.endre(a["id"], {"navn": "Nytt navn", "start": 42})
-    rader = {g["skolear"]: g for g in db.gjennomforinger()}
-    assert rader[2026]["navn"] == rader[2027]["navn"] == "Nytt navn"
-    assert (rader[2026]["start"], rader[2027]["start"]) == (42, 41)
+        con.execute("INSERT INTO runs (project_id, school_year, start, finish) VALUES ('p1', 2027, 41, 41)")
+    db.update(a["id"], {"name": "Nytt navn", "start": 42})
+    rows = {g["school_year"]: g for g in db.runs()}
+    assert rows[2026]["name"] == rows[2027]["name"] == "Nytt navn"
+    assert (rows[2026]["start"], rows[2027]["start"]) == (42, 41)
 
 
-def test_bom_og_leveringstid_endrer_aldri_tidligere_ar():
-    """En ny BOM-versjon neste år skal ikke endre historikken – men følger med til senere år."""
+def test_bom_and_lead_time_never_change_earlier_years():
+    """A new BOM version next year mustn't change history – but carries on to later years."""
     db = Db(config.DB_FILE)
-    a = db.ny("p1", 2026, {"navn": "Test", "bom": "v1.xlsx", "lev": 2})
-    db.kopier(2026)
-    b = next(g for g in db.gjennomforinger() if g["skolear"] == 2027)
-    assert (b["bom"], b["lev"]) == ("v1.xlsx", 2)  # kopien tar med BOM og leveringstid
+    a = db.new("p1", 2026, {"name": "Test", "bom": "v1.xlsx", "lead": 2})
+    db.copy_year(2026)
+    b = next(g for g in db.runs() if g["school_year"] == 2027)
+    assert (b["bom"], b["lead"]) == ("v1.xlsx", 2)  # the copy brings BOM and lead time along
 
-    db.endre(b["id"], {"bom": "v2.xlsx", "lev": 4})  # neste år: ny BOM
-    rader = {g["skolear"]: g for g in db.gjennomforinger()}
-    assert (rader[2026]["bom"], rader[2026]["lev"]) == ("v1.xlsx", 2)  # i år står
-    assert (rader[2027]["bom"], rader[2027]["lev"]) == ("v2.xlsx", 4)
+    db.update(b["id"], {"bom": "v2.xlsx", "lead": 4})  # next year: a new BOM
+    rows = {g["school_year"]: g for g in db.runs()}
+    assert (rows[2026]["bom"], rows[2026]["lead"]) == ("v1.xlsx", 2)  # this year stays
+    assert (rows[2027]["bom"], rows[2027]["lead"]) == ("v2.xlsx", 4)
 
-    db.endre(a["id"], {"lev": 3})  # i år: 2027 har sin egen leveringstid og røres ikke
-    db.endre(a["id"], {"bom": "v1b.xlsx"})
-    rader = {g["skolear"]: g for g in db.gjennomforinger()}
-    assert (rader[2027]["bom"], rader[2027]["lev"]) == ("v2.xlsx", 4)
+    db.update(a["id"], {"lead": 3})  # this year: 2027 has its own lead time and isn't touched
+    db.update(a["id"], {"bom": "v1b.xlsx"})
+    rows = {g["school_year"]: g for g in db.runs()}
+    assert (rows[2027]["bom"], rows[2027]["lead"]) == ("v2.xlsx", 4)
 
-    c = db.ny("p2", 2026, {"navn": "Annet", "lev": 2})
-    db.kopier(2026, [c["id"]])
-    db.endre(c["id"], {"lev": 6})  # 2027 hadde samme verdi: følger med
-    assert [g["lev"] for g in db.gjennomforinger() if g["prosjektId"] == "p2"] == [6, 6]
+    c = db.new("p2", 2026, {"name": "Annet", "lead": 2})
+    db.copy_year(2026, [c["id"]])
+    db.update(c["id"], {"lead": 6})  # 2027 had the same value: follows along
+    assert [g["lead"] for g in db.runs() if g["projectId"] == "p2"] == [6, 6]
 
 
-def test_migrering_14_bom_per_gjennomforing(tmp_path):
+def test_migration_14_bom_per_run(tmp_path):
     db = Db(tmp_path / "gammel.db")
     with db.tx() as con:
-        for sql in MIGRERINGER[:13]:
+        for sql in MIGRATIONS[:13]:
             for stmt in sql.split(";"):
                 if stmt.strip():
                     con.execute(stmt)
@@ -90,42 +90,42 @@ def test_migrering_14_bom_per_gjennomforing(tmp_path):
         con.execute("INSERT INTO gjennomforing (prosjekt_id, skolear, start, slutt) VALUES ('kit', 2025, 34, 50)")
         con.execute("INSERT INTO gjennomforing (prosjekt_id, skolear, start, slutt) VALUES ('kit', 2026, 34, 50)")
     db.init()
-    assert [(g["bom"], g["lev"], g["buf"]) for g in db.gjennomforinger()] == [("kit.xlsx", 3, 4)] * 2
+    assert [(g["bom"], g["lead"], g["buf"]) for g in db.runs()] == [("kit.xlsx", 3, 4)] * 2
 
 
-def test_slett_siste_gjennomforing_sletter_prosjektet():
+def test_deleting_the_last_run_deletes_the_project():
     db = Db(config.DB_FILE)
-    a = db.ny("p1", 2026, {"navn": "Test"})
-    db.slett(a["id"])
+    a = db.new("p1", 2026, {"name": "Test"})
+    db.delete(a["id"])
     with db.tx() as con:
-        assert con.execute("SELECT COUNT(*) FROM prosjekt").fetchone()[0] == 0
+        assert con.execute("SELECT COUNT(*) FROM projects").fetchone()[0] == 0
 
 
-def test_antall_sett():
-    assert antall_sett(60, 3, 0) == 20
-    assert antall_sett(61, 3, 0) == 21  # en gruppe med to er også et sett
-    assert antall_sett(60, 3, 2) == 22
-    assert antall_sett(60, None, None) == 60
-    assert antall_sett(None, 3, 2) is None
+def test_set_count():
+    assert set_count(60, 3, 0) == 20
+    assert set_count(61, 3, 0) == 21  # a group of two is a set too
+    assert set_count(60, 3, 2) == 22
+    assert set_count(60, None, None) == 60
+    assert set_count(None, 3, 2) is None
 
 
-def test_sett_regnes_ut_og_kopieres():
+def test_sets_are_computed_and_copied():
     db = Db(config.DB_FILE)
-    a = db.ny("p1", 2026, {"navn": "Test", "studenter": 60, "gruppe": 3, "ekstra": 2})
-    assert (a["studenter"], a["gruppe"], a["ekstra"], a["sett"]) == (60, 3, 2, 22)
-    assert db.endre(a["id"], {"gruppe": 2})["sett"] == 32
-    assert db.endre(a["id"], {"studenter": None})["sett"] is None
-    db.endre(a["id"], {"studenter": 60})
-    db.kopier(2026)
-    neste = [g for g in db.gjennomforinger() if g["skolear"] == 2027]
-    assert [(g["studenter"], g["gruppe"], g["ekstra"], g["sett"]) for g in neste] == [(60, 2, 2, 32)]
+    a = db.new("p1", 2026, {"name": "Test", "students": 60, "group_size": 3, "spare": 2})
+    assert (a["students"], a["group_size"], a["spare"], a["sets"]) == (60, 3, 2, 22)
+    assert db.update(a["id"], {"group_size": 2})["sets"] == 32
+    assert db.update(a["id"], {"students": None})["sets"] is None
+    db.update(a["id"], {"students": 60})
+    db.copy_year(2026)
+    next_ = [g for g in db.runs() if g["school_year"] == 2027]
+    assert [(g["students"], g["group_size"], g["spare"], g["sets"]) for g in next_] == [(60, 2, 2, 32)]
 
 
-def test_migrering_beholder_antall_sett(tmp_path):
-    """Gjennomføringer fra før migrering 11 får studenter = sett og grupper på 1."""
+def test_migration_keeps_the_set_count(tmp_path):
+    """Runs from before migration 11 get students = sets and groups of 1."""
     db = Db(tmp_path / "gammel.db")
     with db.tx() as con:
-        for sql in MIGRERINGER[:10]:
+        for sql in MIGRATIONS[:10]:
             for stmt in sql.split(";"):
                 if stmt.strip():
                     con.execute(stmt)
@@ -134,14 +134,14 @@ def test_migrering_beholder_antall_sett(tmp_path):
         con.execute("INSERT INTO gjennomforing (prosjekt_id, skolear, start, slutt, sett) VALUES ('kit', 2026, 34, 50, 30)")
         con.execute("INSERT INTO gjennomforing (prosjekt_id, skolear, start, slutt, sett) VALUES ('kit', 2027, 34, 50, NULL)")
     db.init()
-    assert [(g["studenter"], g["gruppe"], g["ekstra"], g["sett"]) for g in db.gjennomforinger()] == [
+    assert [(g["students"], g["group_size"], g["spare"], g["sets"]) for g in db.runs()] == [
         (30, 1, 0, 30), (None, 1, 0, None)]
 
 
-def test_migrering_13_paske_folger_paskedagen(tmp_path):
+def test_migration_13_easter_follows_easter_sunday(tmp_path):
     db = Db(tmp_path / "gammel.db")
     with db.tx() as con:
-        for sql in MIGRERINGER[:12]:
+        for sql in MIGRATIONS[:12]:
             for stmt in sql.split(";"):
                 if stmt.strip():
                     con.execute(stmt)
@@ -149,25 +149,100 @@ def test_migrering_13_paske_folger_paskedagen(tmp_path):
         con.executemany("INSERT INTO stengt_periode (navn, fra, til) VALUES (?,?,?)",
                         [("Juleferie", 52, 1), ("Påske", 12, 12), ("Høstferie", 40, 40)])
     db.init()
-    assert [(c["navn"], c["paske"]) for c in db.stengte()] == [("Juleferie", False), ("Påske", True), ("Høstferie", False)]
+    assert [(c["name"], c["easter"]) for c in db.closed_periods()] == [("Juleferie", False), ("Påske", True), ("Høstferie", False)]
 
 
-def test_sikkerhetskopi_for_oppgradering(tmp_path):
-    """En database som skal oppgraderes, kopieres først – en ny eller oppdatert database ikke."""
-    kopier = tmp_path / "Sikkerhetskopi-db"
+def test_backup_before_upgrade(tmp_path):
+    """A database that's about to be upgraded is copied first – a new or up-to-date database isn't."""
+    copy_year = tmp_path / "Sikkerhetskopi-db"
     Db(tmp_path / "ny.db").init()
-    assert not kopier.exists()  # ny database: ingenting å ta vare på
+    assert not copy_year.exists()  # new database: nothing to keep
 
     db = Db(tmp_path / "gammel.db")
     with db.tx() as con:
-        for sql in MIGRERINGER[:14]:
+        for sql in MIGRATIONS[:14]:
             for stmt in sql.split(";"):
                 if stmt.strip():
                     con.execute(stmt)
         con.execute("PRAGMA user_version = 14")
         con.execute("INSERT INTO prosjekt (id, navn) VALUES ('kit', 'Kit')")
     db.init()
-    filer = list(kopier.glob("arshjul *.db"))
-    assert len(filer) == 1 and Db(filer[0]).versjon() == 14  # kopien er slik den var før
-    db.init()  # oppdatert: ingen ny kopi
-    assert len(list(kopier.glob("arshjul *.db"))) == 1
+    files = list(copy_year.glob("arshjul *.db"))
+    assert len(files) == 1 and Db(files[0]).version() == 14  # the copy is as it was before
+    db.init()  # up to date: no new copy
+    assert len(list(copy_year.glob("arshjul *.db"))) == 1
+
+
+def test_migration_16_keeps_everything(tmp_path):
+    """A database at version 15 with realistic data: after migration 16 everything is there under English
+    names, and the course keeps its lecturer and engineer (the users table is rebuilt)."""
+    db = Db(tmp_path / "old.db")
+    with db.tx() as con:
+        for sql in MIGRATIONS[:15]:
+            for stmt in sql.split(";"):
+                if stmt.strip():
+                    con.execute(stmt)
+        con.execute("PRAGMA user_version = 15")
+        con.execute("""INSERT INTO bruker (id, brukernavn, navn, rolle, passord, opprettet, admin)
+                       VALUES (1, 'ola', 'Ola', 'faglarer', 'h1', 'x', 0), (2, 'ing', 'Ing', 'ingenior', 'h2', 'x', 1)""")
+        con.execute("INSERT INTO emne (id, kode, faglarer_id, ingenior_id, studenter) VALUES (1, 'E1', 1, 2, 60)")
+        con.execute("INSERT INTO prosjekt (id, navn, type, notat, emne_id) VALUES ('p', 'Kit', 'sett', 'IELS1001', 1)")
+        con.execute("""INSERT INTO gjennomforing (id, prosjekt_id, skolear, start, slutt, sett, studenter, gruppe, ekstra,
+                                                  bom, lev, buf) VALUES (5, 'p', 2026, 34, 50, 22, 60, 3, 2, 'kit.xlsx', 3, 2)""")
+        con.execute("""INSERT INTO bestilling (gjennomforing_id, leverandor, navn, status, bestilt_dato, linjer, av, paa_lager,
+                                               lager_logg) VALUES (5, 'elfa', 'Elfa', 'delvis', '2026-06-01', ?, 'Ing', ?, ?)""",
+                    (json.dumps([{"key": "elfa|a1", "beskrivelse": "Arduino", "varenummer": "A1", "antall": 10, "pris": 250}]),
+                     json.dumps({"elfa|a1": 4}),
+                     json.dumps([{"tid": "t", "handling": "mottatt", "av": "Ing", "linjer": {"elfa|a1": 4}, "backup": "b.xlsx"}])))
+        con.execute("""INSERT INTO telling (gjennomforing_id, dato, linjer, skrevet, skrevet_verdier, logg)
+                       VALUES (5, '2026-12-01', ?, '2026-12-02', ?, ?)""",
+                    (json.dumps([{"key": "elfa|a1", "beskrivelse": "Arduino", "varenummer": "A1", "type": "forbruk",
+                                  "lagerFor": 0, "bestilt": 10, "antatt": True, "utdelt": 20, "pris": 250, "telt": 3,
+                                  "forventet": 0}]),
+                     json.dumps({"elfa|a1": 3}),
+                     json.dumps([{"tid": "t", "handling": "skrevet", "av": "Ing", "linjer": 1, "konflikter": 0,
+                                  "backup": "k.xlsx"}])))
+        con.execute("INSERT INTO linjetype VALUES ('p', 'elfa|a1', 'utstyr')")
+        con.execute("""INSERT INTO endring (tid, bruker_navn, rolle, gjennomforing_id, prosjekt_navn, handling, felt, fra, til)
+                       VALUES ('t', 'Ola', 'faglarer', 5, 'Kit', 'endret', 'type', 'hack', 'sett')""")
+        con.execute("DELETE FROM stengt_periode")
+        con.execute("INSERT INTO stengt_periode (navn, fra, til, paske) VALUES ('Påske', 12, 12, 1)")
+    db.init()
+
+    assert db.version() == len(MIGRATIONS)
+    c = db.courses()[0]
+    assert (c["code"], c["students"], c["lecturerName"], c["engineerName"], c["projects"]) == ("E1", 60, "Ola", "Ing", 1)
+    r = db.run("5")
+    assert (r["type"], r["note"], r["sets"], r["students"], r["group_size"], r["spare"], r["bom"], r["lead"]) == (
+        "semester_kit", "IELS1001", 22, 60, 3, 2, "kit.xlsx", 3)
+    o = db.all_orders()["5"]["elfa"]
+    assert (o["status"], o["made_by"], o["stocked"]) == ("partial", "Ing", {"elfa|a1": 4})
+    assert o["lines"] == [{"key": "elfa|a1", "description": "Arduino", "part_number": "A1", "quantity": 10, "price": 250}]
+    assert o["stock_log"] == [{"time": "t", "action": "received", "by": "Ing", "lines": {"elfa|a1": 4}, "backup": "b.xlsx"}]
+    cnt = db.counts()["5"]
+    assert cnt["lines"][0] == {"key": "elfa|a1", "description": "Arduino", "part_number": "A1", "type": "consumable",
+                               "stockBefore": 0, "ordered": 10, "assumed": True, "handed_out": 20, "price": 250,
+                               "counted": 3, "expected": 0}
+    assert cnt["log"][0]["action"] == "written" and cnt["written_values"] == {"elfa|a1": 3}
+    assert db.line_types() == {"p": {"elfa|a1": "equipment"}}
+    ch = db.changes()[0]
+    assert (ch["role"], ch["action"], ch["from_value"], ch["to_value"]) == ("lecturer", "changed", "hackathon", "semester_kit")
+    assert db.closed_periods() == [{"name": "Påske", "from_week": 12, "to_week": 12, "easter": True}]
+    assert [(u["username"], u["role"], u["admin"]) for u in db.users()] == [("ing", "engineer", 1), ("ola", "lecturer", 0)]
+    assert db.user(username="ola")["password"] == "h1"
+    with db.tx() as con:
+        assert con.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_old_bom_snapshot_is_converted(monkeypatch, tmp_path):
+    import config as cfg
+    old, new = tmp_path / "bom-sist-sett.json", tmp_path / "bom-last-seen.json"
+    monkeypatch.setattr(cfg, "OLD_SNAP_FILE", old)
+    monkeypatch.setattr(cfg, "SNAP_FILE", new)
+    old.write_text(json.dumps({"kit.xlsx": {"rader": [{"beskrivelse": "Arduino", "leverandor": "Elfa", "varenummer": "A1",
+                                                        "prSett": 1, "lager": 4, "pris": 250, "kategori": "", "kommentar": ""}],
+                                            "lest": "01.06.2026 10:00"}}), encoding="utf-8")
+    cfg.convert_old_snapshot()
+    s = json.loads(new.read_text(encoding="utf-8"))["kit.xlsx"]
+    assert s["read"] == "01.06.2026 10:00" and s["rows"][0]["in_stock"] == 4 and s["rows"][0]["part_number"] == "A1"
+    assert not old.exists()

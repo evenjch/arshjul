@@ -115,15 +115,15 @@ Rydd etterpå: fjern haken «aktiv» på testlæreren og testemnet.
 - `config.py`: innstillinger fra miljøvariabler (datamappe, modus, port, innlogging)
 - `auth.py`: innlogging, roller og CSRF-beskyttelse
 - `manage.py`: brukere fra kommandolinjen
-- `frister.py`: uker, skoleår og frister – det eneste stedet de regnes ut
+- `deadlines.py`: uker, skoleår og frister – det eneste stedet de regnes ut
 - `db.py`: databasen (prosjekter, gjennomføringer per skoleår, bestillinger, stengte perioder) og oppgraderinger av den
-- `bestilling.py`: bestillingsstatus per leverandør, frossen kopi og hva som mangler
-- `telling.py`: telling etter prosjektet – forventet, avvik og svinn
+- `orders.py`: bestillingsstatus per leverandør, frossen kopi og hva som mangler
+- `counting.py`: telling etter prosjektet – forventet, avvik og svinn
 - `bom.py`: lesing av BOM, utregning, endringer, mal, bestillingsliste og oppdatering av «På lager»
 - `maler/`: BOM-malen og bestillingsliste-malen
 - `templates/index.html`, `static/`: selve årshjulet
 - `tests/`: automatiske tester
-- `.cache/bom-sist-sett.json` (i datamappen, ved siden av `BOM/`): hvordan hver BOM så ut sist du trykket «OK, sett»
+- `.cache/bom-last-seen.json` (i datamappen, ved siden av `BOM/`): hvordan hver BOM så ut sist du trykket «OK, sett»
 
 ## Utvikling
 
@@ -133,4 +133,4 @@ Planene videre står i [VEIKART.md](VEIKART.md).
 - **Kjør med automatisk omlasting:** `.venv\Scripts\python app.py --debug` fra `arshjul/`.
 - **Kjør testene:** `.venv\Scripts\python -m pip install -r requirements-dev.txt` én gang, deretter `.venv\Scripts\python -m pytest`. Testene bruker en midlertidig mappe og rører aldri de ekte BOM-ene.
 - **Innstillinger** settes med miljøvariabler: `ARSHJUL_DATA` (datamappe), `ARSHJUL_MODUS` (`lokal`/`server`), `ARSHJUL_HOST`, `ARSHJUL_PORT`, `ARSHJUL_SECRET_KEY`. Se `config.py` og VEIKART.md. De kan også skrives i `arshjul/innstillinger.env` (kopier `innstillinger.eksempel.env`), f.eks. `ARSHJUL_BOM=\\server\deling\BOM` for BOM-er på en nettverksmappe.
-- **Endre databasen:** legg en ny oppgradering nederst i `MIGRERINGER` i `db.py`. Endre aldri en som allerede finnes; den har kjørt hos noen.
+- **Endre databasen:** legg en ny oppgradering nederst i `MIGRATIONS` i `db.py`. Endre aldri en som allerede finnes; den har kjørt hos noen.

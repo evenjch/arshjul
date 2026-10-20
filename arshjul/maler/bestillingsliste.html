@@ -128,37 +128,37 @@ const BOM = __BOM_JSON__;
 
   // Header
   const m = BOM.meta;
-  $("title").textContent = m.prosjekt || "BOM";
-  document.title = "Bestilling – " + (m.prosjekt || "BOM");
+  $("title").textContent = m.project || "BOM";
+  document.title = "Bestilling – " + (m.project || "BOM");
   $("meta").innerHTML = [
-    m.ansvarlig && "Ansvarlig: " + esc(m.ansvarlig),
-    m.dato && "Dato: " + esc(m.dato),
-    m.sett && "Antall sett: " + esc(m.sett),
+    m.responsible && "Ansvarlig: " + esc(m.responsible),
+    m.date && "Dato: " + esc(m.date),
+    m.sets && "Antall sett: " + esc(m.sets),
   ].filter(Boolean).map((t) => "<span>" + t + "</span>").join("");
 
-  const orderRows = BOM.rows.filter((r) => !has("antall") || !isNum(r.antall) || r.antall > 0);
+  const orderRows = BOM.rows.filter((r) => !has("quantity") || !isNum(r.quantity) || r.quantity > 0);
   const stats = [["Linjer å bestille", orderRows.length, ""], ["Ferdig", "", "done"]];
-  if (isNum(BOM.totals.eks)) stats.push(["Sum eks. mva", nf2.format(BOM.totals.eks) + " kr", ""]);
-  if (isNum(BOM.totals.inkl)) stats.push(["Sum inkl. mva", nf2.format(BOM.totals.inkl) + " kr", "accent"]);
+  if (isNum(BOM.totals.excl)) stats.push(["Sum eks. mva", nf2.format(BOM.totals.excl) + " kr", ""]);
+  if (isNum(BOM.totals.incl)) stats.push(["Sum inkl. mva", nf2.format(BOM.totals.incl) + " kr", "accent"]);
   $("stats").innerHTML = stats.map(([l, v, k]) =>
     '<div class="stat ' + k + '"><small>' + l + "</small><b" + (k === "done" ? ' id="doneCount"' : "") + ">" + v + "</b></div>").join("");
 
   // Supplier filter
-  const sups = [...new Set(BOM.rows.map((r) => r.leverandor).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nb"));
+  const sups = [...new Set(BOM.rows.map((r) => r.supplier).filter(Boolean))].sort((a, b) => a.localeCompare(b, "nb"));
   if (sups.length > 1) {
     $("sup").innerHTML = '<option value="">Alle leverandører</option>' + sups.map((s) => "<option>" + esc(s) + "</option>").join("");
   } else $("sup").style.display = "none";
-  if (!has("antall")) $("showZero").parentElement.style.display = "none";
+  if (!has("quantity")) $("showZero").parentElement.style.display = "none";
 
   // Table head
   $("thead").innerHTML = '<th class="c" title="Ferdig">✓</th>' + COLS.map((c) =>
-    '<th class="' + (c.kind === "money" ? "num" : c.kind === "qty" || c.key === "nr" ? "c" : "") + '">' + esc(c.label) + "</th>").join("");
+    '<th class="' + (c.kind === "money" ? "num" : c.kind === "qty" || c.key === "no" ? "c" : "") + '">' + esc(c.label) + "</th>").join("");
 
   const display = (c, v) => {
     if (v === "" || v == null) return "";
     if (c.kind === "money") return isNum(v) ? nf2.format(v) + " kr" : esc(v);
     if (c.kind === "qty") return isNum(v) ? nf0.format(v) : esc(v);
-    if (c.key === "varenummer") return '<span class="sku">' + esc(v) + "</span>";
+    if (c.key === "part_number") return '<span class="sku">' + esc(v) + "</span>";
     return esc(v);
   };
   const copyText = (c, v) => {
@@ -171,21 +171,21 @@ const BOM = __BOM_JSON__;
     const sup = $("sup").value;
     const showZero = $("showZero").checked, hideDone = $("hideDone").checked;
     const rows = BOM.rows.filter((r) => {
-      if (!showZero && has("antall") && isNum(r.antall) && r.antall <= 0) return false;
-      if (sup && r.leverandor !== sup) return false;
+      if (!showZero && has("quantity") && isNum(r.quantity) && r.quantity <= 0) return false;
+      if (sup && r.supplier !== sup) return false;
       if (hideDone && state.done.has(r.id)) return false;
       if (q && !COLS.some((c) => String(r[c.key] ?? "").toLowerCase().includes(q))) return false;
       return true;
     });
     $("tbody").innerHTML = rows.length ? rows.map((r) => {
-      const zero = has("antall") && isNum(r.antall) && r.antall <= 0;
+      const zero = has("quantity") && isNum(r.quantity) && r.quantity <= 0;
       let h = '<tr data-id="' + r.id + '" class="' + (state.done.has(r.id) ? "done " : "") + (zero ? "zero" : "") + '">';
       h += '<td class="chk"><input type="checkbox" aria-label="Ferdig"' + (state.done.has(r.id) ? " checked" : "") + "></td>";
       for (const c of COLS) {
         const v = r[c.key];
-        if (c.key === "nr") { h += '<td class="nr c">' + esc(v ?? "") + "</td>"; continue; }
+        if (c.key === "no") { h += '<td class="nr c">' + esc(v ?? "") + "</td>"; continue; }
         const cls = ["cp", c.kind === "money" ? "num" : "", c.kind === "qty" ? "c qty" : "", c.key === "total" ? "total" : "",
-                     c.key === "beskrivelse" ? "desc" : "", c.key === "kategori" || c.key === "kommentar" ? "muted" : "",
+                     c.key === "description" ? "desc" : "", c.key === "category" || c.key === "comment" ? "muted" : "",
                      state.copied.has(r.id + ":" + c.key) ? "copied" : ""].filter(Boolean).join(" ");
         const empty = v === "" || v == null;
         h += empty ? "<td></td>" : '<td class="' + cls + '" data-k="' + c.key + '"><span>' + display(c, v) + "</span></td>";
@@ -194,9 +194,9 @@ const BOM = __BOM_JSON__;
     }).join("") : '<tr><td colspan="' + (COLS.length + 1) + '" class="empty">Ingen linjer passer med filteret.</td></tr>';
     const total = orderRows.length, done = orderRows.filter((r) => state.done.has(r.id)).length;
     $("doneCount").textContent = done + " av " + total;
-    $("copyList").dataset.n = rows.filter((r) => r.varenummer).length;
+    $("copyList").dataset.n = rows.filter((r) => r.part_number).length;
     $("copyList").textContent = "Kopier varenr + antall (" + $("copyList").dataset.n + ")";
-    $("copyList").style.display = has("varenummer") ? "" : "none";
+    $("copyList").style.display = has("part_number") ? "" : "none";
   }
 
   let toastTimer;
@@ -206,11 +206,11 @@ const BOM = __BOM_JSON__;
   }
   async function copy(text) {
     try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
-    const ta = document.createElement("textarea");
-    ta.value = text; ta.style.cssText = "position:fixed;opacity:0;top:0;left:0";
-    document.body.appendChild(ta); ta.select();
+    const take = document.createElement("textarea");
+    take.value = text; take.style.cssText = "position:fixed;opacity:0;top:0;left:0";
+    document.body.appendChild(take); take.select();
     let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
-    ta.remove(); return ok;
+    take.remove(); return ok;
   }
 
   $("tbody").addEventListener("click", async (e) => {
@@ -233,8 +233,8 @@ const BOM = __BOM_JSON__;
 
   $("copyList").addEventListener("click", async () => {
     const ids = new Set([...document.querySelectorAll("#tbody tr[data-id]")].map((tr) => +tr.dataset.id));
-    const lines = BOM.rows.filter((r) => ids.has(r.id) && r.varenummer)
-      .map((r) => r.varenummer + (has("antall") && isNum(r.antall) ? "\t" + copyText({ kind: "qty" }, r.antall) : ""));
+    const lines = BOM.rows.filter((r) => ids.has(r.id) && r.part_number)
+      .map((r) => r.part_number + (has("quantity") && isNum(r.quantity) ? "\t" + copyText({ kind: "qty" }, r.quantity) : ""));
     if (!lines.length) return toast("Ingen varenummer å kopiere");
     if (await copy(lines.join("\n"))) toast("Kopiert " + lines.length + " linjer (varenummer + antall)");
   });

@@ -1,4 +1,4 @@
-"""Testene kjører mot en egen, midlertidig datamappe – aldri mot de ekte BOM-ene."""
+"""The tests run against their own temporary data folder – never against the real BOMs."""
 import os
 import shutil
 import sys
@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-# må settes før config/app importeres
+# must be set before config/app are imported
 _DATA = Path(tempfile.mkdtemp(prefix="arshjul-test-"))
-# satt eksplisitt, så en lokal innstillinger.env aldri får testene til å røre ekte mapper
+# set explicitly, so a local innstillinger.env never makes the tests touch real folders
 os.environ["ARSHJUL_DATA"] = str(_DATA)
 os.environ["ARSHJUL_BOM"] = str(_DATA / "BOM")
 os.environ["ARSHJUL_NO_OPEN"] = "1"
@@ -20,43 +20,43 @@ import app as arshjul  # noqa: E402
 import auth  # noqa: E402
 import config  # noqa: E402
 
-# scrypt er bevisst tregt; testene lager mange brukere
-auth.HASH_METODE = "pbkdf2:sha256:1000"
-ADMIN_PASSORD = "admin-passord-123"
+# scrypt is slow on purpose; the tests create many users
+auth.HASH_METHOD = "pbkdf2:sha256:1000"
+ADMIN_PASSWORD = "admin-passord-123"
 
 
 @pytest.fixture(autouse=True)
-def tom_datamappe():
-    """Hver test starter med en tom datamappe."""
+def empty_data_dir():
+    """Every test starts with an empty data folder."""
     for p in _DATA.iterdir():
         shutil.rmtree(p) if p.is_dir() else p.unlink()
     arshjul._bom_cache.clear()
     arshjul.init()
     arshjul._ready = True
-    auth._ip_feil.clear()
+    auth._ip_failures.clear()
     yield
 
 
 @pytest.fixture
 def client():
-    """Testklient innlogget som administrator (ser og gjør alt), med gyldig CSRF-token."""
+    """A test client logged in as admin (sees and does everything), with a valid CSRF token."""
     arshjul.app.config["TESTING"] = True
-    uid = arshjul.store.ny_bruker("admin", "Admin Testesen", "ingenior", auth.hash_passord(ADMIN_PASSORD), admin=True)
+    uid = arshjul.store.new_user("admin", "Admin Testesen", "engineer", auth.hash_password(ADMIN_PASSWORD), admin=True)
     with arshjul.app.test_client() as c:
         som(c, uid)
         yield c
 
 
 def som(c, uid, token="test-csrf"):
-    """Logg testklienten inn som brukeren uid (uten å gå via innloggingssiden)."""
-    u = arshjul.store.bruker(id=uid)
+    """Log the test client in as user uid (without going through the login page)."""
+    u = arshjul.store.user(id=uid)
     with c.session_transaction() as s:
-        s["uid"], s["pv"], s["csrf"] = uid, u["passord"][-16:], token
+        s["uid"], s["pv"], s["csrf"] = uid, u["password"][-16:], token
     c.environ_base["HTTP_X_CSRF_TOKEN"] = token
     return c
 
 
-def med_csrf(c, token="test-csrf"):
+def with_csrf(c, token="test-csrf"):
     with c.session_transaction() as s:
         s["csrf"] = token
     c.environ_base["HTTP_X_CSRF_TOKEN"] = token

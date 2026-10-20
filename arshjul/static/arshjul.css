@@ -1,4 +1,4 @@
-/* Layout: header med nøkkeltall → hjul + «neste 8 uker» side om side → redigerbar prosjekttabell. Samme familie som bestillingslistene. */
+/* Layout: header with key figures → wheel + «neste 8 uker» side by side → editable project table. Same family as the order lists. */
   :root {
     --bg: #f2f5f6; --card: #ffffff; --ink: #1d2830; --muted: #65737d; --line: #e0e6e9;
     --head: #24343f; --accent: #2e5e73; --accent-soft: #e6eff2; --hover: #eef4f6;
@@ -61,7 +61,7 @@
   .ring-hit { cursor: pointer; }
   g.proj.dim { opacity: .18; transition: opacity .15s; }
   g.proj { transition: opacity .15s; }
-  /* nabo-skoleåret (neste års frister i juni, fjorårets telling i august): svakt, men statusringen vises */
+  /* the neighbouring school year (next year's deadlines in June, last year's count in August): faint, but the status ring shows */
   g.proj.nabo .ring-hit { opacity: .3; }
   g.proj.nabo [data-ev] { opacity: .55; }
   .legend .sw.nabo { opacity: .35; }
@@ -90,27 +90,27 @@
   tr.hl td { background: var(--hover); }
   td.name b { display: flex; align-items: center; gap: 8px; }
   td.name small { display: block; color: var(--muted); margin-left: 18px; }
-  td.name .endre { font-size: 11px; padding: 1px 6px; opacity: .45; }
-  tr:hover td.name .endre, td.name .endre:focus-visible { opacity: 1; }  /* tydelig når du peker på raden */
-  .navnedit { display: grid; gap: 4px; }
-  .navnedit input { font: 400 13px var(--sans); padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+  td.name .edit { font-size: 11px; padding: 1px 6px; opacity: .45; }
+  tr:hover td.name .edit, td.name .edit:focus-visible { opacity: 1; }  /* clear when you point at the row */
+  .name-edit { display: grid; gap: 4px; }
+  .name-edit input { font: 400 13px var(--sans); padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
   input[type=number] { font: 500 13px var(--mono); width: 56px; padding: 5px 6px; border: 1px solid var(--line); border-radius: 7px;
                        background: var(--bg); color: var(--ink); font-variant-numeric: tabular-nums; }
-  /* BOM-en har et annet antall sett enn årshjulet: Excel regner feil «Å bestille» til det er rettet */
-  .bomavvik { font-size: 11.5px; color: var(--danger); background: var(--danger-soft); border-left: 3px solid var(--danger);
+  /* the BOM has a different set count from the app: Excel computes «Å bestille» wrong until it's fixed */
+  .bom-mismatch { font-size: 11.5px; color: var(--danger); background: var(--danger-soft); border-left: 3px solid var(--danger);
               border-radius: 4px; padding: 4px 6px; margin-top: 4px; white-space: normal; max-width: 220px; }
-  .bomavvik b { font-weight: 600; }
-  .bomavvik span { display: block; margin-top: 2px; }
-  .bomavvik .mini { margin-top: 4px; }
-  .settcalc { display: flex; align-items: flex-start; gap: 3px; white-space: nowrap; }
-  /* hvert tall med en liten etikett under; ÷ og + står på høyde med feltene */
-  .settcalc .sf { display: flex; flex-direction: column; align-items: center; }
-  .settcalc .sf small { font-size: 10px; line-height: 1.2; color: var(--muted); margin: 2px 0 0; }
-  .settcalc .op { color: var(--muted); line-height: 28px; }
-  table .settcalc input:not([data-k=studenter]):not([data-f=studenter]) { width: 42px; }
+  .bom-mismatch b { font-weight: 600; }
+  .bom-mismatch span { display: block; margin-top: 2px; }
+  .bom-mismatch .mini { margin-top: 4px; }
+  .sets-calc { display: flex; align-items: flex-start; gap: 3px; white-space: nowrap; }
+  /* each number with a small label underneath; ÷ and + line up with the fields */
+  .sets-calc .sf { display: flex; flex-direction: column; align-items: center; }
+  .sets-calc .sf small { font-size: 10px; line-height: 1.2; color: var(--muted); margin: 2px 0 0; }
+  .sets-calc .op { color: var(--muted); line-height: 28px; }
+  table .sets-calc input:not([data-k=students]):not([data-f=students]) { width: 42px; }
   input[type=number]:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .fristcell { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
-  .fristcell small { display: block; font-family: var(--sans); font-weight: 400; color: var(--muted); }
+  .deadline-cell { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
+  .deadline-cell small { display: block; font-family: var(--sans); font-weight: 400; color: var(--muted); }
   .pill { display: inline-block; font-size: 12px; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
   .pill.ok { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
   .pill.miss { border: 1px dashed var(--muted); color: var(--muted); }
@@ -147,7 +147,7 @@
   .del:hover { border-color: var(--line); color: var(--warn); }
   .del.confirm { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
   .status { font-size: 12.5px; color: var(--muted); }
-  .status.feil { color: var(--danger); font-weight: 600; }  /* noe gikk ikke – må ses */
+  .status.feil { color: var(--danger); font-weight: 600; }  /* something didn't work – must be seen */
   .bomcell { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .mini { font: 600 12px var(--sans); border: 1px solid var(--line); background: var(--card); color: var(--accent);
           border-radius: 7px; padding: 5px 9px; cursor: pointer; white-space: nowrap; }
@@ -175,7 +175,7 @@
   .formnote { margin: 0; color: var(--muted); font-size: 12.5px; }
   .closededit { display: grid; gap: 8px; margin-top: 10px; justify-items: start; }
   .closedrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--muted); }
-  .closedrow .paske { display: inline-flex; gap: 4px; align-items: center; font-size: 12.5px; }
+  .closedrow .easter { display: inline-flex; gap: 4px; align-items: center; font-size: 12.5px; }
   .closedrow input:disabled { opacity: .45; }
   .closedrow input[type=text] { font: 400 13px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line);
                                 border-radius: 7px; padding: 5px 8px; width: 140px; }
@@ -197,20 +197,20 @@
   .ostat.late { border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warn); }
   .ostat .chev { font-size: 10px; }
   tr.detail td { background: var(--bg); border-top: 0; padding: 4px 12px 14px; }
-  .levs { display: grid; gap: 8px; }
-  .lev { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-  .levhead { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin-bottom: 6px; }
-  .levact { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-  .levact .when { font-size: 12px; }
-  .ordrenr { font: 400 13px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+  .suppliers { display: grid; gap: 8px; }
+  .supplier { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .supplier-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin-bottom: 6px; }
+  .supplier-act { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .supplier-act .when { font-size: 12px; }
+  .order-no { font: 400 13px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line);
              border-radius: 7px; padding: 4px 8px; width: 150px; }
-  .ordrenr:focus-visible, .levact select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .order-no:focus-visible, .supplier-act select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .mini.confirm { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
-  .avvik { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 3px; font-size: 13px; }
-  .avvik .more { color: var(--soon); }
-  .avvik .more b { color: var(--ink); }
+  .deviation { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 3px; font-size: 13px; }
+  .deviation .more { color: var(--soon); }
+  .deviation .more b { color: var(--ink); }
 
-  /* neste skoleår og historikk */
+  /* next school year and history */
   .notice { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between;
             border: 1px solid var(--soon); background: var(--soon-soft); border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; }
   .notice.warn { border-color: var(--warn); background: var(--warn-soft); }
@@ -222,15 +222,15 @@
   .notice > div { max-width: 90ch; }
   .boxtitle { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
   .copylist { display: grid; gap: 6px; margin: 12px 0; }
-  /* sjekkliste: navn til venstre, uker og studenter i midten, om BOM-en er telt til høyre */
+  /* checklist: name on the left, weeks and students in the middle, whether the BOM has been counted on the right */
   .copyrow { display: grid; grid-template-columns: minmax(180px, 1.2fr) 2fr minmax(160px, 1fr); gap: 6px 14px; align-items: center;
              padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
   .copyrow.done { grid-template-columns: minmax(180px, 1.2fr) 3fr; opacity: .65; }
-  .copyvelg { display: flex; gap: 8px; align-items: center; cursor: pointer; }
-  .copyvelg input { accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
-  .copyfelt { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; }
-  .copyfelt input[type=number] { width: 52px; }
-  .copyfelt small { color: var(--muted); }
+  .copy-pick { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+  .copy-pick input { accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+  .copy-fields { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; }
+  .copy-fields input[type=number] { width: 52px; }
+  .copy-fields small { color: var(--muted); }
   .copybom { font-size: 12px; color: var(--muted); }
   .copybom.ok { color: var(--ok); }
   .copybom.warn { color: var(--danger); }
@@ -243,14 +243,14 @@
   #histTable tfoot td { border-top: 2px solid var(--line); }
   #histTable small.loss { color: var(--warn); }
 
-  /* telling */
-  .tellnote { display: block; font-size: 11.5px; color: var(--muted); margin-top: 3px; white-space: nowrap; }
-  .tellnote.soon { color: var(--soon); }
-  .tellbox { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
-  .tellbox summary { cursor: pointer; }
-  .tellbox summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-  .tellbox > p { margin: 8px 0 0; font-size: 12.5px; max-width: 90ch; }
-  .tellscroll { overflow-x: auto; margin: 10px 0; }
+  /* counting */
+  .count-note { display: block; font-size: 11.5px; color: var(--muted); margin-top: 3px; white-space: nowrap; }
+  .count-note.soon { color: var(--soon); }
+  .count-box { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+  .count-box summary { cursor: pointer; }
+  .count-box summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  .count-box > p { margin: 8px 0 0; font-size: 12.5px; max-width: 90ch; }
+  .count-scroll { overflow-x: auto; margin: 10px 0; }
   table.tell { min-width: 640px; background: none; }
   table.tell th { background: none; color: var(--muted); padding: 4px 8px; border-bottom: 1px solid var(--line); }
   table.tell td { padding: 4px 8px; }
@@ -263,18 +263,18 @@
   .excelnote { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-top: 8px; padding: 8px 10px;
                border: 1px solid var(--soon); background: var(--soon-soft); border-radius: 8px; font-size: 12.5px; }
   .excelnote span { max-width: 75ch; }
-  .mottak { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 8px; font-size: 12.5px; }
-  .mottakform { flex-basis: 100%; display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
-  .mottakform p { margin: 0; }
-  .mottakform label { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
-  .mottakform label > span { min-width: 12em; }
-  .mottakform input { font: 500 13px var(--mono); width: 72px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 7px;
+  .receipt { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 8px; font-size: 12.5px; }
+  .receipt-form { flex-basis: 100%; display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  .receipt-form p { margin: 0; }
+  .receipt-form label { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+  .receipt-form label > span { min-width: 12em; }
+  .receipt-form input { font: 500 13px var(--mono); width: 72px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 7px;
                       background: var(--card); color: var(--ink); text-align: right; }
-  .mottakform small { color: var(--muted); }
-  .mottak > .tlogg { flex-basis: 100%; margin-top: 2px; }
+  .receipt-form small { color: var(--muted); }
+  .receipt > .count-log { flex-basis: 100%; margin-top: 2px; }
   .inlineerr { flex-basis: 100%; margin: 6px 0 0; padding: 6px 10px; border-radius: 7px; font-size: 12.5px;
                background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger); }
-  /* innlogging og roller */
+  /* login and roles */
   .loginbox { max-width: 360px; margin: 12vh auto; padding-inline: 16px; }
   .loginbox h1 { margin-bottom: 18px; }
   .loginbox form { display: grid; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
@@ -283,29 +283,29 @@
   .loginbox input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .loginbox .err { margin: 0; }
   .loginbox > p { font-size: 12.5px; margin-top: 12px; }
-  .meg { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); margin-top: 6px; }
-  .meg form { margin: 0; }
-  [data-rolle="faglarer"] .ing { display: none !important; }
+  .me { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+  .me form { margin: 0; }
+  [data-userrole="lecturer"] .eng { display: none !important; }
   a.adminlenke { text-decoration: none; }
 
   /* administratorpanelet */
   body.admin header { border-bottom-color: var(--warn); }
   body.admin .eyebrow { color: var(--warn); }
-  .faner { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 18px; border-bottom: 1px solid var(--line); }
-  .faner a { font: 600 13px var(--sans); color: var(--muted); text-decoration: none; padding: 8px 12px;
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 18px; border-bottom: 1px solid var(--line); }
+  .tabs a { font: 600 13px var(--sans); color: var(--muted); text-decoration: none; padding: 8px 12px;
              border: 1px solid transparent; border-bottom: 0; border-radius: 9px 9px 0 0; margin-bottom: -1px; }
-  .faner a:hover { color: var(--accent); }
-  .faner a[aria-current="page"] { color: var(--ink); background: var(--card); border-color: var(--line); }
-  .faner a .tall { font: 600 11px var(--mono); background: var(--warn-soft); color: var(--warn); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
-  .kort { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-  .kort > div { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
-  .kort > div.ok { border-color: var(--ok); }
-  .kort > div.obs { border-color: var(--soon); background: var(--soon-soft); }
-  .kort h3 { margin: 0 0 6px; font-size: 13.5px; }
-  .kort ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
-  .filtre { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; margin-bottom: 10px; }
-  .filtre label { display: grid; gap: 3px; font-size: 12px; font-weight: 600; color: var(--muted); }
-  .filtre input, .filtre select, .adm-tabell input, .adm-tabell select {
+  .tabs a:hover { color: var(--accent); }
+  .tabs a[aria-current="page"] { color: var(--ink); background: var(--card); border-color: var(--line); }
+  .tabs a .figure { font: 600 11px var(--mono); background: var(--warn-soft); color: var(--warn); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
+  .card { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .card > div { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .card > div.ok { border-color: var(--ok); }
+  .card > div.obs { border-color: var(--soon); background: var(--soon-soft); }
+  .card h3 { margin: 0 0 6px; font-size: 13.5px; }
+  .card ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; margin-bottom: 10px; }
+  .filters label { display: grid; gap: 3px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .filters input, .filters select, .adm-tabell input, .adm-tabell select {
     font: 400 13px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 4px 7px; min-width: 0; }
   .adm-tabell { min-width: 900px; }
   .adm-tabell td { padding: 6px 8px; font-size: 13px; vertical-align: middle; }
@@ -315,30 +315,30 @@
   .adm-tabell tr.fjernet td { background: var(--warn-soft); }
   .adm-tabell .num { text-align: right; font-variant-numeric: tabular-nums; }
   .adm-tabell small { display: block; color: var(--muted); font-size: 11.5px; }
-  .infotabell { min-width: 0; }
-  .infotabell th { background: none; color: var(--muted); text-align: left; width: 200px; }
-  .infotabell td code { overflow-wrap: anywhere; }
-  [data-rolle="ingenior"] .fag { display: none !important; }
-  #brukerTable { min-width: 760px; }
-  #brukerTable input[type=text], #brukerTable input[type=password], #brukerTable select {
+  .info-table { min-width: 0; }
+  .info-table th { background: none; color: var(--muted); text-align: left; width: 200px; }
+  .info-table td code { overflow-wrap: anywhere; }
+  [data-userrole="engineer"] .lec { display: none !important; }
+  #userTable { min-width: 760px; }
+  #userTable input[type=text], #userTable input[type=password], #userTable select {
     font: 400 13px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line);
     border-radius: 7px; padding: 4px 7px; width: 100%; min-width: 0; }
-  #brukerTable tr.inaktiv td { opacity: .55; }
-  #brukerTable label.aktiv { display: inline-flex; gap: 4px; align-items: center; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
-  #brukerTable .pwrow { display: flex; gap: 6px; align-items: center; }
-  #brukerTable .pwrow input { width: 160px; }
-  .eier { display: block; margin: 2px 0 0 18px; font-size: 12px; color: var(--muted); }
-  .eier select { font: 500 12px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; }
-  .eier.mangler, .eier.mangler select { color: var(--soon); font-weight: 600; }
+  #userTable tr.inaktiv td { opacity: .55; }
+  #userTable label.aktiv { display: inline-flex; gap: 4px; align-items: center; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+  #userTable .pwrow { display: flex; gap: 6px; align-items: center; }
+  #userTable .pwrow input { width: 160px; }
+  .owner { display: block; margin: 2px 0 0 18px; font-size: 12px; color: var(--muted); }
+  .owner select { font: 500 12px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; }
+  .owner.mangler, .owner.mangler select { color: var(--soon); font-weight: 600; }
   section.emner { margin-top: 20px; }
   section.emner > p { margin: -4px 0 10px; font-size: 12.5px; max-width: 90ch; }
-  #emneTable { min-width: 760px; }
-  #emneTable input[type=text], #emneTable select { font: 400 13px var(--sans); color: var(--ink); background: var(--bg);
+  #courseTable { min-width: 760px; }
+  #courseTable input[type=text], #courseTable select { font: 400 13px var(--sans); color: var(--ink); background: var(--bg);
                                                    border: 1px solid var(--line); border-radius: 7px; padding: 4px 7px; width: 100%; min-width: 0; }
-  #emneTable input[data-ef=kode] { font-family: var(--mono); max-width: 110px; }
-  #emneTable tr.inaktiv td { opacity: .55; }
-  #emneTable .num { text-align: right; }
-  #emneTable label.aktiv { display: inline-flex; gap: 4px; align-items: center; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
-  .fristvarsel { display: block; font: 600 11.5px var(--sans); color: var(--warn); margin-top: 2px; white-space: normal; }
+  #courseTable input[data-cf=code] { font-family: var(--mono); max-width: 110px; }
+  #courseTable tr.inaktiv td { opacity: .55; }
+  #courseTable .num { text-align: right; }
+  #courseTable label.aktiv { display: inline-flex; gap: 4px; align-items: center; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+  .deadline-warning { display: block; font: 600 11.5px var(--sans); color: var(--warn); margin-top: 2px; white-space: normal; }
   .ro { font: 500 13px var(--mono); }
-  .tlogg { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; color: var(--muted); display: grid; gap: 2px; }
+  .count-log { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; color: var(--muted); display: grid; gap: 2px; }

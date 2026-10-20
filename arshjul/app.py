@@ -1,11 +1,11 @@
-"""Årshjul for innkjøp – Flask-app som kjører lokalt eller på en server.
+"""Årshjul for innkjøp – a Flask app that runs locally or on a server.
 
-Datamappen (standard: mappen over denne, se config.py):
-    BOM/                 Excel-filene, sjefen for komponentene
-    Bestillingslister/   genererte bestillingslister (HTML)
-    arshjul.db           prosjekter, gjennomføringer per skoleår og stengte perioder
+The data folder (default: the folder above this one, see config.py):
+    BOM/                 the Excel files, the master copy of the components
+    Bestillingslister/   generated order lists (HTML)
+    arshjul.db           projects, runs per school year, courses, users, orders and counts
 
-Start med «Start årshjul.bat», eller:  python app.py   (utvikling: python app.py --debug)
+Start with «Start årshjul.bat», or:  python app.py   (development: python app.py --debug)
 """
 from __future__ import annotations
 
@@ -26,24 +26,24 @@ from flask import Flask, g as req, jsonify, render_template, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import auth
-import bestilling
+import orders
 import bom as bomlib
 import config
-import frister
-import telling
+import deadlines
+import counting
 from config import BOM_DIR, DATA_FILE, LIST_DIR, SNAP_FILE, TEMPLATE_BOM, TEMPLATE_LIST
 from db import Db
 
-FIELDS = {"navn": str, "type": str, "start": int, "slutt": int, "lev": int, "buf": int,
-          "studenter": int, "gruppe": int, "ekstra": int, "notat": str, "color": int, "bom": str, "emne": int}
-# det en faglærer kan endre på sine egne prosjekter (ingeniøren eier leveringstid, buffer, BOM, farge og emne)
-FAGLARER_FELT = {"navn", "type", "start", "slutt", "studenter", "gruppe", "ekstra", "notat"}
-# endepunktene en faglærer kan bruke – alt annet er bare for ingeniører
-FAGLARER_TILLATT = {"index", "state", "create", "update", "delete", "create_subject", "update_subject",
+FIELDS = {"name": str, "type": str, "start": int, "finish": int, "lead": int, "buf": int,
+          "students": int, "group_size": int, "spare": int, "note": str, "color": int, "bom": str, "course": int}
+# what a lecturer may change on their own projects (the engineer owns lead time, buffer, BOM, colour and course)
+LECTURER_FIELDS = {"name", "type", "start", "finish", "students", "group_size", "spare", "note"}
+# the endpoints a lecturer may use – everything else is for engineers only
+LECTURER_ALLOWED = {"index", "state", "create", "update", "delete", "create_course", "update_course",
                     "acknowledge_mine", "auth.login", "auth.logout", "static"}
 PROGRAM = {"bachelor": "Bachelor", "master": "Master"}
-# bare for administratoren
-ADMIN_ENDEPUNKT = {"create_user", "update_user"}
+# admin only
+ADMIN_ENDPOINTS = {"create_user", "update_user"}
 
 app = Flask(__name__)
 app.json.ensure_ascii = False
@@ -52,25 +52,26 @@ app.config.update(
     SESSION_COOKIE_NAME="arshjul",
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=not config.LOKAL,  # bare over HTTPS på serveren
-    PERMANENT_SESSION_LIFETIME=dt.timedelta(hours=config.OKT_TIMER),
+    SESSION_COOKIE_SECURE=not config.LOCAL,  # HTTPS only on the server
+    PERMANENT_SESSION_LIFETIME=dt.timedelta(hours=config.SESSION_HOURS),
 )
-if config.BAK_PROXY:
-    # Caddy/nginx foran: riktig klientadresse (låsing per IP) og https-adresser
+if config.BEHIND_PROXY:
+    # Caddy/nginx in front: the right client address (lock-out per IP) and https URLs
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 _lock = threading.Lock()
 store = Db(config.DB_FILE)
 
 
-class Nektet(Exception):
-    """Innlogget, men ikke lov (403)."""
+class Forbidden(Exception):
+    """Logged in, but not allowed (403)."""
 
 
 def init() -> None:
-    """Lag mappene og databasen (første gang importeres arshjul.json)."""
+    """Create the folders and the database (the very first time, arshjul.json is imported)."""
     BOM_DIR.mkdir(parents=True, exist_ok=True)
     LIST_DIR.mkdir(exist_ok=True)
     config.move_old_cache()
+    config.convert_old_snapshot()
     store.init(DATA_FILE)
 
 
@@ -79,7 +80,7 @@ _ready = False
 
 @app.before_request
 def _ensure_init():
-    """Også når appen startes av en annen server enn main() (f.eks. på en VPS)."""
+    """Also when the app is started by another server than main() (e.g. on a VPS)."""
     global _ready
     if not _ready:
         with _lock:
@@ -88,61 +89,61 @@ def _ensure_init():
                 _ready = True
 
 
-auth.init(app, store)  # etter _ensure_init: innloggingen trenger databasen
+auth.init(app, store)  # after _ensure_init: login needs the database
 
 
 @app.before_request
-def _rolle():
-    if req.bruker and not auth.er_ingenior() and request.endpoint not in FAGLARER_TILLATT:
+def _role():
+    if req.user and not auth.is_engineer() and request.endpoint not in LECTURER_ALLOWED:
         if request.path.startswith("/api/"):
-            return jsonify({"feil": "Bare ingeniøren kan gjøre dette."}), 403
+            return jsonify({"error": "Bare ingeniøren kan gjøre dette."}), 403
         return "Ikke tilgang", 403
-    er_admin_side = request.endpoint in ADMIN_ENDEPUNKT or (request.endpoint or "").startswith("adminpanel.")
-    if req.bruker and er_admin_side and not auth.er_admin():
+    is_admin_page = request.endpoint in ADMIN_ENDPOINTS or (request.endpoint or "").startswith("admin_panel.")
+    if req.user and is_admin_page and not auth.is_admin():
         if request.path.startswith("/api/"):
-            return jsonify({"feil": "Bare administratoren kan gjøre dette."}), 403
+            return jsonify({"error": "Bare administratoren kan gjøre dette."}), 403
         return "Ikke tilgang", 403
     return None
 
 
-def kan_handle(g: dict) -> bool:
-    """Får den innloggede gjøre noe med denne gjennomføringen?
+def can_handle(g: dict) -> bool:
+    """May the logged-in user do something with this run?
 
-    Ingeniør (også administratoren – på hovedsiden er hen en vanlig ingeniør): prosjekter i emner
-    der hen er ansvarlig, og prosjekter uten emne eller uten ansvarlig ingeniør (så ingenting blir liggende).
-    Faglærer: prosjekter i egne emner.
-    Administratorpanelet (/api/admin/…) har egne endepunkter som ser og retter alt.
+    Engineer (also the admin – on the main page they're a regular engineer): projects in courses
+    they're responsible for, and projects without a course or without an engineer (so nothing is left behind).
+    Lecturer: projects in their own courses.
+    The admin panel (/api/admin/…) has its own endpoints that see and fix everything.
     """
-    meg = auth.meg()
-    if auth.er_ingenior():
-        return g["ingeniorId"] in (None, meg["id"])
-    return g["faglarerId"] is not None and g["faglarerId"] == meg["id"]
+    me = auth.me()
+    if auth.is_engineer():
+        return g["engineerId"] in (None, me["id"])
+    return g["lecturerId"] is not None and g["lecturerId"] == me["id"]
 
 
 @app.before_request
-def _eierskap():
-    """Alt som endrer en bestemt gjennomføring, krever at den er din (se kan_handle)."""
+def _ownership():
+    """Anything that changes a particular run requires it to be yours (see can_handle)."""
     gid = (request.view_args or {}).get("gid")
-    if gid is None or request.method in ("GET", "HEAD", "OPTIONS") or req.bruker is None:
+    if gid is None or request.method in ("GET", "HEAD", "OPTIONS") or req.user is None:
         return None
-    if (request.endpoint or "").startswith("adminpanel.") and auth.er_admin():
-        return None  # administratorpanelet retter i alle prosjekter (og logger det)
+    if (request.endpoint or "").startswith("admin_panel.") and auth.is_admin():
+        return None  # the admin panel fixes things in every project (and logs it)
     try:
-        g = store.gjennomforing(gid)
+        g = store.run(gid)
     except KeyError:
-        if request.endpoint == "acknowledge_changes" and auth.er_ingenior():
-            return None  # varsler om et prosjekt som er slettet, kan alltid kvitteres
-        return jsonify({"feil": "Fant ikke prosjektet."}), 404
-    if not kan_handle(g):
-        if auth.er_ingenior():
-            hvem = g["ingeniorNavn"] or "en annen ingeniør"
-            return jsonify({"feil": f"Prosjektet hører til {g['emneKode']}, som {hvem} har ansvaret for."}), 403
-        return jsonify({"feil": "Du kan bare endre prosjekter i dine egne emner."}), 403
+        if request.endpoint == "acknowledge_changes" and auth.is_engineer():
+            return None  # notifications about a project that has been deleted can always be acknowledged
+        return jsonify({"error": "Fant ikke prosjektet."}), 404
+    if not can_handle(g):
+        if auth.is_engineer():
+            who = g["engineerName"] or "en annen ingeniør"
+            return jsonify({"error": f"Prosjektet hører til {g['courseCode']}, som {who} har ansvaret for."}), 403
+        return jsonify({"error": "Du kan bare endre prosjekter i dine egne emner."}), 403
     return None
 
 
 @app.after_request
-def _sikkerhet(resp):
+def _security(resp):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
@@ -155,41 +156,41 @@ def _sikkerhet(resp):
     return resp
 
 
-@app.errorhandler(Nektet)
-def nektet(e):
-    return jsonify({"feil": str(e)}), 403
+@app.errorhandler(Forbidden)
+def forbidden(e):
+    return jsonify({"error": str(e)}), 403
 
 
 # ---------- endringslogg ----------
 
-FELTNAVN = {"navn": "navn", "type": "type", "start": "uke fra", "slutt": "uke til", "sett": "antall sett",
-            "studenter": "studenter", "gruppe": "per gruppe", "ekstra": "ekstra sett", "bomSett": "antall sett i BOM-en", "bestiltUtenBom": "bestilt (uten BOM)", "notat": "notat", "lev": "leveringstid", "buf": "buffer", "bom": "BOM", "color": "farge",
-            "emneId": "emne"}
+FIELD_LABELS = {"name": "navn", "type": "type", "start": "uke fra", "finish": "uke til", "sets": "antall sett",
+            "students": "studenter", "group_size": "per gruppe", "spare": "ekstra sett", "bomSets": "antall sett i BOM-en", "orderedWithoutBom": "bestilt (uten BOM)", "note": "notat", "lead": "leveringstid", "buf": "buffer", "bom": "BOM", "color": "farge",
+            "courseId": "emne", "school_year": "skoleår"}
 
 
-def endringer(g0: dict, g1: dict, body: dict) -> dict:
-    """{felt: (fra, til)} for feltene i body som faktisk endret seg – og antall sett, som regnes ut av dem."""
-    endret = {}
-    for k in [*body, "sett"]:
-        kol = "emneId" if k == "emne_id" else k
-        if g0[kol] != g1[kol]:
-            endret[kol] = (g0["emneKode"], g1["emneKode"]) if kol == "emneId" else (g0[kol], g1[kol])
-    return endret
+def changes(g0: dict, g1: dict, body: dict) -> dict:
+    """{field: (old, new)} for the fields in body that actually changed – and the set count, which follows from them."""
+    changed = {}
+    for k in [*body, "sets"]:
+        col = "courseId" if k == "course_id" else k
+        if g0[col] != g1[col]:
+            changed[col] = (g0["courseCode"], g1["courseCode"]) if col == "courseId" else (g0[col], g1[col])
+    return changed
 
 
-def logg(g: dict, handling: str, endret: dict | None = None, rolle: str | None = None) -> None:
-    """Skriv i endringsloggen. endret: {felt: (fra, til)}. Bare faglærernes endringer varsles.
-    rolle="admin" for rettinger gjort i administratorpanelet."""
-    meg = auth.meg()
-    felles = {"bruker_id": meg["id"], "bruker_navn": meg["navn"], "rolle": rolle or meg["rolle"],
-              "gjennomforing_id": int(g["id"]), "prosjekt_navn": g["navn"], "skolear": g["skolear"], "handling": handling}
-    if endret:
-        store.logg([{**felles, "felt": FELTNAVN.get(k, k), "fra": fra, "til": til} for k, (fra, til) in endret.items()])
+def log(g: dict, action: str, changed: dict | None = None, role: str | None = None) -> None:
+    """Write to the change log. changed: {field: (old, new)}. Only lecturers' changes are notified.
+    role="admin" for corrections made in the admin panel."""
+    me = auth.me()
+    common = {"user_id": me["id"], "user_name": me["name"], "role": role or me["role"],
+              "run_id": int(g["id"]), "project_name": g["name"], "school_year": g["school_year"], "action": action}
+    if changed:
+        store.log([{**common, "field": FIELD_LABELS.get(k, k), "from_value": from_, "to_value": to} for k, (from_, to) in changed.items()])
     else:
-        store.logg([felles])
+        store.log([common])
 
 
-# ---------- lagring av «sist sett» ----------
+# ---------- storing "last seen" ----------
 
 def _read_json(path: Path, default):
     try:
@@ -205,7 +206,7 @@ def _write_json(path: Path, data) -> None:
     os.replace(tmp, path)
 
 
-# ---------- åpne filer og mapper ----------
+# ---------- opening files and folders ----------
 
 def open_path(path: Path) -> None:
     if not config.OPEN_LOCAL:
@@ -240,46 +241,46 @@ def read_bom_cached(path: Path) -> dict:
 
 def bom_status(p: dict, snaps: dict) -> tuple[dict | None, bool, dict | None]:
     """Returnerer (status, snaps_endret, utregning)."""
-    fil = p.get("bom")
-    if not fil:
+    file = p.get("bom")
+    if not file:
         return None, False, None
-    path = BOM_DIR / fil
+    path = BOM_DIR / file
     if not path.exists():
-        return {"fil": fil, "finnes": False}, False, None
+        return {"file": file, "exists": False}, False, None
     try:
         b = read_bom_cached(path)
     except bomlib.BomError as e:
-        return {"fil": fil, "finnes": True, "feil": str(e)}, False, None
-    sett = p.get("sett") or b["sett"] or 0
-    c = bomlib.calc(b, sett)
+        return {"file": file, "exists": True, "error": str(e)}, False, None
+    sets = p.get("sets") or b["sets"] or 0
+    c = bomlib.calc(b, sets)
     changed = False
-    snap = snaps.get(fil)
+    snap = snaps.get(file)
     if snap is None:
-        snaps[fil] = {"rader": b["rader"], "lest": b["endret"]}
-        changed, endringer, sist = True, [], b["endret"]
+        snaps[file] = {"rows": b["rows"], "read": b["changed"]}
+        changed, changes, last_read = True, [], b["changed"]
     else:
-        endringer, sist = bomlib.diff(snap["rader"], b["rader"]), snap.get("lest", "")
+        changes, last_read = bomlib.diff(snap["rows"], b["rows"]), snap.get("read", "")
     return {
-        "fil": fil, "finnes": True, "linjer": c["linjer"], "bestill": c["bestill"], "eks": c["eks"],
-        "inkl": c["inkl"], "endret": b["endret"], "settFil": b["sett"], "prosjektFil": b["prosjekt"],
-        "endringer": endringer, "sistLest": sist,
+        "file": file, "exists": True, "lines": c["lines"], "to_order": c["to_order"], "excl": c["excl"],
+        "incl": c["incl"], "changed": b["changed"], "setsInFile": b["sets"], "projectFile": b["project"],
+        "changes": changes, "lastRead": last_read,
     }, changed, c
 
 
-def telling_status(g: dict, c: dict | None, st: dict | None, lagret: dict, tell: dict | None,
-                   typer: dict) -> dict | None:
-    """Lagret telling, eller grunnlaget for en ny (fra BOM-en slik den er nå)."""
-    if tell:
-        lagret_ = {**tell, **telling.oppsummering(tell["linjer"]),
-                   "ventende": len(telling.ventende(tell["linjer"], tell["skrevet_verdier"])),
-                   "iBom": len(tell["skrevet_verdier"]),
-                   "endretIExcel": telling.endret_i_bom(tell["skrevet_verdier"], c["rader"] if c else [])}
-        return {"lagret": lagret_, "grunnlag": None, "antattBestilt": False}
-    if not c or not c["linjer"]:
+def count_status(g: dict, c: dict | None, st: dict | None, saved: dict, cnt: dict | None,
+                   types: dict) -> dict | None:
+    """The saved count, or the basis for a new one (from the BOM as it is now)."""
+    if cnt:
+        saved_ = {**cnt, **counting.summary(cnt["lines"]),
+                   "pending": len(counting.pending(cnt["lines"], cnt["written_values"])),
+                   "inBom": len(cnt["written_values"]),
+                   "changedInExcel": counting.changed_in_bom(cnt["written_values"], c["rows"] if c else [])}
+        return {"saved": saved_, "basis": None, "assumedOrdered": False}
+    if not c or not c["lines"]:
         return None
-    sett = g.get("sett") or (st or {}).get("settFil") or 0
-    grunnlag = telling.grunnlag(c["rader"], telling.bestilt_per_linje(lagret), typer.get(g["prosjektId"], {}), sett)
-    return {"lagret": None, "grunnlag": grunnlag, "antattBestilt": any(l["antatt"] for l in grunnlag)}
+    sets = g.get("sets") or (st or {}).get("setsInFile") or 0
+    basis = counting.basis(c["rows"], counting.ordered_per_line(saved), types.get(g["projectId"], {}), sets)
+    return {"saved": None, "basis": basis, "assumedOrdered": any(l["assumed"] for l in basis)}
 
 
 def bom_path(g: dict) -> Path:
@@ -296,114 +297,114 @@ def index():
     return render_template("index.html")
 
 
-# det en faglærer får se av en gjennomføring – ikke BOM, bestilling, telling eller kostnader
-_OFFENTLIG = ("id", "prosjektId", "skolear", "start", "slutt", "sett", "studenter", "gruppe", "ekstra",
-              "navn", "type", "lev", "buf", "notat", "color", "emneId", "emneKode", "emneNavn", "program", "emneStudenter",
-              "faglarerId", "faglarerNavn", "ingeniorId", "ingeniorNavn")
+# what a lecturer gets to see of a run – not BOM, orders, counts or costs
+_PUBLIC = ("id", "projectId", "school_year", "start", "finish", "sets", "students", "group_size", "spare",
+              "name", "type", "lead", "buf", "note", "color", "courseId", "courseCode", "courseName", "program", "courseStudents",
+              "lecturerId", "lecturerName", "engineerId", "engineerName")
 
 
 @app.get("/api/state")
 def state():
-    closed = store.stengte()
-    # Du ser bare det du er involvert i: faglærer egne emner, ingeniør egne emner (og prosjekter
-    # uten emne/ingeniør), administrator alt. Resten sendes ikke engang til nettleseren.
-    alle = [g for g in store.gjennomforinger() if kan_handle(g)]
-    rader = [g for g in alle if not g["slettet"]]
-    ing = auth.er_ingenior()
-    meg = auth.meg()
+    closed = store.closed_periods()
+    # You only see what you're involved in: lecturers their own courses, engineers their own courses (and projects
+    # without a course/engineer), the admin everything. The rest isn't even sent to the browser.
+    all_runs = [g for g in store.runs() if can_handle(g)]
+    rows = [g for g in all_runs if not g["deleted"]]
+    eng = auth.is_engineer()
+    me = auth.me()
     out = []
-    if ing:
-        bestilt = store.bestillinger()
-        tellinger = store.tellinger()
-        typer = store.linjetyper()
-        aktive = aktive_bom_kjoringer(closed)
+    if eng:
+        ordered = store.all_orders()
+        counts = store.counts()
+        types = store.line_types()
+        active = active_bom_runs(closed)
         with _lock:
             snaps = _read_json(SNAP_FILE, {})
             dirty = False
-            for g in rader:
+            for g in rows:
                 st, ch, c = bom_status(g, snaps)
                 dirty |= ch
-                f = frister.frister(g, closed)
-                lagret = bestilt.get(g["id"], {})
-                # «trenger mer» gir bare mening før prosjektet starter og før det er telt
-                sammenlign = f["start"]["dato"] > dt.date.today().isoformat() and g["id"] not in tellinger
-                best = bestilling.oversikt(c["rader"], lagret, sammenlign) if c and c["linjer"] else None
-                out.append({**g, "semester": frister.semester(g["start"]), "hendelser": f.pop("hendelser"),
-                            "frister": f, "bomStatus": st, "bestilling": best,
-                            "bestiltKr": bestilling.kostnad(lagret), "egen": kan_handle(g),
-                            "bomSettAktiv": aktive.get(g["bom"]) == g["id"],
-                            "telling": telling_status(g, c, st, lagret, tellinger.get(g["id"]), typer)})
+                f = deadlines.deadlines(g, closed)
+                saved = ordered.get(g["id"], {})
+                # "needs more" only makes sense before the project starts and before it has been counted
+                compare = f["start"]["date"] > dt.date.today().isoformat() and g["id"] not in counts
+                overview = orders.overview(c["rows"], saved, compare) if c and c["lines"] else None
+                out.append({**g, "semester": deadlines.semester(g["start"]), "events": f.pop("events"),
+                            "deadlines": f, "bomStatus": st, "orders": overview,
+                            "orderedCost": orders.cost(saved), "own": can_handle(g),
+                            "bomSetsActive": active.get(g["bom"]) == g["id"],
+                            "count": count_status(g, c, st, saved, counts.get(g["id"]), types)})
             if dirty:
                 _write_json(SNAP_FILE, snaps)
     else:
-        for g in rader:
-            f = frister.frister(g, closed)
-            out.append({**{k: g[k] for k in _OFFENTLIG}, "semester": frister.semester(g["start"]),
-                        "hendelser": f.pop("hendelser"), "frister": f, "egen": kan_handle(g)})
+        for g in rows:
+            f = deadlines.deadlines(g, closed)
+            out.append({**{k: g[k] for k in _PUBLIC}, "semester": deadlines.semester(g["start"]),
+                        "events": f.pop("events"), "deadlines": f, "own": can_handle(g)})
 
-    idag = dt.date.today()
-    na = frister.skolear_for(idag)
-    ar = {na, na + 1} | {g["skolear"] for g in rader}
-    skolear = [{"ar": y, "navn": frister.skolear_navn(y), "start": frister.skolear_start(y).isoformat(),
-                "uker": frister.skolear_uker(y, closed)} for y in range(min(ar), max(ar) + 1)]
-    mandag = idag - dt.timedelta(days=idag.weekday())
-    neste8 = [frister.uke_info(mandag + i * frister.UKE, closed) for i in range(8)]
+    today = dt.date.today()
+    current = deadlines.school_year_for(today)
+    year = {current, current + 1} | {g["school_year"] for g in rows}
+    school_year = [{"year": y, "name": deadlines.school_year_name(y), "start": deadlines.school_year_start(y).isoformat(),
+                "weeks": deadlines.school_year_weeks(y, closed)} for y in range(min(year), max(year) + 1)]
+    monday = today - dt.timedelta(days=today.weekday())
+    next8 = [deadlines.week_info(monday + i * deadlines.WEEK, closed) for i in range(8)]
 
-    svar = {"prosjekter": out, "stengte": closed, "modus": config.MODUS,
-            "idag": frister.uke_info(idag), "skolearNa": na, "skolearVis": frister.skolear_vis(idag),
-            "skolear": skolear, "neste8": neste8,
-            "meg": {"id": meg["id"], "navn": meg["navn"], "rolle": meg["rolle"], "admin": meg["admin"]},
-            "brukere": [],
-            "ledigeBom": [], "oppsett": None, "mapper": {}, "endringer": [], "slettede": [],
-            "emner": [], "faglarere": [], "ingeniorer": [], "program": PROGRAM,
-            "typer": {k: t["navn"] for k, t in frister.TYPER.items()}}
-    emner = store.emner()
-    if ing:
-        mine = [g for g in alle if kan_handle(g)]  # varsler og påminnelser gjelder egne emner
-        mine_id = {int(g["id"]) for g in mine}
-        finnes = {int(g["id"]) for g in store.gjennomforinger()}  # alle, også andres – for slettede prosjekter
-        linked = {g.get("bom") for g in store.gjennomforinger()}  # også andres – en BOM hører til ett prosjekt
-        svar["ledigeBom"] = sorted(f.name for f in BOM_DIR.glob("*.xlsx")
+    reply = {"projects": out, "closed_periods": closed, "mode": config.MODE,
+            "today": deadlines.week_info(today), "schoolYearNow": current, "schoolYearShown": deadlines.school_year_shown(today),
+            "school_year": school_year, "next8": next8,
+            "me": {"id": me["id"], "name": me["name"], "role": me["role"], "admin": me["admin"]},
+            "users": [],
+            "freeBoms": [], "setup": None, "folders": {}, "changes": [], "deletedRuns": [],
+            "courses": [], "lecturers": [], "engineers": [], "program": PROGRAM,
+            "types": {k: t["name"] for k, t in deadlines.TYPES.items()}}
+    courses = store.courses()
+    if eng:
+        mine = [g for g in all_runs if can_handle(g)]  # notifications and reminders are about your own courses
+        mine_ids = {int(g["id"]) for g in mine}
+        existing = {int(g["id"]) for g in store.runs()}  # all of them, other people's too – for deleted projects
+        linked = {g.get("bom") for g in store.runs()}  # other people's too – a BOM belongs to one project
+        reply["freeBoms"] = sorted(f.name for f in BOM_DIR.glob("*.xlsx")
                                    if not f.name.startswith("~$") and f.name not in linked) if BOM_DIR.exists() else []
-        svar["oppsett"] = frister.oppsett_varsel([g for g in mine if not g["slettet"]], closed, idag)
-        svar["mapper"] = {"bom": str(BOM_DIR), "lister": str(LIST_DIR)}
-        def mitt(e):
-            if e["mottaker_id"] is not None:  # varsel til én bestemt (f.eks. «du er valgt som ingeniør»)
-                return e["mottaker_id"] == meg["id"]
-            # faglærerens endringer i et prosjekt: emnets ingeniør (en ny ingeniør overtar de ukvitterte)
-            return e["gjennomforing_id"] in mine_id or e["gjennomforing_id"] not in finnes
-        svar["endringer"] = [e for e in store.endringer() if mitt(e)]
-        svar["slettede"] = [{k: g[k] for k in ("id", "navn", "skolear", "start", "slutt", "slettet", "slettetAv", "emneKode")}
-                            for g in mine if g["slettet"]]
-        brukere = [u for u in store.brukere() if u["aktiv"]]
-        svar["faglarere"] = [{"id": u["id"], "navn": u["navn"]} for u in brukere if u["rolle"] == "faglarer"]
-        svar["ingeniorer"] = [{"id": u["id"], "navn": u["navn"]} for u in brukere if u["rolle"] == "ingenior"]
-        svar["emner"] = emner
+        reply["setup"] = deadlines.setup_warning([g for g in mine if not g["deleted"]], closed, today)
+        reply["folders"] = {"bom": str(BOM_DIR), "lists": str(LIST_DIR)}
+        def is_mine(e):
+            if e["recipient_id"] is not None:  # a notification to one particular person (e.g. "you have been chosen as engineer")
+                return e["recipient_id"] == me["id"]
+            # a lecturer's changes to a project: the course's engineer (a new engineer takes over the unacknowledged ones)
+            return e["run_id"] in mine_ids or e["run_id"] not in existing
+        reply["changes"] = [e for e in store.changes() if is_mine(e)]
+        reply["deletedRuns"] = [{k: g[k] for k in ("id", "name", "school_year", "start", "finish", "deleted", "deletedBy", "courseCode")}
+                            for g in mine if g["deleted"]]
+        users = [u for u in store.users() if u["active"]]
+        reply["lecturers"] = [{"id": u["id"], "name": u["name"]} for u in users if u["role"] == "lecturer"]
+        reply["engineers"] = [{"id": u["id"], "name": u["name"]} for u in users if u["role"] == "engineer"]
+        reply["courses"] = courses
     else:
-        # faglæreren styrer sine egne emner og velger ingeniør til dem
-        svar["emner"] = [e for e in emner if e["faglarerId"] == meg["id"]]
-        svar["ingeniorer"] = [{"id": u["id"], "navn": u["navn"]} for u in store.brukere()
-                              if u["aktiv"] and u["rolle"] == "ingenior"]
-    return jsonify(svar)
+        # lecturers manage their own courses and choose the engineer for them
+        reply["courses"] = [e for e in courses if e["lecturerId"] == me["id"]]
+        reply["engineers"] = [{"id": u["id"], "name": u["name"]} for u in store.users()
+                              if u["active"] and u["role"] == "engineer"]
+    return jsonify(reply)
 
 
-@app.post("/api/skolear/<int:fra>/kopier")
-def copy_year(fra):
-    """Kopier gjennomføringer til neste skoleår. «ids» velger hvilke (standard: alle).
-    «endringer»: {id: {start, slutt, studenter, gruppe, ekstra}} for det som er annerledes neste år."""
+@app.post("/api/school-years/<int:from_>/copy")
+def copy_year(from_):
+    """Copy runs to the next school year. «ids» chooses which (default: all).
+    «changes»: {id: {start, finish, students, group_size, spare}} for what is different next year."""
     body = request.get_json(silent=True) or {}
-    ids, raw = body.get("ids"), body.get("endringer") or {}
+    ids, raw = body.get("ids"), body.get("changes") or {}
     if ids is not None and (not isinstance(ids, list) or not all(isinstance(i, (str, int)) for i in ids)):
         raise bomlib.BomError("Ugyldig liste over prosjekter.")
     if not isinstance(raw, dict) or not all(isinstance(v, dict) for v in raw.values()):
         raise bomlib.BomError("Ugyldige endringer.")
-    lov = {"start", "slutt", "studenter", "gruppe", "ekstra"}
-    endringer = {str(k): _clean({f: v[f] for f in lov if f in v}, partial=True) for k, v in raw.items()}
-    # bare prosjekter i egne emner (og uten emne) kopieres
-    mine = {g["id"] for g in store.gjennomforinger() if g["skolear"] == fra and kan_handle(g)}
-    valgt = mine if ids is None else {str(i) for i in ids} & mine
-    nye = store.kopier(fra, sorted(valgt), endringer)
-    return jsonify({"nye": nye, "til": fra + 1, "navn": frister.skolear_navn(fra + 1)})
+    allowed = {"start", "finish", "students", "group_size", "spare"}
+    changes = {str(k): _clean({f: v[f] for f in allowed if f in v}, partial=True) for k, v in raw.items()}
+    # only projects in your own courses (and without a course) are copied
+    mine = {g["id"] for g in store.runs() if g["school_year"] == from_ and can_handle(g)}
+    chosen = mine if ids is None else {str(i) for i in ids} & mine
+    created = store.copy_year(from_, sorted(chosen), changes)
+    return jsonify({"created": created, "to": from_ + 1, "name": deadlines.school_year_name(from_ + 1)})
 
 
 def _clean(body: dict, partial: bool) -> dict:
@@ -412,22 +413,22 @@ def _clean(body: dict, partial: bool) -> dict:
         if k not in body:
             continue
         v = body[k]
-        if v in (None, "") and k in ("studenter", "bom", "notat", "emne"):
-            out[k] = None if k != "notat" else ""
+        if v in (None, "") and k in ("students", "bom", "note", "course"):
+            out[k] = None if k != "note" else ""
             continue
         try:
             out[k] = typ(v)
         except (TypeError, ValueError):
             raise bomlib.BomError(f"Ugyldig verdi for {k}.")
-    for k, lo, hi in (("start", 1, 53), ("slutt", 1, 53), ("lev", 0, 20), ("buf", 0, 20),
-                      ("studenter", 0, 2000), ("gruppe", 1, 20), ("ekstra", 0, 99)):
+    for k, lo, hi in (("start", 1, 53), ("finish", 1, 53), ("lead", 0, 20), ("buf", 0, 20),
+                      ("students", 0, 2000), ("group_size", 1, 20), ("spare", 0, 99)):
         if out.get(k) is not None:
             out[k] = min(hi, max(lo, out[k]))
-    if "type" in out and out["type"] not in frister.TYPER:
+    if "type" in out and out["type"] not in deadlines.TYPES:
         raise bomlib.BomError("Ugyldig type.")
-    if "navn" in out:
-        out["navn"] = out["navn"].strip()
-        if not out["navn"]:
+    if "name" in out:
+        out["name"] = out["name"].strip()
+        if not out["name"]:
             raise bomlib.BomError("Gi prosjektet et navn.")
     elif not partial:
         raise bomlib.BomError("Gi prosjektet et navn.")
@@ -436,655 +437,655 @@ def _clean(body: dict, partial: bool) -> dict:
 
 @app.errorhandler(bomlib.BomError)
 def bom_error(e):
-    return jsonify({"feil": str(e)}), 400
+    return jsonify({"error": str(e)}), 400
 
 
 @app.errorhandler(KeyError)
 def not_found(e):
-    return jsonify({"feil": "Fant ikke prosjektet."}), 404
+    return jsonify({"error": "Fant ikke prosjektet."}), 404
 
 
-@app.post("/api/gjennomforinger")
+@app.post("/api/runs")
 def create():
     raw = request.get_json(force=True)
     body = _clean(raw, partial=False)
     try:
-        sy = int(raw.get("skolear") or frister.skolear_for(dt.date.today()))
+        sy = int(raw.get("school_year") or deadlines.school_year_for(dt.date.today()))
     except (TypeError, ValueError):
         raise bomlib.BomError("Ugyldig skoleår.")
     if not 2000 <= sy <= 2100:
         raise bomlib.BomError("Ugyldig skoleår.")
-    emne = _emne(body.pop("emne", None))
-    if not auth.er_ingenior():
-        # faglæreren legger prosjektet i ett av sine emner; leveringstid, buffer og BOM får ingeniørens standard
-        if emne is None or emne["faglarerId"] != auth.meg()["id"] or not emne["aktiv"]:
-            raise Nektet("Velg ett av dine emner.")
-        body = {k: v for k, v in body.items() if k in FAGLARER_FELT or k == "color"}
-    body["emne_id"] = emne["id"] if emne else None
-    if body.get("studenter") is None and emne:
-        body["studenter"] = emne["studenter"]  # emnets antall er standard; prosjektet kan avvike
-    slug = re.sub(r"[^a-z0-9]+", "-", body["navn"].lower()).strip("-")[:24] or "prosjekt"
-    g = store.ny(f"{slug}-{secrets.token_hex(2)}", sy, body)
-    logg(g, "opprettet")
+    course = _course(body.pop("course", None))
+    if not auth.is_engineer():
+        # a lecturer puts the project in one of their courses; lead time, buffer and BOM get the engineer's defaults
+        if course is None or course["lecturerId"] != auth.me()["id"] or not course["active"]:
+            raise Forbidden("Velg ett av dine emner.")
+        body = {k: v for k, v in body.items() if k in LECTURER_FIELDS or k == "color"}
+    body["course_id"] = course["id"] if course else None
+    if body.get("students") is None and course:
+        body["students"] = course["students"]  # the course's number is the default; the project may differ
+    slug = re.sub(r"[^a-z0-9]+", "-", body["name"].lower()).strip("-")[:24] or "project"
+    g = store.new(f"{slug}-{secrets.token_hex(2)}", sy, body)
+    log(g, "created")
     return jsonify(g)
 
 
-def _emne(eid) -> dict | None:
-    if eid in (None, "", 0):
+def _course(cid) -> dict | None:
+    if cid in (None, "", 0):
         return None
     try:
-        return store.emne(int(eid))
+        return store.course(int(cid))
     except (KeyError, TypeError, ValueError):
         raise bomlib.BomError("Fant ikke emnet.")
 
 
-def _aktiv(gid: str) -> dict:
-    """Gjennomføringen, hvis den ikke er fjernet. (Om den er din, er sjekket i _eierskap.)"""
-    g = store.gjennomforing(gid)
-    if g["slettet"]:
+def _active(gid: str) -> dict:
+    """The run, if it hasn't been removed. (Whether it's yours is checked in _ownership.)"""
+    g = store.run(gid)
+    if g["deleted"]:
         raise KeyError(gid)
     return g
 
 
-@app.patch("/api/gjennomforinger/<gid>")
+@app.patch("/api/runs/<gid>")
 def update(gid):
     body = _clean(request.get_json(force=True), partial=True)
-    g0 = _aktiv(gid)
-    if not auth.er_ingenior():
-        ulovlig = set(body) - FAGLARER_FELT
-        if ulovlig:
-            raise Nektet("Det er ingeniøren som endrer " + ", ".join(sorted(FELTNAVN.get(k, k) for k in ulovlig)) + ".")
-    if "emne" in body:
-        emne = _emne(body.pop("emne"))
-        body["emne_id"] = emne["id"] if emne else None
-    g1 = store.endre(gid, body)
-    endret = endringer(g0, g1, body)
-    if endret:
-        logg(g1, "endret", endret)
-    return jsonify({**g1, "bomSett": sett_til_bom(g0, g1)})
+    g0 = _active(gid)
+    if not auth.is_engineer():
+        not_allowed = set(body) - LECTURER_FIELDS
+        if not_allowed:
+            raise Forbidden("Det er ingeniøren som endrer " + ", ".join(sorted(FIELD_LABELS.get(k, k) for k in not_allowed)) + ".")
+    if "course" in body:
+        course = _course(body.pop("course"))
+        body["course_id"] = course["id"] if course else None
+    g1 = store.update(gid, body)
+    changed = changes(g0, g1, body)
+    if changed:
+        log(g1, "changed", changed)
+    return jsonify({**g1, "bomSets": sets_to_bom(g0, g1)})
 
 
-@app.delete("/api/gjennomforinger/<gid>")
+@app.delete("/api/runs/<gid>")
 def delete(gid):
-    """Faglærer: fjernes (mykt) til ingeniøren bekrefter. Ingeniør: slettes – også et fjernet prosjekt."""
-    g = store.gjennomforing(gid)
-    if auth.er_ingenior():
-        store.slett(gid)
-        store.kvitter(gid)
-        logg(g, "slettet")
+    """Lecturer: removed (softly) until the engineer confirms. Engineer: deleted – also a removed project."""
+    g = store.run(gid)
+    if auth.is_engineer():
+        store.delete(gid)
+        store.acknowledge(gid)
+        log(g, "deleted")
         return jsonify({"ok": True})
-    g = _aktiv(gid)
-    store.myk_slett(gid, auth.meg()["navn"])
-    logg(g, "fjernet")
-    return jsonify({"ok": True, "venter": True})
+    g = _active(gid)
+    store.soft_delete(gid, auth.me()["name"])
+    log(g, "removed")
+    return jsonify({"ok": True, "waiting": True})
 
 
-# ---------- emner (ingeniører: alle; faglærer: sine egne) ----------
+# ---------- courses (engineers: all; lecturers: their own) ----------
 
-def _emnefelt(body: dict, nytt: bool) -> dict:
+def _course_fields(body: dict, is_new: bool) -> dict:
     out = {}
-    if "kode" in body or nytt:
-        kode = str(body.get("kode") or "").strip().upper()
-        if not kode or len(kode) > 20:
+    if "code" in body or is_new:
+        code = str(body.get("code") or "").strip().upper()
+        if not code or len(code) > 20:
             raise bomlib.BomError("Gi emnet en emnekode, f.eks. IELS1001.")
-        out["kode"] = kode
-    if "navn" in body:
-        out["navn"] = str(body["navn"] or "").strip()[:120]
+        out["code"] = code
+    if "name" in body:
+        out["name"] = str(body["name"] or "").strip()[:120]
     if "program" in body:
         if body["program"] not in PROGRAM:
             raise bomlib.BomError("Studieprogram må være bachelor eller master.")
         out["program"] = body["program"]
-    if "studenter" in body:
+    if "students" in body:
         try:
-            out["studenter"] = None if body["studenter"] in (None, "") else min(2000, max(0, int(body["studenter"])))
+            out["students"] = None if body["students"] in (None, "") else min(2000, max(0, int(body["students"])))
         except (TypeError, ValueError):
             raise bomlib.BomError("Antall studenter må være et tall.")
-    for felt, rolle, tekst in (("faglarer", "faglarer", "faglærer"), ("ingenior", "ingenior", "ingeniør")):
-        if felt in body:
-            uid = body[felt]
+    for fields, role, text in (("lecturer", "lecturer", "faglærer"), ("engineer", "engineer", "ingeniør")):
+        if fields in body:
+            uid = body[fields]
             if uid in (None, "", 0):
-                out[f"{felt}_id"] = None
+                out[f"{fields}_id"] = None
                 continue
             try:
-                u = store.bruker(id=int(uid))
+                u = store.user(id=int(uid))
             except (TypeError, ValueError):
                 u = None
-            if not u or u["rolle"] != rolle or not u["aktiv"]:
-                raise bomlib.BomError(f"Fant ikke {tekst}en.")
-            out[f"{felt}_id"] = u["id"]
-    if "aktiv" in body:
-        out["aktiv"] = 1 if body["aktiv"] else 0
+            if not u or u["role"] != role or not u["active"]:
+                raise bomlib.BomError(f"Fant ikke {text}en.")
+            out[f"{fields}_id"] = u["id"]
+    if "active" in body:
+        out["active"] = 1 if body["active"] else 0
     return out
 
 
-def _varsle_ingenior(fra: dict | None, til: dict) -> None:
-    """Fortell ingeniøren som er valgt (og den som er tatt av) – men ikke deg selv."""
-    meg = auth.meg()
-    felles = {"bruker_id": meg["id"], "bruker_navn": meg["navn"], "rolle": meg["rolle"], "emne_id": til["id"],
-              "prosjekt_navn": til["kode"], "felt": "ingeniør"}
-    rader = []
-    ny, gammel = til["ingeniorId"], fra["ingeniorId"] if fra else None
-    if ny == gammel:
+def _notify_engineer(from_: dict | None, to: dict) -> None:
+    """Tell the engineer who was chosen (and the one who was taken off) – but not yourself."""
+    me = auth.me()
+    common = {"user_id": me["id"], "user_name": me["name"], "role": me["role"], "course_id": to["id"],
+              "project_name": to["code"], "field": "ingeniør"}
+    rows = []
+    new, old_count = to["engineerId"], from_["engineerId"] if from_ else None
+    if new == old_count:
         return
-    if ny and ny != meg["id"]:
-        rader.append({**felles, "handling": "valgt_ingenior", "mottaker_id": ny, "til": til["ingeniorNavn"],
-                      "fra": fra["ingeniorNavn"] if fra else None})
-    if gammel and gammel != meg["id"]:
-        rader.append({**felles, "handling": "fjernet_ingenior", "mottaker_id": gammel, "fra": fra["ingeniorNavn"],
-                      "til": til["ingeniorNavn"]})
-    if rader:
-        store.logg(rader)
+    if new and new != me["id"]:
+        rows.append({**common, "action": "engineer_assigned", "recipient_id": new, "to_value": to["engineerName"],
+                      "from_value": from_["engineerName"] if from_ else None})
+    if old_count and old_count != me["id"]:
+        rows.append({**common, "action": "engineer_removed", "recipient_id": old_count, "from_value": from_["engineerName"],
+                      "to_value": to["engineerName"]})
+    if rows:
+        store.log(rows)
 
 
-@app.post("/api/emner")
-def create_subject():
-    """Ingeniører legger inn hvilke emner som helst; en faglærer lager sine egne (og blir faglærer for dem)."""
+@app.post("/api/courses")
+def create_course():
+    """Engineers add any course; a lecturer creates their own (and becomes its lecturer)."""
     body = request.get_json(force=True) or {}
-    if not auth.er_ingenior():
-        if "faglarer" in body and body["faglarer"] not in (None, "", auth.meg()["id"]):
-            raise Nektet("Du kan bare lage emner der du selv er faglærer.")
-        body = {**body, "faglarer": auth.meg()["id"]}
+    if not auth.is_engineer():
+        if "lecturer" in body and body["lecturer"] not in (None, "", auth.me()["id"]):
+            raise Forbidden("Du kan bare lage emner der du selv er faglærer.")
+        body = {**body, "lecturer": auth.me()["id"]}
     try:
-        e = store.nytt_emne(_emnefelt(body, nytt=True))
+        e = store.new_course(_course_fields(body, is_new=True))
     except sqlite3.IntegrityError:
         raise bomlib.BomError("Det finnes allerede et emne med den koden.")
-    _varsle_ingenior(None, e)
+    _notify_engineer(None, e)
     return jsonify(e)
 
 
-@app.patch("/api/emner/<int:eid>")
-def update_subject(eid):
-    """Ingeniører endrer alle emner; en faglærer sine egne – men ikke hvem som er faglærer."""
-    e0 = store.emne(eid)  # 404 hvis det ikke finnes
+@app.patch("/api/courses/<int:cid>")
+def update_course(cid):
+    """Engineers change every course; a lecturer their own – but not who the lecturer is."""
+    e0 = store.course(cid)  # 404 if it doesn't exist
     body = request.get_json(force=True) or {}
-    if not auth.er_ingenior():
-        if e0["faglarerId"] != auth.meg()["id"]:
-            raise Nektet("Du kan bare endre dine egne emner.")
-        if "faglarer" in body:
-            raise Nektet("Det er administratoren eller en ingeniør som bytter faglærer på et emne.")
+    if not auth.is_engineer():
+        if e0["lecturerId"] != auth.me()["id"]:
+            raise Forbidden("Du kan bare endre dine egne emner.")
+        if "lecturer" in body:
+            raise Forbidden("Det er administratoren eller en ingeniør som bytter faglærer på et emne.")
     try:
-        e1 = store.endre_emne(eid, _emnefelt(body, nytt=False))
+        e1 = store.update_course(cid, _course_fields(body, is_new=False))
     except sqlite3.IntegrityError:
         raise bomlib.BomError("Det finnes allerede et emne med den koden.")
-    _varsle_ingenior(e0, e1)
+    _notify_engineer(e0, e1)
     return jsonify(e1)
 
 
-@app.post("/api/endringer/kvitter")
+@app.post("/api/changes/acknowledge")
 def acknowledge_mine():
-    """«OK, sett» på varsler som er til deg (f.eks. «du er valgt som ingeniør»)."""
+    """«OK, sett» on notifications addressed to you (e.g. "you have been chosen as engineer")."""
     ids = (request.get_json(silent=True) or {}).get("ids") or []
     try:
         ids = [int(i) for i in ids]
     except (TypeError, ValueError):
         raise bomlib.BomError("Ugyldige varsler.")
-    return jsonify({"kvittert": store.kvitter_til(auth.meg()["id"], ids)})
+    return jsonify({"acknowledged": store.acknowledge_to(auth.me()["id"], ids)})
 
 
 # ---------- brukere (administratoren) ----------
 
-def _brukerfelt(body: dict, ny: bool) -> dict:
+def _user_fields(body: dict, new: bool) -> dict:
     out = {}
-    if ny:
-        brukernavn = str(body.get("brukernavn") or "").strip()
-        if not brukernavn or any(c.isspace() for c in brukernavn) or len(brukernavn) > 40:
+    if new:
+        username = str(body.get("username") or "").strip()
+        if not username or any(c.isspace() for c in username) or len(username) > 40:
             raise bomlib.BomError("Brukernavnet kan ikke være tomt eller inneholde mellomrom.")
-        out["brukernavn"] = brukernavn
-    if "navn" in body or ny:
-        navn = str(body.get("navn") or "").strip()[:80]
-        if not navn:
+        out["username"] = username
+    if "name" in body or new:
+        name = str(body.get("name") or "").strip()[:80]
+        if not name:
             raise bomlib.BomError("Gi brukeren et navn.")
-        out["navn"] = navn
-    if "rolle" in body or ny:
-        if body.get("rolle") not in auth.ROLLER:
+        out["name"] = name
+    if "role" in body or new:
+        if body.get("role") not in auth.ROLES:
             raise bomlib.BomError("Rollen må være ingeniør eller faglærer.")
-        out["rolle"] = body["rolle"]
+        out["role"] = body["role"]
     if "admin" in body:
         out["admin"] = 1 if body["admin"] else 0
-    if "aktiv" in body:
-        out["aktiv"] = 1 if body["aktiv"] else 0
-    if "passord" in body or ny:
+    if "active" in body:
+        out["active"] = 1 if body["active"] else 0
+    if "password" in body or new:
         try:
-            out["passord"] = auth.hash_passord(str(body.get("passord") or ""))
+            out["password"] = auth.hash_password(str(body.get("password") or ""))
         except ValueError as e:
             raise bomlib.BomError(str(e))
-    if out.get("rolle") == "faglarer":
-        out["admin"] = 0  # administrator er alltid en ingeniør
+    if out.get("role") == "lecturer":
+        out["admin"] = 0  # the admin is always an engineer
     return out
 
 
-def _bruker_ut(u: dict) -> dict:
-    return {k: (bool(u[k]) if k in ("admin", "aktiv") else u[k])
-            for k in ("id", "brukernavn", "navn", "rolle", "admin", "aktiv", "sist_inne", "last_til")}
+def _user_out(u: dict) -> dict:
+    return {k: (bool(u[k]) if k in ("admin", "active") else u[k])
+            for k in ("id", "username", "name", "role", "admin", "active", "last_login", "locked_until")}
 
 
-@app.post("/api/brukere")
+@app.post("/api/users")
 def create_user():
-    f = _brukerfelt(request.get_json(force=True) or {}, ny=True)
+    f = _user_fields(request.get_json(force=True) or {}, new=True)
     try:
-        uid = store.ny_bruker(f["brukernavn"], f["navn"], f["rolle"], f["passord"], admin=bool(f.get("admin")))
+        uid = store.new_user(f["username"], f["name"], f["role"], f["password"], admin=bool(f.get("admin")))
     except sqlite3.IntegrityError:
-        raise bomlib.BomError(f"Brukernavnet «{f['brukernavn']}» er tatt.")
-    return jsonify(_bruker_ut(store.bruker(id=uid)))
+        raise bomlib.BomError(f"Brukernavnet «{f['username']}» er tatt.")
+    return jsonify(_user_out(store.user(id=uid)))
 
 
-@app.patch("/api/brukere/<int:uid>")
+@app.patch("/api/users/<int:uid>")
 def update_user(uid):
-    u = store.bruker(id=uid)
+    u = store.user(id=uid)
     if not u:
         raise KeyError(uid)
-    f = _brukerfelt(request.get_json(force=True) or {}, ny=False)
-    ny = {**u, **f}
-    # det må alltid finnes en aktiv administrator, ellers kommer ingen inn i «Brukere» igjen
-    var_admin = u["admin"] and u["aktiv"]
-    blir_admin = ny["admin"] and ny["aktiv"] and ny["rolle"] == "ingenior"
-    if var_admin and not blir_admin and store.aktive_admins() <= 1:
+    f = _user_fields(request.get_json(force=True) or {}, new=False)
+    new = {**u, **f}
+    # there must always be an active admin, otherwise nobody can get into «Brukere» again
+    was_admin = u["admin"] and u["active"]
+    becomes_admin = new["admin"] and new["active"] and new["role"] == "engineer"
+    if was_admin and not becomes_admin and store.active_admins() <= 1:
         raise bomlib.BomError("Det må finnes minst én aktiv administrator.")
-    if f.get("rolle", u["rolle"]) != u["rolle"]:
-        i_emner = [e["kode"] for e in store.emner() if uid in (e["faglarerId"], e["ingeniorId"])]
-        if i_emner:
-            raise bomlib.BomError("Brukeren står på " + ", ".join(i_emner) + ". Bytt person der først.")
-    if "passord" in f or "aktiv" in f:
-        f.update(feilforsok=0, last_til=None)  # nytt passord eller aktivert: lås opp
-    store.endre_bruker(uid, **f)
-    return jsonify(_bruker_ut(store.bruker(id=uid)))
+    if f.get("role", u["role"]) != u["role"]:
+        in_courses = [e["code"] for e in store.courses() if uid in (e["lecturerId"], e["engineerId"])]
+        if in_courses:
+            raise bomlib.BomError("Brukeren står på " + ", ".join(in_courses) + ". Bytt person der først.")
+    if "password" in f or "active" in f:
+        f.update(failed_attempts=0, locked_until=None)  # new password or activated: unlock
+    store.update_user(uid, **f)
+    return jsonify(_user_out(store.user(id=uid)))
 
 
-@app.post("/api/gjennomforinger/<gid>/gjenopprett")
+@app.post("/api/runs/<gid>/restore")
 def restore(gid):
-    """Angre at en faglærer fjernet et prosjekt."""
-    g = store.gjennomforing(gid)
-    if not g["slettet"]:
+    """Undo a lecturer removing a project."""
+    g = store.run(gid)
+    if not g["deleted"]:
         raise bomlib.BomError("Prosjektet er ikke fjernet.")
-    store.gjenopprett(gid)
-    store.kvitter(gid)
-    logg(g, "gjenopprettet")
+    store.restore(gid)
+    store.acknowledge(gid)
+    log(g, "restored")
     return jsonify({"ok": True})
 
 
-@app.post("/api/endringer/<gid>/kvitter")
+@app.post("/api/changes/<gid>/acknowledge")
 def acknowledge_changes(gid):
-    """«OK, sett» på faglærerens endringer i en gjennomføring."""
-    return jsonify({"kvittert": store.kvitter(gid)})
+    """«OK, sett» on a lecturer's changes to a run."""
+    return jsonify({"acknowledged": store.acknowledge(gid)})
 
 
-@app.post("/api/gjennomforinger/<gid>/mal")
+@app.post("/api/runs/<gid>/template")
 def make_template(gid):
-    g = store.gjennomforing(gid)
-    frist = dt.date.fromisoformat(frister.frister(g, store.stengte())["frist"]["dato"])
-    target = BOM_DIR / f"{safe_name(g['navn'])} – BOM.xlsx"
+    g = store.run(gid)
+    deadline = dt.date.fromisoformat(deadlines.deadlines(g, store.closed_periods())["deadline"]["date"])
+    target = BOM_DIR / f"{safe_name(g['name'])} – BOM.xlsx"
     BOM_DIR.mkdir(exist_ok=True)
-    bomlib.make_template(TEMPLATE_BOM, target, prosjekt=g["navn"], dato=dt.date.today(), frist=frist, sett=g.get("sett"))
-    store.endre(gid, {"bom": target.name})
+    bomlib.make_template(TEMPLATE_BOM, target, project=g["name"], date=dt.date.today(), deadline=deadline, sets=g.get("sets"))
+    store.update(gid, {"bom": target.name})
     open_path(target)
-    return jsonify({"fil": target.name})
+    return jsonify({"file": target.name})
 
 
 def only_local() -> None:
-    if not config.LOKAL:
+    if not config.LOCAL:
         raise bomlib.BomError("Dette fungerer bare når årshjulet kjører på din egen PC.")
 
 
-@app.post("/api/gjennomforinger/<gid>/apne")
+@app.post("/api/runs/<gid>/open")
 def open_bom(gid):
     only_local()
-    open_path(bom_path(store.gjennomforing(gid)))
+    open_path(bom_path(store.run(gid)))
     return jsonify({"ok": True})
 
 
-def aktive_bom_kjoringer(closed: list[dict]) -> dict[str, str]:
-    """BOM-fil → gjennomføringen BOM-ens antall sett (B10) skal følge.
+def active_bom_runs(closed: list[dict]) -> dict[str, str]:
+    """BOM file → the run whose set count the BOM (B10) should follow.
 
-    Flere skoleår deler én BOM, men B10 har bare ett tall: det gjelder den neste gjennomføringen
-    som ikke har startet og ikke er telt. Ferdige gjennomføringer bryr seg ikke om B10 lenger.
+    Several school years share one BOM, but B10 holds only one number: it belongs to the next run
+    that hasn't started and hasn't been counted. Finished runs no longer care about B10.
     """
-    idag, telt, neste = dt.date.today().isoformat(), store.tellinger(), {}
-    for g in store.gjennomforinger():
-        if not g["bom"] or g["slettet"] or g["id"] in telt:
+    today, counted, next_ = dt.date.today().isoformat(), store.counts(), {}
+    for g in store.runs():
+        if not g["bom"] or g["deleted"] or g["id"] in counted:
             continue
-        start = frister.frister(g, closed)["start"]["dato"]
-        if start > idag and (g["bom"] not in neste or start < neste[g["bom"]][0]):
-            neste[g["bom"]] = (start, g["id"])
-    return {bom: gid for bom, (_, gid) in neste.items()}
+        start = deadlines.deadlines(g, closed)["start"]["date"]
+        if start > today and (g["bom"] not in next_ or start < next_[g["bom"]][0]):
+            next_[g["bom"]] = (start, g["id"])
+    return {bom: gid for bom, (_, gid) in next_.items()}
 
 
-def sett_til_bom(g0: dict, g1: dict) -> dict | None:
-    """Antall sett er endret: skriv det i BOM-ens B10, som Excel regner «Å bestille» fra.
+def sets_to_bom(g0: dict, g1: dict) -> dict | None:
+    """The set count has changed: write it to the BOM's B10, which Excel computes «Å bestille» from.
 
-    Skrives bare for gjennomføringen B10 følger (se aktive_bom_kjoringer), når filen ikke er åpen
-    i Excel, og når B10 fortsatt har årshjulets forrige tall (ikke endret for hånd). Ellers står det
-    som avvik hos ingeniøren, som kan skrive det med en knapp (write_bom_sets). Endringen i årshjulet
-    gjelder uansett. feil=True: noe må gjøres (vises i rødt); ellers bare til orientering.
+    Written only for the run B10 follows (see active_bom_runs), when the file isn't open in Excel,
+    and when B10 still holds the app's previous number (not changed by hand). Otherwise it shows up
+    as a mismatch for the engineer, who can write it with a button (write_bom_sets). The change in the
+    app applies either way. error=True: something needs doing (shown in red); otherwise just for information.
     """
-    if g0["sett"] == g1["sett"] or not g1.get("bom") or not (BOM_DIR / g1["bom"]).exists():
+    if g0["sets"] == g1["sets"] or not g1.get("bom") or not (BOM_DIR / g1["bom"]).exists():
         return None
-    aktiv = aktive_bom_kjoringer(store.stengte()).get(g1["bom"])
-    if aktiv != g1["id"]:
-        if aktiv is None:
-            return {"skrevet": False, "feil": False, "grunn": "Prosjektet har startet eller er telt – BOM-en er ikke endret."}
-        a = store.gjennomforing(aktiv)
-        return {"skrevet": False, "feil": False,
-                "grunn": f"BOM-en følger «{a['navn']}» {frister.skolear_navn(a['skolear'])} til det har startet – ikke endret nå."}
+    active = active_bom_runs(store.closed_periods()).get(g1["bom"])
+    if active != g1["id"]:
+        if active is None:
+            return {"written": False, "error": False, "reason": "Prosjektet har startet eller er telt – BOM-en er ikke endret."}
+        a = store.run(active)
+        return {"written": False, "error": False,
+                "reason": f"BOM-en følger «{a['name']}» {deadlines.school_year_name(a['school_year'])} til det har startet – ikke endret nå."}
     try:
         with _lock:
-            res = bomlib.write_sett(BOM_DIR / g1["bom"], g1["sett"], BOM_DIR / "Sikkerhetskopi", forventet=g0["sett"])
+            res = bomlib.write_sets(BOM_DIR / g1["bom"], g1["sets"], BOM_DIR / "Sikkerhetskopi", expected=g0["sets"])
     except bomlib.BomError as e:
-        return {"skrevet": False, "feil": True, "grunn": f"{e} BOM-en har fortsatt det gamle antallet."}
-    if res.get("konflikt"):
-        res["feil"] = True
-        res["grunn"] = f"Antall sett i BOM-en er endret i Excel ({res['fil']}) – ikke overskrevet."
-    if res["skrevet"]:
-        logg(g1, "endret", {"bomSett": (res["for"], res["fil"])})
+        return {"written": False, "error": True, "reason": f"{e} BOM-en har fortsatt det gamle antallet."}
+    if res.get("conflict"):
+        res["error"] = True
+        res["reason"] = f"Antall sett i BOM-en er endret i Excel ({res['file']}) – ikke overskrevet."
+    if res["written"]:
+        log(g1, "changed", {"bomSets": (res["for"], res["file"])})
     return res
 
 
-@app.post("/api/gjennomforinger/<gid>/bestilt")
+@app.post("/api/runs/<gid>/ordered")
 def order_without_bom(gid):
-    """Ingeniøren: prosjekter uten BOM markeres som bestilt (eller ikke), så fristen ikke står som passert."""
-    g = _aktiv(gid)
+    """Engineer: projects without a BOM are marked as ordered (or not), so the deadline doesn't show as passed."""
+    g = _active(gid)
     if g["bom"]:
         raise bomlib.BomError("Prosjektet har en BOM – registrer bestillingen per leverandør.")
-    bestilt = bool((request.get_json(silent=True) or {}).get("bestilt"))
-    if bestilt == bool(g["bestiltUtenBom"]):
+    ordered = bool((request.get_json(silent=True) or {}).get("ordered"))
+    if ordered == bool(g["orderedWithoutBom"]):
         return jsonify(g)
-    store.bestilt_uten_bom(gid, dt.date.today().isoformat() if bestilt else None, auth.meg()["navn"] if bestilt else None)
-    logg(g, "endret", {"bestiltUtenBom": ("nei" if bestilt else "ja", "ja" if bestilt else "nei")})
-    return jsonify(store.gjennomforing(gid))
+    store.ordered_without_bom(gid, dt.date.today().isoformat() if ordered else None, auth.me()["name"] if ordered else None)
+    log(g, "changed", {"orderedWithoutBom": ("nei" if ordered else "ja", "ja" if ordered else "nei")})
+    return jsonify(store.run(gid))
 
 
-@app.post("/api/gjennomforinger/<gid>/bom/sett")
+@app.post("/api/runs/<gid>/bom/sets")
 def write_bom_sets(gid):
-    """Ingeniøren: skriv årshjulets antall sett i BOM-en (B10), også over det som står der."""
-    g = _aktiv(gid)
+    """Engineer: write the app's set count to the BOM (B10), also over whatever is there."""
+    g = _active(gid)
     with _lock:
-        res = bomlib.write_sett(bom_path(g), g["sett"], BOM_DIR / "Sikkerhetskopi")
-    if res["skrevet"]:
-        logg(g, "endret", {"bomSett": (res["for"], res["fil"])})
+        res = bomlib.write_sets(bom_path(g), g["sets"], BOM_DIR / "Sikkerhetskopi")
+    if res["written"]:
+        log(g, "changed", {"bomSets": (res["for"], res["file"])})
     return jsonify(res)
 
 
-def beregn(g: dict) -> tuple[dict, dict, int, Path]:
-    """(bom, utregning, sett, sti) for en gjennomføring."""
+def calculate(g: dict) -> tuple[dict, dict, int, Path]:
+    """(bom, calculation, sets, path) for a run."""
     path = bom_path(g)
     b = bomlib.read_bom(path)
-    sett = g.get("sett") or b["sett"] or 0
-    return b, bomlib.calc(b, sett), sett, path
+    sets = g.get("sets") or b["sets"] or 0
+    return b, bomlib.calc(b, sets), sets, path
 
 
-@app.post("/api/gjennomforinger/<gid>/liste")
+@app.post("/api/runs/<gid>/order-list")
 def order_list(gid):
-    """Bestillingsliste for hele BOM-en, eller bare én leverandør hvis «leverandor» er gitt."""
-    g = store.gjennomforing(gid)
-    b, c, sett, path = beregn(g)
-    navn = safe_name(b["prosjekt"] or g["navn"])
-    lev = (request.get_json(silent=True) or {}).get("leverandor")
-    if lev is not None:
-        gr = bestilling.gruppe(c["rader"], bestilling.lev_key(lev))
+    """An order list for the whole BOM, or just one supplier if «supplier» is given."""
+    g = store.run(gid)
+    b, c, sets, path = calculate(g)
+    name = safe_name(b["project"] or g["name"])
+    supplier = (request.get_json(silent=True) or {}).get("supplier")
+    if supplier is not None:
+        gr = orders.group(c["rows"], orders.supplier_key(supplier))
         if gr is None:
             raise bomlib.BomError("Fant ikke leverandøren i BOM-en.")
-        eks = round(sum(r["total"] for r in gr["rader"]), 2)
-        c = {"rader": gr["rader"], "linjer": len(gr["rader"]), "bestill": sum(1 for r in gr["rader"] if r["bestill"] > 0),
-             "eks": eks, "inkl": round(eks * (1 + b["mva"]), 2)}
-        navn += " – " + safe_name(gr["navn"])
+        excl = round(sum(r["total"] for r in gr["rows"]), 2)
+        c = {"rows": gr["rows"], "lines": len(gr["rows"]), "to_order": sum(1 for r in gr["rows"] if r["to_order"] > 0),
+             "excl": excl, "incl": round(excl * (1 + b["vat"]), 2)}
+        name += " – " + safe_name(gr["name"])
     LIST_DIR.mkdir(exist_ok=True)
-    target = LIST_DIR / f"Bestilling – {navn}.html"
-    bomlib.make_order_list(TEMPLATE_LIST, target, bom=b, beregnet=c, prosjekt=g["navn"], sett=sett,
-                           list_id=f"{g['prosjektId']}-{g['id']}-{int(path.stat().st_mtime)}")
+    target = LIST_DIR / f"Bestilling – {name}.html"
+    bomlib.make_order_list(TEMPLATE_LIST, target, bom=b, calculated=c, project=g["name"], sets=sets,
+                           list_id=f"{g['projectId']}-{g['id']}-{int(path.stat().st_mtime)}")
     open_path(target)
-    return jsonify({"fil": target.name, "linjer": c["bestill"]})
+    return jsonify({"file": target.name, "lines": c["to_order"]})
 
 
-@app.post("/api/gjennomforinger/<gid>/bestilling")
+@app.post("/api/runs/<gid>/order")
 def order_status(gid):
-    """Registrer bestilling hos én leverandør.
+    """Register an order with one supplier.
 
-    handling: «bestilt» (ny, fryser linjene), «tillegg» (bestilt det som manglet),
-              «status» (bestilt / delvis / mottatt), «ordrenr», «angre» (fjern registreringen)
+    action: «ordered» (new, freezes the lines), «extra» (ordered what was missing),
+            «status» (ordered / partial / received), «order_no», «undo» (remove the registration)
     """
     body = request.get_json(force=True) or {}
-    handling = body.get("handling")
-    key = bestilling.lev_key(body.get("leverandor"))
-    g = store.gjennomforing(gid)
-    lagret = store.bestillinger().get(gid, {}).get(key)
-    ordrenr = str(body.get("ordrenr") or "").strip()[:100]
+    action = body.get("action")
+    key = orders.supplier_key(body.get("supplier"))
+    g = store.run(gid)
+    saved = store.all_orders().get(gid, {}).get(key)
+    order_no = str(body.get("order_no") or "").strip()[:100]
 
-    if handling in ("bestilt", "tillegg"):
-        _, c, sett, _ = beregn(g)
-        gr = bestilling.gruppe(c["rader"], key)
-        linjer = bestilling.frys(gr["rader"]) if gr else []
-        if handling == "bestilt":
-            if lagret:
+    if action in ("ordered", "extra"):
+        _, c, sets, _ = calculate(g)
+        gr = orders.group(c["rows"], key)
+        lines = orders.freeze(gr["rows"]) if gr else []
+        if action == "ordered":
+            if saved:
                 raise bomlib.BomError("Denne leverandøren er allerede registrert som bestilt.")
-            if not linjer:
+            if not lines:
                 raise bomlib.BomError("Det er ingenting å bestille hos denne leverandøren.")
-            dato = body.get("dato") or dt.date.today().isoformat()
+            date = body.get("date") or dt.date.today().isoformat()
             try:
-                dt.date.fromisoformat(dato)
+                dt.date.fromisoformat(date)
             except (TypeError, ValueError):
                 raise bomlib.BomError("Ugyldig dato.")
-            store.ny_bestilling(gid, key, gr["navn"], dato=dato, ordrenr=ordrenr, sett=sett, linjer=linjer, av=auth.meg()["navn"])
+            store.new_order(gid, key, gr["name"], date=date, order_no=order_no, sets=sets, lines=lines, by=auth.me()["name"])
         else:
-            if not lagret:
+            if not saved:
                 raise bomlib.BomError("Registrer først den vanlige bestillingen.")
-            felt = {"linjer": bestilling.slaa_sammen(lagret["linjer"], linjer), "status": "bestilt",
-                    "mottatt_dato": None, "sett": sett}
-            if ordrenr:
-                felt["ordrenr"] = f"{lagret['ordrenr']} + {ordrenr}" if lagret["ordrenr"] else ordrenr
-            store.endre_bestilling(gid, key, **felt)
-    elif handling == "status":
+            fields = {"lines": orders.merge(saved["lines"], lines), "status": "ordered",
+                    "received_date": None, "sets": sets}
+            if order_no:
+                fields["order_no"] = f"{saved['order_no']} + {order_no}" if saved["order_no"] else order_no
+            store.update_order(gid, key, **fields)
+    elif action == "status":
         status = body.get("status")
-        if status not in bestilling.LAGRET_STATUS:
+        if status not in orders.SAVED_STATUSES:
             raise bomlib.BomError("Ugyldig status.")
-        if not lagret:
+        if not saved:
             raise bomlib.BomError("Leverandøren er ikke registrert som bestilt.")
-        if status == "bestilt" and any(lagret["paa_lager"].values()):
+        if status == "ordered" and any(saved["stocked"].values()):
             raise bomlib.BomError("Noe fra denne bestillingen er lagt på lager. Angre mottaket først.")
-        mottatt = lagret["mottatt_dato"] or dt.date.today().isoformat()
-        store.endre_bestilling(gid, key, status=status, mottatt_dato=None if status == "bestilt" else mottatt)
-    elif handling == "ordrenr":
-        if not lagret:
+        received = saved["received_date"] or dt.date.today().isoformat()
+        store.update_order(gid, key, status=status, received_date=None if status == "ordered" else received)
+    elif action == "order_no":
+        if not saved:
             raise bomlib.BomError("Leverandøren er ikke registrert som bestilt.")
-        store.endre_bestilling(gid, key, ordrenr=ordrenr)
-    elif handling == "angre":
-        if lagret and any(lagret["paa_lager"].values()):
+        store.update_order(gid, key, order_no=order_no)
+    elif action == "undo":
+        if saved and any(saved["stocked"].values()):
             raise bomlib.BomError("Noe fra denne bestillingen er lagt på lager. Angre mottaket først.")
-        store.slett_bestilling(gid, key)
-    elif handling in ("mottak", "angre_mottak"):
-        return jsonify(_varemottak(g, gid, key, lagret, handling, body.get("linjer")))
+        store.delete_order(gid, key)
+    elif action in ("receipt", "undo_receipt"):
+        return jsonify(_receipt(g, gid, key, saved, action, body.get("lines")))
     else:
         raise bomlib.BomError("Ukjent handling.")
     return jsonify({"ok": True})
 
 
-def _varemottak(g: dict, gid: str, key: str, lagret: dict | None, handling: str, linjer: dict | None) -> dict:
-    """Varemottak: legg det som har kommet til «På lager» i BOM-en, eller trekk det fra igjen.
+def _receipt(g: dict, gid: str, key: str, saved: dict | None, action: str, lines: dict | None) -> dict:
+    """Receipt: add what has arrived to «På lager» in the BOM, or subtract it again.
 
-    mottak:       linjer = {nøkkel: antall som kom}; uten linjer: alt som gjenstår.
-                  Status blir «mottatt» når alt er lagt på lager, ellers «delvis».
-    angre_mottak: trekk fra alt som er lagt på lager fra denne bestillingen; status «bestilt».
-    Legges til det cellen har nå, så endringer gjort i Excel imens blir ikke borte.
+    receipt:      lines = {key: quantity that arrived}; without lines: everything still outstanding.
+                  The status becomes «received» when everything is in stock, otherwise «partial».
+    undo_receipt: subtract everything this order put in stock; status «ordered».
+    Added to what the cell holds now, so changes made in Excel meanwhile aren't lost.
     """
-    if not lagret:
+    if not saved:
         raise bomlib.BomError("Leverandøren er ikke registrert som bestilt.")
-    rader = bestilling.mottak(lagret)
-    paa_lager = dict(lagret["paa_lager"])
-    if handling == "mottak":
-        if linjer is None:
-            delta = {r["key"]: r["gjenstar"] for r in rader if r["gjenstar"] > 0}
+    rows = orders.receipt(saved)
+    stocked = dict(saved["stocked"])
+    if action == "receipt":
+        if lines is None:
+            delta = {r["key"]: r["remaining"] for r in rows if r["remaining"] > 0}
         else:
-            kjente = {r["key"] for r in rader}
+            known = {r["key"] for r in rows}
             try:
-                delta = {str(k): float(v) for k, v in linjer.items() if v not in (None, "") and float(v) != 0}
+                delta = {str(k): float(v) for k, v in lines.items() if v not in (None, "") and float(v) != 0}
             except (TypeError, ValueError, AttributeError):
                 raise bomlib.BomError("Ugyldig antall.")
-            if any(v < 0 for v in delta.values()) or not set(delta) <= kjente:
+            if any(v < 0 for v in delta.values()) or not set(delta) <= known:
                 raise bomlib.BomError("Ugyldig antall.")
         if not delta:
             raise bomlib.BomError("Ingenting å legge på lager.")
     else:
-        delta = {k: -v for k, v in paa_lager.items() if v}
+        delta = {k: -v for k, v in stocked.items() if v}
         if not delta:
             raise bomlib.BomError("Ingenting fra denne bestillingen er lagt på lager.")
 
-    res = _skriv_lager(g, lagret["linjer"], delta, legg_til=True)
-    for k in res["skrevet"]:
-        paa_lager[k] = max(0.0, paa_lager.get(k, 0.0) + delta[k])
-    paa_lager = {k: v for k, v in paa_lager.items() if v > 1e-9}
-    if res["skrevet"]:
-        if handling == "angre_mottak":
-            status = "bestilt" if not paa_lager else lagret["status"]
+    res = _write_stock(g, saved["lines"], delta, add=True)
+    for k in res["written"]:
+        stocked[k] = max(0.0, stocked.get(k, 0.0) + delta[k])
+    stocked = {k: v for k, v in stocked.items() if v > 1e-9}
+    if res["written"]:
+        if action == "undo_receipt":
+            status = "ordered" if not stocked else saved["status"]
         else:
-            alt = all(paa_lager.get(r["key"], 0.0) >= r["bestilt"] - 1e-9 for r in rader)
-            status = "mottatt" if alt else "delvis"
-        logg = lagret["lager_logg"] + [{"tid": dt.datetime.now().isoformat(timespec="minutes"),
-                                        "handling": "mottatt" if handling == "mottak" else "angret", "av": auth.meg()["navn"],
-                                        "linjer": {k: delta[k] for k in res["skrevet"]}, "backup": res["backup"]}]
-        store.endre_bestilling(gid, key, paa_lager=paa_lager, lager_logg=logg, status=status,
-                               mottatt_dato=None if status == "bestilt" else (lagret["mottatt_dato"] or dt.date.today().isoformat()))
+            all_in = all(stocked.get(r["key"], 0.0) >= r["ordered"] - 1e-9 for r in rows)
+            status = "received" if all_in else "partial"
+        log = saved["stock_log"] + [{"time": dt.datetime.now().isoformat(timespec="minutes"),
+                                        "action": "received" if action == "receipt" else "undone", "by": auth.me()["name"],
+                                        "lines": {k: delta[k] for k in res["written"]}, "backup": res["backup"]}]
+        store.update_order(gid, key, stocked=stocked, stock_log=log, status=status,
+                               received_date=None if status == "ordered" else (saved["received_date"] or dt.date.today().isoformat()))
     return res
 
 
-@app.post("/api/gjennomforinger/<gid>/sett")
+@app.post("/api/runs/<gid>/seen")
 def acknowledge(gid):
-    """Marker endringene i BOM-en som sett."""
-    g = store.gjennomforing(gid)
+    """Mark the changes in the BOM as seen."""
+    g = store.run(gid)
     b = bomlib.read_bom(bom_path(g))
     with _lock:
         snaps = _read_json(SNAP_FILE, {})
-        snaps[g["bom"]] = {"rader": b["rader"], "lest": b["endret"]}
+        snaps[g["bom"]] = {"rows": b["rows"], "read": b["changed"]}
         _write_json(SNAP_FILE, snaps)
     return jsonify({"ok": True})
 
 
-@app.post("/api/gjennomforinger/<gid>/telling")
+@app.post("/api/runs/<gid>/count")
 def save_count(gid):
-    """Lagre eller rett tellingen. linjer: [{key, type, telt}].
+    """Save or correct the count. lines: [{key, type, counted}].
 
-    En ny telling henter «før»-tallene fra BOM-en nå. En rettet telling beholder tallene den
-    ble laget fra – ellers ville et lager som allerede er skrevet til BOM-en, blitt telt to ganger.
+    A new count takes the "before" numbers from the BOM now. A corrected count keeps the numbers it
+    was made from – otherwise stock already written to the BOM would be counted twice.
     """
-    g = store.gjennomforing(gid)
-    gammel = store.tellinger().get(gid)
+    g = store.run(gid)
+    old_count = store.counts().get(gid)
     body = request.get_json(force=True) or {}
     try:
-        innspill = {str(l["key"]): {"type": l.get("type", "utstyr"), "telt": l["telt"]}
-                    for l in body.get("linjer", []) if l.get("telt") not in (None, "")}
+        entries = {str(l["key"]): {"type": l.get("type", "equipment"), "counted": l["counted"]}
+                    for l in body.get("lines", []) if l.get("counted") not in (None, "")}
     except (TypeError, KeyError, AttributeError):
         raise bomlib.BomError("Ugyldig telling.")
-    if not innspill:
+    if not entries:
         raise bomlib.BomError("Fyll inn minst én linje.")
-    if gammel:  # endre en lagret telling: behold tallene den ble laget fra
-        grunnlag = gammel["linjer"]
+    if old_count:  # changing a saved count: keep the numbers it was made from
+        basis = old_count["lines"]
     else:
-        b, c, sett, _ = beregn(g)
-        grunnlag = telling.grunnlag(c["rader"], telling.bestilt_per_linje(store.bestillinger().get(gid, {})),
-                                    store.linjetyper().get(g["prosjektId"], {}), sett)
+        b, c, sets, _ = calculate(g)
+        basis = counting.basis(c["rows"], counting.ordered_per_line(store.all_orders().get(gid, {})),
+                                    store.line_types().get(g["projectId"], {}), sets)
     try:
-        linjer = telling.lag(grunnlag, innspill)
+        lines = counting.make(basis, entries)
     except (TypeError, ValueError) as e:
         raise bomlib.BomError(f"Ugyldig telling: {e}")
-    store.lagre_telling(gid, g["prosjektId"], dt.date.today().isoformat(), linjer)
-    return jsonify(telling.oppsummering(linjer))
+    store.save_count(gid, g["projectId"], dt.date.today().isoformat(), lines)
+    return jsonify(counting.summary(lines))
 
 
-def _skriv_lager(g: dict, linjer: list[dict], verdier: dict[str, float], forventet: dict[str, float] | None = None,
-                 legg_til: bool = False) -> dict:
-    """Skriv til «På lager» (se bom.write_stock), og hold «sist sett» i takt så vår egen endring
-    ikke vises som «BOM-en er endret». Konflikter får beskrivelse fra «linjer» med til nettleseren."""
+def _write_stock(g: dict, lines: list[dict], values_: dict[str, float], expected: dict[str, float] | None = None,
+                 add: bool = False) -> dict:
+    """Write to «På lager» (see bom.write_stock), and keep "last seen" in step so our own change
+    doesn't show up as "the BOM has changed". Conflicts get a description from «lines» for the browser."""
     with _lock:
-        res = bomlib.write_stock(bom_path(g), verdier, BOM_DIR / "Sikkerhetskopi", forventet, legg_til)
+        res = bomlib.write_stock(bom_path(g), values_, BOM_DIR / "Sikkerhetskopi", expected, add)
         snaps = _read_json(SNAP_FILE, {})
-        if g["bom"] in snaps and res["nye"]:
-            for r in snaps[g["bom"]]["rader"]:
-                if bomlib.rad_key(r) in res["nye"]:
-                    r["lager"] = res["nye"][bomlib.rad_key(r)]
+        if g["bom"] in snaps and res["created"]:
+            for r in snaps[g["bom"]]["rows"]:
+                if bomlib.row_key(r) in res["created"]:
+                    r["in_stock"] = res["created"][bomlib.row_key(r)]
             _write_json(SNAP_FILE, snaps)
-    navn = {l["key"]: l["beskrivelse"] for l in linjer}
-    for k in res["konflikt"]:
-        k["beskrivelse"] = navn.get(k["key"], k["key"])
+    name = {l["key"]: l["description"] for l in lines}
+    for k in res["conflict"]:
+        k["description"] = name.get(k["key"], k["key"])
     return res
 
 
-def _logg(tell: dict, handling: str, res: dict) -> list[dict]:
-    return tell["logg"] + [{"tid": dt.datetime.now().isoformat(timespec="minutes"), "handling": handling, "av": auth.meg()["navn"],
-                            "linjer": len(res["skrevet"]), "konflikter": len(res["konflikt"]), "backup": res["backup"]}]
+def _log(cnt: dict, action: str, res: dict) -> list[dict]:
+    return cnt["log"] + [{"time": dt.datetime.now().isoformat(timespec="minutes"), "action": action, "by": auth.me()["name"],
+                            "lines": len(res["written"]), "conflicts": len(res["conflict"]), "backup": res["backup"]}]
 
 
-@app.post("/api/gjennomforinger/<gid>/telling/skriv")
+@app.post("/api/runs/<gid>/count/write")
 def write_count(gid):
-    """Skriv det som er telt (og ikke allerede skrevet) inn i «På lager» i BOM-en.
+    """Write what has been counted (and not written already) to «På lager» in the BOM.
 
-    Bare celler som fortsatt har verdien årshjulet sist kjente til, overskrives: det som ble
-    skrevet sist, eller «på lager» da tellingen ble gjort. Er cellen endret i Excel siden,
-    hoppes linjen over og meldes som konflikt.
+    Only cells that still hold the value the app last knew are overwritten: what was written last,
+    or «på lager» when the count was made. If the cell has been changed in Excel since, the line
+    is skipped and reported as a conflict.
     """
-    g = store.gjennomforing(gid)
-    tell = store.tellinger().get(gid)
-    if not tell:
+    g = store.run(gid)
+    cnt = store.counts().get(gid)
+    if not cnt:
         raise bomlib.BomError("Lagre tellingen først.")
-    sv = tell["skrevet_verdier"]
-    nye = telling.ventende(tell["linjer"], sv)
-    if not nye:
+    wv = cnt["written_values"]
+    created = counting.pending(cnt["lines"], wv)
+    if not created:
         raise bomlib.BomError("Alt som er telt, står allerede i BOM-en.")
-    linjer = {l["key"]: l for l in tell["linjer"]}
-    res = _skriv_lager(g, tell["linjer"], {k: linjer[k]["telt"] for k in nye},
-                       {k: sv.get(k, linjer[k]["lagerFor"]) for k in nye})
-    if res["skrevet"]:
-        sv = {**sv, **{k: linjer[k]["telt"] for k in res["skrevet"]}}
-        store.telling_skrevet(gid, sv, _logg(tell, "skrevet", res), dt.date.today().isoformat(), res["backup"])
+    lines = {l["key"]: l for l in cnt["lines"]}
+    res = _write_stock(g, cnt["lines"], {k: lines[k]["counted"] for k in created},
+                       {k: wv.get(k, lines[k]["stockBefore"]) for k in created})
+    if res["written"]:
+        wv = {**wv, **{k: lines[k]["counted"] for k in res["written"]}}
+        store.count_written(gid, wv, _log(cnt, "written", res), dt.date.today().isoformat(), res["backup"])
     return jsonify(res)
 
 
-@app.post("/api/gjennomforinger/<gid>/telling/angre")
+@app.post("/api/runs/<gid>/count/undo")
 def undo_count(gid):
-    """Sett «På lager» tilbake til tallene fra før tellingen, for linjer årshjulet har skrevet."""
-    g = store.gjennomforing(gid)
-    tell = store.tellinger().get(gid)
-    if not tell or not tell["skrevet_verdier"]:
+    """Set «På lager» back to the numbers from before the count, for lines the app has written."""
+    g = store.run(gid)
+    cnt = store.counts().get(gid)
+    if not cnt or not cnt["written_values"]:
         raise bomlib.BomError("Ingenting fra denne tellingen står i BOM-en.")
-    sv = tell["skrevet_verdier"]
-    linjer = {l["key"]: l for l in tell["linjer"]}
-    keys = [k for k in sv if k in linjer]
-    res = _skriv_lager(g, tell["linjer"], {k: linjer[k]["lagerFor"] for k in keys}, {k: sv[k] for k in keys})
-    if res["skrevet"]:
-        sv = {k: v for k, v in sv.items() if k not in res["skrevet"]}
-        store.telling_skrevet(gid, sv, _logg(tell, "angret", res), tell["skrevet"], tell["backup"])
+    wv = cnt["written_values"]
+    lines = {l["key"]: l for l in cnt["lines"]}
+    keys = [k for k in wv if k in lines]
+    res = _write_stock(g, cnt["lines"], {k: lines[k]["stockBefore"] for k in keys}, {k: wv[k] for k in keys})
+    if res["written"]:
+        wv = {k: v for k, v in wv.items() if k not in res["written"]}
+        store.count_written(gid, wv, _log(cnt, "undone", res), cnt["written"], cnt["backup"])
     return jsonify(res)
 
 
-@app.post("/api/gjennomforinger/<gid>/telling/hent")
+@app.post("/api/runs/<gid>/count/fetch")
 def adopt_count(gid):
-    """Bruk «På lager» fra BOM-en som telt antall, for linjer som er endret i Excel etter skriving.
+    """Use «På lager» from the BOM as the counted quantity, for lines changed in Excel after writing.
 
-    For når endringen i Excel var en retting av tellingen. Svinn regnes da ut fra det nye tallet.
+    For when the change in Excel was a correction of the count. Loss is then computed from the new number.
     """
-    g = store.gjennomforing(gid)
-    tell = store.tellinger().get(gid)
-    if not tell:
+    g = store.run(gid)
+    cnt = store.counts().get(gid)
+    if not cnt:
         raise bomlib.BomError("Det finnes ingen telling.")
-    _, c, _, _ = beregn(g)
-    endret = telling.endret_i_bom(tell["skrevet_verdier"], c["rader"])
-    if not endret:
+    _, c, _, _ = calculate(g)
+    changed = counting.changed_in_bom(cnt["written_values"], c["rows"])
+    if not changed:
         raise bomlib.BomError("Ingen linjer er endret i BOM-en siden tellingen ble skrevet.")
-    linjer = [{**l, "telt": endret[l["key"]]} if l["key"] in endret else l for l in tell["linjer"]]
-    store.lagre_telling(gid, g["prosjektId"], tell["dato"], linjer)
-    logg = tell["logg"] + [{"tid": dt.datetime.now().isoformat(timespec="minutes"), "handling": "hentet", "av": auth.meg()["navn"],
-                            "linjer": len(endret), "konflikter": 0, "backup": None}]
-    store.telling_skrevet(gid, {**tell["skrevet_verdier"], **endret}, logg, tell["skrevet"], tell["backup"])
-    return jsonify({"hentet": len(endret), **telling.oppsummering(linjer)})
+    lines = [{**l, "counted": changed[l["key"]]} if l["key"] in changed else l for l in cnt["lines"]]
+    store.save_count(gid, g["projectId"], cnt["date"], lines)
+    log = cnt["log"] + [{"time": dt.datetime.now().isoformat(timespec="minutes"), "action": "fetched", "by": auth.me()["name"],
+                            "lines": len(changed), "conflicts": 0, "backup": None}]
+    store.count_written(gid, {**cnt["written_values"], **changed}, log, cnt["written"], cnt["backup"])
+    return jsonify({"fetched": len(changed), **counting.summary(lines)})
 
 
-@app.delete("/api/gjennomforinger/<gid>/telling")
+@app.delete("/api/runs/<gid>/count")
 def delete_count(gid):
-    store.gjennomforing(gid)
-    tell = store.tellinger().get(gid)
-    if tell and tell["skrevet_verdier"]:
+    store.run(gid)
+    cnt = store.counts().get(gid)
+    if cnt and cnt["written_values"]:
         raise bomlib.BomError("Noe fra tellingen står i BOM-en. Angre først, så kan den slettes.")
-    store.slett_telling(gid)
+    store.delete_count(gid)
     return jsonify({"ok": True})
 
 
-@app.put("/api/stengte")
+@app.put("/api/closed-periods")
 def set_closed():
     body = request.get_json(force=True)
     if not isinstance(body, list) or len(body) > 20:
@@ -1092,20 +1093,20 @@ def set_closed():
     out = []
     for c in body:
         try:
-            navn, fra, til = str(c["navn"]).strip(), int(c["fra"]), int(c["til"])
+            name, from_, to = str(c["name"]).strip(), int(c["from_week"]), int(c["to_week"])
         except (KeyError, TypeError, ValueError):
             raise bomlib.BomError("Ugyldig stengt periode.")
-        if not navn or not (1 <= fra <= 53 and 1 <= til <= 53):
+        if not name or not (1 <= from_ <= 53 and 1 <= to <= 53):
             raise bomlib.BomError("En stengt periode trenger navn og uker mellom 1 og 53.")
-        out.append({"navn": navn, "fra": fra, "til": til, "paske": bool(c.get("paske"))})
-    store.sett_stengte(out)
+        out.append({"name": name, "from_week": from_, "to_week": to, "easter": bool(c.get("easter"))})
+    store.set_closed(out)
     return jsonify(out)
 
 
-@app.post("/api/mappe/<hvilken>")
-def open_folder(hvilken):
+@app.post("/api/folder/<which>")
+def open_folder(which):
     only_local()
-    path = {"bom": BOM_DIR, "lister": LIST_DIR}.get(hvilken)
+    path = {"bom": BOM_DIR, "lists": LIST_DIR}.get(which)
     if not path:
         raise bomlib.BomError("Ukjent mappe.")
     path.mkdir(exist_ok=True)
@@ -1113,9 +1114,9 @@ def open_folder(hvilken):
     return jsonify({"ok": True})
 
 
-import adminpanel  # noqa: E402  (etter alt det bruker)
+import admin_panel  # noqa: E402  (after everything it uses)
 
-adminpanel.init(app, sys.modules[__name__])
+admin_panel.init(app, sys.modules[__name__])
 
 
 # ---------- oppstart ----------
@@ -1123,11 +1124,11 @@ adminpanel.init(app, sys.modules[__name__])
 def main() -> None:
     debug = "--debug" in sys.argv
     url = f"http://127.0.0.1:{config.PORT}/"
-    # Flask sin omlaster starter skriptet to ganger; bare første runde sjekker og åpner nettleseren
+    # Flask's reloader starts the script twice; only the first run checks and opens the browser
     first_run = not os.environ.get("WERKZEUG_RUN_MAIN")
     if first_run:
         with socket.socket() as s:
-            if s.connect_ex(("127.0.0.1", config.PORT)) == 0:  # kjører allerede
+            if s.connect_ex(("127.0.0.1", config.PORT)) == 0:  # already running
                 print("Årshjulet kjører allerede – åpner nettleseren.")
                 if config.OPEN_LOCAL:
                     webbrowser.open(url)
@@ -1138,12 +1139,12 @@ def main() -> None:
     if first_run:
         if config.OPEN_LOCAL:
             threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-        print(f"Årshjulet kjører på {url}  (modus: {config.MODUS})")
+        print(f"Årshjulet kjører på {url}  (modus: {config.MODE})")
         print(f"  Data:      {config.DATA_DIR}")
         print(f"  BOM-mappe: {BOM_DIR}")
         if config.SETTINGS_FILE.exists():
             print(f"  Innstillinger fra {config.SETTINGS_FILE.name}")
-        if config.LOKAL:
+        if config.LOCAL:
             print("Lukk dette vinduet for å stoppe.")
     if debug:
         app.run(host=config.HOST, port=config.PORT, debug=True)

@@ -1,9 +1,9 @@
-"""Lesing og skriving av BOM-filer (Excel) etter malen.
+"""Reading and writing BOM files (Excel) made from the template.
 
-Excel-filen er sjefen for komponentene: dette modulet leser den og lager nye maler.
-To unntak, begge alltid med en sikkerhetskopi først:
-- «På lager»-kolonnen (H) etter telling og varemottak, når brukeren har bekreftet det (write_stock)
-- antall sett (B10), som årshjulet styrer – ellers regner Excel feil «Å bestille» (write_sett)
+The Excel file is the master copy of the components: this module reads it and creates new templates.
+Two exceptions, both always with a backup first:
+- the «På lager» column (H) after counting and receipts, when the user has confirmed it (write_stock)
+- the set count (B10), which the app owns – otherwise Excel computes «Å bestille» wrong (write_sets)
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ FIRST_ROW, LAST_ROW = 14, 73
 
 
 class BomError(Exception):
-    """Feil som kan vises direkte til brukeren."""
+    """An error that can be shown to the user as it is."""
 
 
 def _num(v) -> float:
@@ -37,8 +37,8 @@ def _txt(v) -> str:
 
 
 def read_bom(path: Path) -> dict:
-    """Leser en BOM laget fra malen. Regner ikke ut antall å bestille –
-    det gjøres med årshjulets antall sett (se calc)."""
+    """Read a BOM made from the template. Doesn't compute the quantity to order –
+    that's done with the app's set count (see calc)."""
     try:
         wb = openpyxl.load_workbook(path, data_only=True, read_only=False)
     except PermissionError as e:
@@ -46,94 +46,94 @@ def read_bom(path: Path) -> dict:
     except Exception as e:  # noqa: BLE001
         raise BomError(f"Kunne ikke lese «{path.name}». Er det en .xlsx-fil?") from e
     ws = wb.worksheets[0]
-    if _txt(ws["C13"].value).lower() != "beskrivelse":
+    if _txt(ws["C13"].value).lower() != "beskrivelse":  # the template's header in C13 (Excel data, Norwegian)
         raise BomError(f"«{path.name}» ser ikke ut som en BOM laget fra malen.")
 
-    dato = ws["F7"].value or ws["E7"].value
-    if isinstance(dato, (dt.datetime, dt.date)):
-        dato = dato.strftime("%d.%m.%Y")
-    mva = ws["D10"].value
-    rader = []
+    date = ws["F7"].value or ws["E7"].value
+    if isinstance(date, (dt.datetime, dt.date)):
+        date = date.strftime("%d.%m.%Y")
+    vat = ws["D10"].value
+    rows = []
     for r in range(FIRST_ROW, LAST_ROW + 1):
-        besk = _txt(ws[f"C{r}"].value)
-        if not besk:
+        desc = _txt(ws[f"C{r}"].value)
+        if not desc:
             continue
-        rader.append({
-            "beskrivelse": besk,
-            "kategori": _txt(ws[f"D{r}"].value),
-            "leverandor": _txt(ws[f"E{r}"].value),
-            "varenummer": _txt(ws[f"F{r}"].value),
-            "prSett": _num(ws[f"G{r}"].value),
-            "lager": _num(ws[f"H{r}"].value),
-            "pris": _num(ws[f"J{r}"].value),
-            "kommentar": _txt(ws[f"L{r}"].value),
+        rows.append({
+            "description": desc,
+            "category": _txt(ws[f"D{r}"].value),
+            "supplier": _txt(ws[f"E{r}"].value),
+            "part_number": _txt(ws[f"F{r}"].value),
+            "perSet": _num(ws[f"G{r}"].value),
+            "in_stock": _num(ws[f"H{r}"].value),
+            "price": _num(ws[f"J{r}"].value),
+            "comment": _txt(ws[f"L{r}"].value),
         })
     return {
-        "fil": path.name,
-        "prosjekt": _txt(ws["B7"].value),
-        "ansvarlig": _txt(ws["D7"].value),
-        "dato": _txt(dato),
-        "sett": int(_num(ws["B10"].value)) or None,
-        "mva": 0.25 if mva in (None, "") else _num(mva),
-        "rader": rader,
-        "endret": dt.datetime.fromtimestamp(path.stat().st_mtime).strftime("%d.%m.%Y %H:%M"),
+        "file": path.name,
+        "project": _txt(ws["B7"].value),
+        "responsible": _txt(ws["D7"].value),
+        "date": _txt(date),
+        "sets": int(_num(ws["B10"].value)) or None,
+        "vat": 0.25 if vat in (None, "") else _num(vat),
+        "rows": rows,
+        "changed": dt.datetime.fromtimestamp(path.stat().st_mtime).strftime("%d.%m.%Y %H:%M"),
     }
 
 
-def calc(bom: dict, sett: int) -> dict:
-    """Antall å bestille = per sett × antall sett − på lager."""
-    rader = []
-    for r in bom["rader"]:
-        bestill = max(0.0, r["prSett"] * sett - r["lager"])
-        rader.append({**r, "bestill": bestill, "total": round(bestill * r["pris"], 2)})
-    eks = round(sum(r["total"] for r in rader), 2)
+def calc(bom: dict, sets: int) -> dict:
+    """Quantity to order = per set × sets − in stock."""
+    rows = []
+    for r in bom["rows"]:
+        to_order = max(0.0, r["perSet"] * sets - r["in_stock"])
+        rows.append({**r, "to_order": to_order, "total": round(to_order * r["price"], 2)})
+    excl = round(sum(r["total"] for r in rows), 2)
     return {
-        "rader": rader,
-        "linjer": len(rader),
-        "bestill": sum(1 for r in rader if r["bestill"] > 0),
-        "eks": eks,
-        "inkl": round(eks * (1 + bom["mva"]), 2),
+        "rows": rows,
+        "lines": len(rows),
+        "to_order": sum(1 for r in rows if r["to_order"] > 0),
+        "excl": excl,
+        "incl": round(excl * (1 + bom["vat"]), 2),
     }
 
 
 # ---------- endringer siden sist ----------
 
-def rad_key(r: dict) -> str:
-    """Identiteten til en BOM-linje: leverandør + varenummer (eller beskrivelse uten varenummer).
+def row_key(r: dict) -> str:
+    """The identity of a BOM line: supplier + part number (or the description when there's no part number).
 
-    Varenumre er bare unike hos én leverandør – RS og Farnell kan ha samme nummer på hver sin vare.
+    Part numbers are only unique at one supplier – RS and Farnell can use the same number for different parts.
     """
-    lev = (r.get("leverandor") or "").strip().lower()
-    return f"{lev}|{(r.get('varenummer') or r.get('beskrivelse') or '').strip().lower()}"
+    supplier = (r.get("supplier") or "").strip().lower()
+    return f"{supplier}|{(r.get('part_number') or r.get('description') or '').strip().lower()}"
 
 
-def _unike(rader: list[dict]) -> list[tuple[str, dict]]:
-    """(nøkkel, rad) der like nøkler får «#2», «#3» … i rekkefølge, så to helt like linjer
-    i samme BOM ikke blandes sammen."""
-    sett: dict[str, int] = {}
+def _unique(rows: list[dict]) -> list[tuple[str, dict]]:
+    """(key, row) where equal keys get «#2», «#3» … in order, so two identical lines
+    in the same BOM aren't mixed up."""
+    sets: dict[str, int] = {}
     out = []
-    for r in rader:
-        k = rad_key(r)
-        sett[k] = sett.get(k, 0) + 1
-        out.append((k if sett[k] == 1 else f"{k}#{sett[k]}", r))
+    for r in rows:
+        k = row_key(r)
+        sets[k] = sets.get(k, 0) + 1
+        out.append((k if sets[k] == 1 else f"{k}#{sets[k]}", r))
     return out
 
 
-# leverandør er en del av nøkkelen: bytte leverandør vises som en linje fjernet og en ny
-FIELDS = [("beskrivelse", "beskrivelse"), ("prSett", "per sett"),
-          ("lager", "på lager"), ("pris", "pris"), ("kommentar", "kommentar")]
+# the supplier is part of the key: changing supplier shows up as one line removed and a new one
+FIELDS = [("description", "beskrivelse"), ("perSet", "per sett"),  # (key, label users see)
+          ("in_stock", "på lager"), ("price", "pris"), ("comment", "kommentar")]
 
 
 def diff(old: list[dict], new: list[dict]) -> list[dict]:
-    old_k, new_k = _unike(old), _unike(new)
+    old_k, new_k = _unique(old), _unique(new)
     a, b = dict(old_k), dict(new_k)
     out = []
     for k, r in new_k:
         if k not in a:
-            out.append({"type": "ny", "beskrivelse": r["beskrivelse"], "varenummer": r["varenummer"], "prSett": r["prSett"]})
+            out.append({"type": "new", "description": r["description"], "part_number": r["part_number"], "perSet": r["perSet"]})
     for k, r in old_k:
         if k not in b:
-            out.append({"type": "fjernet", "beskrivelse": r["beskrivelse"], "varenummer": r["varenummer"]})
+            out.append({"type": "removed", "description": r["description"], "part_number": r["part_number"]})
     for k, r in new_k:
         o = a.get(k)
         if not o:
@@ -142,105 +142,105 @@ def diff(old: list[dict], new: list[dict]) -> list[dict]:
             x, y = o.get(k, ""), r.get(k, "")
             changed = abs(_num(x) - _num(y)) > 1e-9 if isinstance(y, (int, float)) else _txt(x) != _txt(y)
             if changed:
-                out.append({"type": "endret", "beskrivelse": r["beskrivelse"], "felt": label, "fra": x, "til": y})
+                out.append({"type": "changed", "description": r["description"], "field": label, "from": x, "to": y})
     return out
 
 
-# ---------- oppdatere lager etter telling ----------
+# ---------- updating stock after a count ----------
 
-def write_stock(path: Path, verdier: dict[str, float], backup_dir: Path,
-                forventet: dict[str, float] | None = None, legg_til: bool = False) -> dict:
-    """Skriv nye «På lager»-tall (kolonne H) i en eksisterende BOM.
+def write_stock(path: Path, values_: dict[str, float], backup_dir: Path,
+                expected: dict[str, float] | None = None, add: bool = False) -> dict:
+    """Write new «På lager» numbers (column H) in an existing BOM.
 
-    verdier:   {linje-nøkkel: nytt antall}, eller med legg_til: antall som legges til
-               (negativt trekker fra). Bare kolonne H endres.
-    forventet: {linje-nøkkel: antall cellen skal ha nå}. Står det noe annet der (endret i
-               Excel siden sist), skrives linjen ikke, men meldes som konflikt.
-    legg_til:  varemottak. Legger til det som står i cellen nå – riktig også om cellen er
-               endret i Excel. Blir resultatet negativt, er det en konflikt.
-    Svar: skrevet/hoppet/konflikt, «nye» = {nøkkel: tallet som nå står i cellen}, og backup.
-    Linjer som ikke finnes, eller der nøkkelen står på flere rader, hoppes over.
-    Lager en sikkerhetskopi først, men bare hvis noe faktisk skal skrives.
+    values_:   {line key: new quantity}, or with add: the quantity to add
+               (negative subtracts). Only column H is changed.
+    expected:  {line key: what the cell should hold now}. If it holds something else (changed in
+               Excel since), the line isn't written but reported as a conflict.
+    add:       receipt. Adds to what the cell holds now – right even if the cell has been
+               changed in Excel. If the result would be negative, it's a conflict.
+    Returns: written/skipped/conflict, «created» = {key: the number now in the cell}, and backup.
+    Lines that don't exist, or whose key is on several rows, are skipped.
+    Takes a backup first, but only if something is actually going to be written.
     """
-    forventet = forventet or {}
-    wb = _apne_for_skriving(path)
+    expected = expected or {}
+    wb = _open_for_writing(path)
     ws = wb.worksheets[0]
-    rader: dict[str, list[int]] = {}
+    rows: dict[str, list[int]] = {}
     for r in range(FIRST_ROW, LAST_ROW + 1):
-        besk = _txt(ws[f"C{r}"].value)
-        if besk:
-            rader.setdefault(rad_key({"beskrivelse": besk, "varenummer": _txt(ws[f"F{r}"].value),
-                                      "leverandor": _txt(ws[f"E{r}"].value)}), []).append(r)
-    skrevet, hoppet, konflikt, nye = [], [], [], {}
-    for key, antall in verdier.items():
-        rows = rader.get(key, [])
-        if len(rows) != 1:
-            hoppet.append(key)
+        desc = _txt(ws[f"C{r}"].value)
+        if desc:
+            rows.setdefault(row_key({"description": desc, "part_number": _txt(ws[f"F{r}"].value),
+                                      "supplier": _txt(ws[f"E{r}"].value)}), []).append(r)
+    written, skipped, conflict, created = [], [], [], {}
+    for key, quantity in values_.items():
+        matches = rows.get(key, [])
+        if len(matches) != 1:
+            skipped.append(key)
             continue
-        celle = ws[f"H{rows[0]}"]
-        if key in forventet and abs(_num(celle.value) - float(forventet[key])) > 1e-9:
-            konflikt.append({"key": key, "forventet": float(forventet[key]), "faktisk": _num(celle.value)})
+        cell = ws[f"H{matches[0]}"]
+        if key in expected and abs(_num(cell.value) - float(expected[key])) > 1e-9:
+            conflict.append({"key": key, "expected": float(expected[key]), "actual": _num(cell.value)})
             continue
-        ny = _num(celle.value) + float(antall) if legg_til else float(antall)
-        if ny < -1e-9:
-            konflikt.append({"key": key, "forventet": -float(antall), "faktisk": _num(celle.value)})
+        new = _num(cell.value) + float(quantity) if add else float(quantity)
+        if new < -1e-9:
+            conflict.append({"key": key, "expected": -float(quantity), "actual": _num(cell.value)})
             continue
-        celle.value = int(ny) if float(ny).is_integer() else ny
-        skrevet.append(key)
-        nye[key] = ny
-    if not skrevet:
-        return {"skrevet": [], "hoppet": hoppet, "konflikt": konflikt, "nye": {}, "backup": None}
-    backup = _lagre_med_backup(wb, path, backup_dir)
-    return {"skrevet": skrevet, "hoppet": hoppet, "konflikt": konflikt, "nye": nye, "backup": backup}
+        cell.value = int(new) if float(new).is_integer() else new
+        written.append(key)
+        created[key] = new
+    if not written:
+        return {"written": [], "skipped": skipped, "conflict": conflict, "created": {}, "backup": None}
+    backup = _save_with_backup(wb, path, backup_dir)
+    return {"written": written, "skipped": skipped, "conflict": conflict, "created": created, "backup": backup}
 
 
-# ---------- antall sett (B10) ----------
+# ---------- the set count (B10) ----------
 
-_INGEN = object()
+_NONE = object()
 
 
-def write_sett(path: Path, sett: int | None, backup_dir: Path, forventet=_INGEN) -> dict:
-    """Skriv årshjulets antall sett i B10, som «Å bestille»-formlene i BOM-en bruker.
+def write_sets(path: Path, sets: int | None, backup_dir: Path, expected=_NONE) -> dict:
+    """Write the app's set count to B10, which the BOM's «Å bestille» formulas use.
 
-    forventet: det B10 skal inneholde nå (årshjulets forrige tall). Står det noe annet der
-               (endret for hånd i Excel), skrives det ikke, men meldes som konflikt.
-    Svar: {"skrevet": bool, "for": tallet som stod der, "fil": tallet i B10 nå, "backup": navn eller None}.
+    expected: what B10 should hold now (the app's previous number). If it holds something else
+              (changed by hand in Excel), nothing is written, and it's reported as a conflict.
+    Returns: {"written": bool, "for": the number that was there, "file": the number in B10 now, "backup": name or None}.
     """
-    wb = _apne_for_skriving(path)
-    celle = wb.worksheets[0]["B10"]
-    na = int(_num(celle.value)) or None
-    if na == (sett or None):
-        return {"skrevet": False, "for": na, "fil": na, "backup": None}
-    if forventet is not _INGEN and na != (forventet or None):
-        return {"skrevet": False, "for": na, "fil": na, "backup": None, "konflikt": True}
-    celle.value = sett or None
-    return {"skrevet": True, "for": na, "fil": sett or None, "backup": _lagre_med_backup(wb, path, backup_dir)}
+    wb = _open_for_writing(path)
+    cell = wb.worksheets[0]["B10"]
+    current = int(_num(cell.value)) or None
+    if current == (sets or None):
+        return {"written": False, "for": current, "file": current, "backup": None}
+    if expected is not _NONE and current != (expected or None):
+        return {"written": False, "for": current, "file": current, "backup": None, "conflict": True}
+    cell.value = sets or None
+    return {"written": True, "for": current, "file": sets or None, "backup": _save_with_backup(wb, path, backup_dir)}
 
 
 # ---------- felles for skriving ----------
 
-def _apne_for_skriving(path: Path):
-    """Åpne en BOM med formlene (ikke verdiene), og nekt hvis den er åpen i Excel."""
+def _open_for_writing(path: Path):
+    """Open a BOM with its formulas (not the values), and refuse if it's open in Excel."""
     if (path.parent / f"~${path.name}").exists():
         raise BomError(f"«{path.name}» er åpen i Excel. Lukk den og prøv igjen.")
     try:
         wb = openpyxl.load_workbook(path)
     except PermissionError as e:
         raise BomError(f"«{path.name}» er låst. Lukk den i Excel og prøv igjen.") from e
-    if _txt(wb.worksheets[0]["C13"].value).lower() != "beskrivelse":
+    if _txt(wb.worksheets[0]["C13"].value).lower() != "beskrivelse":  # the template's header in C13 (Excel data, Norwegian)
         raise BomError(f"«{path.name}» ser ikke ut som en BOM laget fra malen.")
     return wb
 
 
-def _lagre_med_backup(wb, path: Path, backup_dir: Path) -> str:
-    """Sikkerhetskopi av filen slik den er, så lagre. Returnerer navnet på kopien."""
+def _save_with_backup(wb, path: Path, backup_dir: Path) -> str:
+    """Back up the file as it is, then save. Returns the name of the backup."""
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = f"{path.stem} {dt.datetime.now():%Y-%m-%d %H%M%S}"
     backup, n = backup_dir / f"{stamp}{path.suffix}", 2
-    while backup.exists():  # aldri overskriv en tidligere sikkerhetskopi
+    while backup.exists():  # never overwrite an earlier backup
         backup, n = backup_dir / f"{stamp} ({n}){path.suffix}", n + 1
     shutil.copy2(path, backup)
-    wb.calculation.fullCalcOnLoad = True  # Excel regner ut «Å bestille» og «Total» på nytt
+    wb.calculation.fullCalcOnLoad = True  # Excel recomputes «Å bestille» and «Total»
     try:
         wb.save(path)
     except PermissionError as e:
@@ -250,38 +250,38 @@ def _lagre_med_backup(wb, path: Path, backup_dir: Path) -> str:
 
 # ---------- nye filer ----------
 
-def make_template(template: Path, target: Path, *, prosjekt: str, dato: dt.date,
-                  frist: dt.date, sett: int | None) -> None:
+def make_template(template: Path, target: Path, *, project: str, date: dt.date,
+                  deadline: dt.date, sets: int | None) -> None:
     if target.exists():
         raise BomError(f"«{target.name}» finnes allerede i BOM-mappen.")
     wb = openpyxl.load_workbook(template)
     ws = wb.worksheets[0]
-    ws["B7"] = prosjekt
-    ws["F7"] = dt.datetime.combine(dato, dt.time())
-    ws["F10"] = dt.datetime.combine(frist, dt.time())
-    ws["B10"] = sett or None
+    ws["B7"] = project
+    ws["F7"] = dt.datetime.combine(date, dt.time())
+    ws["F10"] = dt.datetime.combine(deadline, dt.time())
+    ws["B10"] = sets or None
     wb.save(target)
 
 
-def make_order_list(template: Path, target: Path, *, bom: dict, beregnet: dict, prosjekt: str,
-                    sett: int, list_id: str) -> None:
+def make_order_list(template: Path, target: Path, *, bom: dict, calculated: dict, project: str,
+                    sets: int, list_id: str) -> None:
     rows = []
-    for i, r in enumerate(beregnet["rader"], start=1):
-        rows.append({"id": i, "nr": i, "beskrivelse": r["beskrivelse"], "kategori": r["kategori"],
-                     "leverandor": r["leverandor"], "varenummer": r["varenummer"],
-                     "antall": r["bestill"], "pris": r["pris"], "total": r["total"], "kommentar": r["kommentar"]})
+    for i, r in enumerate(calculated["rows"], start=1):
+        rows.append({"id": i, "no": i, "description": r["description"], "category": r["category"],
+                     "supplier": r["supplier"], "part_number": r["part_number"],
+                     "quantity": r["to_order"], "price": r["price"], "total": r["total"], "comment": r["comment"]})
     now = dt.datetime.now()
     data = {
-        "meta": {"prosjekt": bom["prosjekt"] or prosjekt, "ansvarlig": bom["ansvarlig"], "dato": bom["dato"],
-                 "sett": str(sett) if sett else ""},
-        "cols": [{"key": "nr", "label": "Nr"}, {"key": "beskrivelse", "label": "Beskrivelse"},
-                 {"key": "kategori", "label": "Kategori"}, {"key": "leverandor", "label": "Leverandør"},
-                 {"key": "varenummer", "label": "Varenummer"}, {"key": "antall", "label": "Antall", "kind": "qty"},
-                 {"key": "pris", "label": "Pris pr enhet", "kind": "money"},
-                 {"key": "total", "label": "Total", "kind": "money"}, {"key": "kommentar", "label": "Kommentar"}],
+        "meta": {"project": bom["project"] or project, "responsible": bom["responsible"], "date": bom["date"],
+                 "sets": str(sets) if sets else ""},
+        "cols": [{"key": "no", "label": "Nr"}, {"key": "description", "label": "Beskrivelse"},
+                 {"key": "category", "label": "Kategori"}, {"key": "supplier", "label": "Leverandør"},
+                 {"key": "part_number", "label": "Varenummer"}, {"key": "quantity", "label": "Antall", "kind": "qty"},
+                 {"key": "price", "label": "Pris pr enhet", "kind": "money"},
+                 {"key": "total", "label": "Total", "kind": "money"}, {"key": "comment", "label": "Kommentar"}],
         "rows": rows,
-        "totals": {"eks": beregnet["eks"], "inkl": beregnet["inkl"]},
-        "source": bom["fil"],
+        "totals": {"excl": calculated["excl"], "incl": calculated["incl"]},
+        "source": bom["file"],
         "generated": f"{now.day}.{now.month}.{now.year} {now:%H:%M}",
         "id": list_id,
     }

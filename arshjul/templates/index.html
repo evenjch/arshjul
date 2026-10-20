@@ -8,15 +8,15 @@
 <meta name="csrf" content="{{ csrf_token }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='arshjul.css') }}">
 </head>
-<body data-rolle="{{ meg.rolle }}">
+<body data-userrole="{{ me.role }}">
 <div class="wrap">
   <header>
     <div>
       <div class="eyebrow">Elektronikk · innkjøp til undervisning</div>
       <h1>Årshjul for innkjøp</h1>
       <div class="meta" id="today"></div>
-      {% if meg %}<div class="meg">Innlogget som <b>{{ meg.navn }}</b> ({{ rollenavn[meg.rolle] | lower }})
-        {% if meg.admin %}<a class="mini adminlenke" href="/admin">Administrator →</a>{% endif %}
+      {% if me %}<div class="me">Innlogget som <b>{{ me.name }}</b> ({{ roleName[me.role] | lower }})
+        {% if me.admin %}<a class="mini admin-link" href="/admin">Administrator →</a>{% endif %}
         <form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button class="mini quiet" type="submit">Logg ut</button></form></div>{% endif %}
     </div>
     <div class="stats" id="stats"></div>
@@ -36,15 +36,15 @@
       </div>
       <svg id="wheel" viewBox="0 0 600 600" role="img" aria-label="Årshjul med prosjekter og bestillingsfrister"></svg>
       <div class="legend">
-        <span class="ing"><span class="dot" style="background:var(--muted)"></span>Bestillingsfrist</span>
-        <span class="ing"><span class="sw lead"></span>Bestilling og levering</span>
+        <span class="eng"><span class="dot" style="background:var(--muted)"></span>Bestillingsfrist</span>
+        <span class="eng"><span class="sw lead"></span>Bestilling og levering</span>
         <span><span class="sw use"></span>I bruk</span>
-        <span class="ing"><span class="sq"></span>Innlevering / telling</span>
+        <span class="eng"><span class="sq"></span>Innlevering / telling</span>
         <span><span class="sw closed"></span>Stengt periode</span>
-        <span title="Det som stikker inn fra skoleåret før eller etter, f.eks. neste års bestillingsfrister i juni"><span class="sw use nabo"></span>Annet skoleår</span>
-        <span class="ing"><span class="ring ok"></span>Bestilt</span>
-        <span class="ing"><span class="ring soon"></span>Frist snart / må bestille mer</span>
-        <span class="ing"><span class="ring late"></span>Frist passert</span>
+        <span title="Det som stikker inn fra skoleåret før eller etter, f.eks. neste års bestillingsfrister i juni"><span class="sw use neighbour"></span>Annet skoleår</span>
+        <span class="eng"><span class="ring ok"></span>Bestilt</span>
+        <span class="eng"><span class="ring soon"></span>Frist snart / må bestille mer</span>
+        <span class="eng"><span class="ring late"></span>Frist passert</span>
       </div>
     </div>
     <div class="panel">
@@ -58,9 +58,9 @@
       <h2>Prosjekter <span id="syTable"></span></h2>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <span class="status" id="status"></span>
-        <button class="tbtn ing" id="openBomDir" type="button" title="Åpner BOM-mappen i Utforsker">BOM-mappen</button>
-        <button class="tbtn ing" id="openListDir" type="button" title="Åpner mappen med bestillingslister">Bestillingslister</button>
-        <button class="tbtn ing" id="copyOpen" type="button" aria-expanded="false" aria-controls="copybox" hidden></button>
+        <button class="tbtn eng" id="openBomDir" type="button" title="Åpner BOM-mappen i Utforsker">BOM-mappen</button>
+        <button class="tbtn eng" id="openListDir" type="button" title="Åpner mappen med bestillingslister">Bestillingslister</button>
+        <button class="tbtn eng" id="copyOpen" type="button" aria-expanded="false" aria-controls="copybox" hidden></button>
         <button class="tbtn" id="addToggle" type="button" aria-expanded="false" aria-controls="addbox">+ Legg til nytt prosjekt</button>
       </div>
     </div>
@@ -69,29 +69,29 @@
       <form id="addForm" novalidate>
         <p class="wide formnote">Legges inn i skoleåret <b id="f-sy"></b>.</p>
         <label class="wide">Emne
-          <select id="f-emne"></select>
+          <select id="f-course"></select>
         </label>
         <label class="wide">Navn på prosjekt
-          <input type="text" id="f-navn" placeholder="F.eks. Lodde-workshop" autocomplete="off">
+          <input type="text" id="f-name" placeholder="F.eks. Lodde-workshop" autocomplete="off">
         </label>
         <label>Type
           <select id="f-type">
-            <option value="sett" title="Brukes hele semesteret">Semestersett</option>
-            <option value="prosjekt" title="Vanlig prosjekt over flere uker">Prosjekt</option>
-            <option value="hack" selected title="Lite prosjekt, vanligvis 1–3 dager">Hackathon</option>
+            <option value="semester_kit" title="Brukes hele semesteret">Semestersett</option>
+            <option value="project" title="Vanlig prosjekt over flere uker">Prosjekt</option>
+            <option value="hackathon" selected title="Lite prosjekt, vanligvis 1–3 dager">Hackathon</option>
             <option value="lab" title="Én dag – alt utstyr leveres tilbake samme dag">Lab</option>
           </select>
         </label>
         <label>I bruk fra uke <input type="number" id="f-start" min="1" max="53" value="40"></label>
-        <label>til uke <input type="number" id="f-slutt" min="1" max="53" value="40"></label>
-        <p class="wide formnote">Uke 32–53 er høsten, uke 1–31 våren etter. <b id="f-datoer"></b></p>
-        <label class="ing">Leveringstid (uker) <input type="number" id="f-lev" min="0" max="20" value="2"></label>
-        <label class="ing">Buffer (uker) <input type="number" id="f-buf" min="0" max="20" value="2"></label>
-        <label>Antall studenter <input type="number" id="f-studenter" min="0" max="2000" placeholder="F.eks. 60" title="Hentes fra emnet – endre hvis dette prosjektet avviker"></label>
-        <label>Studenter per gruppe <input type="number" id="f-gruppe" min="1" max="20" value="1"></label>
-        <label>Ekstra sett <input type="number" id="f-ekstra" min="0" max="99" value="0"></label>
-        <p class="wide formnote">Antall studenter hentes fra emnet, men kan endres for dette prosjektet. Antall sett = studenter ÷ gruppestørrelse (rundet opp) + ekstra. <b id="f-settsum"></b></p>
-        <label class="wide">Notat <input type="text" id="f-notat" placeholder="Valgfritt, f.eks. emnekode" autocomplete="off"></label>
+        <label>til uke <input type="number" id="f-finish" min="1" max="53" value="40"></label>
+        <p class="wide formnote">Uke 32–53 er høsten, uke 1–31 våren etter. <b id="f-dates"></b></p>
+        <label class="eng">Leveringstid (uker) <input type="number" id="f-lead" min="0" max="20" value="2"></label>
+        <label class="eng">Buffer (uker) <input type="number" id="f-buf" min="0" max="20" value="2"></label>
+        <label>Antall studenter <input type="number" id="f-students" min="0" max="2000" placeholder="F.eks. 60" title="Hentes fra emnet – endre hvis dette prosjektet avviker"></label>
+        <label>Studenter per gruppe <input type="number" id="f-group" min="1" max="20" value="1"></label>
+        <label>Ekstra sett <input type="number" id="f-spare" min="0" max="99" value="0"></label>
+        <p class="wide formnote">Antall studenter hentes fra emnet, men kan endres for dette prosjektet. Antall sett = studenter ÷ gruppestørrelse (rundet opp) + ekstra. <b id="f-setsum"></b></p>
+        <label class="wide">Notat <input type="text" id="f-note" placeholder="Valgfritt, f.eks. emnekode" autocomplete="off"></label>
         <div class="actions">
           <button class="pbtn" type="submit" id="f-save">Legg til</button>
           <button class="tbtn" type="button" id="f-cancel">Avbryt</button>
@@ -100,7 +100,7 @@
       </form>
     </div>
 
-    <div class="addbox ing" id="copybox" hidden>
+    <div class="addbox eng" id="copybox" hidden>
       <h3 class="boxtitle" id="copyTitle"></h3>
       <p class="formnote">Gå gjennom listen: rett ukene hvis timeplanen er endret, og antall studenter hvis klassen er en annen (eller bruk emnets tall). Gruppestørrelse, ekstra sett, BOM, leveringstid og buffer kopieres som i år – endrer du dem neste år, står årets som før. Bestillinger kopieres ikke, så neste år starter som «ikke bestilt». Er BOM-en ikke telt etter i år, blir «På lager» – og dermed neste års bestilling – feil.</p>
       <div class="copylist" id="copyList"></div>
@@ -111,30 +111,30 @@
       </div>
     </div>
 
-    <div id="diffs" class="ing"></div>
+    <div id="diffs" class="eng"></div>
 
     <div class="tablebox">
       <table>
         <thead><tr>
-          <th>Prosjekt</th><th>Type</th><th>I bruk fra</th><th>til uke</th><th title="Leveringstid i uker">Levering</th><th title="Buffer i uker">Buffer</th><th title="Studenter ÷ per gruppe + ekstra sett">Sett</th><th>Bestillingsfrist</th><th class="ing">Bestilling</th><th class="ing">BOM</th><th></th>
+          <th>Prosjekt</th><th>Type</th><th>I bruk fra</th><th>til uke</th><th title="Leveringstid i uker">Levering</th><th title="Buffer i uker">Buffer</th><th title="Studenter ÷ per gruppe + ekstra sett">Sett</th><th>Bestillingsfrist</th><th class="eng">Bestilling</th><th class="eng">BOM</th><th></th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
     </div>
   </section>
 
-  <section class="emner" id="emnerSec">
+  <section class="courses" id="coursesSec">
     <div class="row">
       <h2>Emner</h2>
-      <button class="tbtn" id="emneNy" type="button">+ Nytt emne</button>
+      <button class="tbtn" id="courseNew" type="button">+ Nytt emne</button>
     </div>
-    <p class="muted ing">Hvert prosjekt hører til et emne. Emnet bestemmer hvilken faglærer som kan endre prosjektene, og hvilken ingeniør som har ansvaret og får varslene. Antall studenter brukes som standard når et nytt prosjekt legges i emnet. Endringer lagres med en gang.</p>
-    <p class="muted fag">Dine emner. Velg ingeniøren som skal bestille og ta imot det som trengs til prosjektene i emnet – ingeniøren får beskjed. Prosjekter legger du til under «+ Legg til nytt prosjekt», i ett av emnene her. Antall studenter i emnet fylles inn når du legger til et prosjekt – du kan endre det for prosjekter som avviker. Endringer lagres med en gang.</p>
-    <div class="tablebox"><table id="emneTable"></table></div>
+    <p class="muted eng">Hvert prosjekt hører til et emne. Emnet bestemmer hvilken faglærer som kan endre prosjektene, og hvilken ingeniør som har ansvaret og får varslene. Antall studenter brukes som standard når et nytt prosjekt legges i emnet. Endringer lagres med en gang.</p>
+    <p class="muted lec">Dine emner. Velg ingeniøren som skal bestille og ta imot det som trengs til prosjektene i emnet – ingeniøren får beskjed. Prosjekter legger du til under «+ Legg til nytt prosjekt», i ett av emnene her. Antall studenter i emnet fylles inn når du legger til et prosjekt – du kan endre det for prosjekter som avviker. Endringer lagres med en gang.</p>
+    <div class="tablebox"><table id="courseTable"></table></div>
   </section>
 
 
-  <section class="history ing" id="historySec" hidden>
+  <section class="history eng" id="historySec" hidden>
     <h2>Historikk</h2>
     <p class="muted">Det som er registrert som bestilt per skoleår, eks. mva. Pris per sett i grått.</p>
     <div class="tablebox"><table id="histTable"></table></div>
@@ -144,15 +144,15 @@
     <div>
       <h2>Slik regnes fristen</h2>
       <p>Bestillingsfristen er første bruksuke minus leveringstid og buffer, begge i uker. Uker i en stengt periode telles ikke med, så fristen for høstens startsett havner før fellesferien. Buffer dekker godkjenning hos bestiller, mottak og pakking.</p>
-      <p class="ing" style="margin-top:10px">Under «Bestilling» registrerer du hver leverandør som bestilt. Årshjulet husker hva som ble bestilt, og sier fra hvis BOM-en, studentene eller gruppene endres så du trenger mer.</p>
+      <p class="eng" style="margin-top:10px">Under «Bestilling» registrerer du hver leverandør som bestilt. Årshjulet husker hva som ble bestilt, og sier fra hvis BOM-en, studentene eller gruppene endres så du trenger mer.</p>
       <p style="margin-top:10px">Antall sett er antall studenter ÷ studenter per gruppe, rundet opp, pluss ekstra sett: 60 studenter i grupper på 3 gir 20 sett. Antall å bestille er antall per sett × antall sett − det som er på lager. Studenter og grupper styres her i årshjulet; BOM-en gir komponentene, antall per sett, lagerstatus og pris.</p>
     </div>
-    <div class="ing">
+    <div class="eng">
       <h2>Filene dine</h2>
       <p>BOM-ene leses rett fra BOM-mappen hver gang siden oppdateres. Endre filen i Excel, lagre, og gå tilbake hit. Årshjulet lager nye maler, og skriver bare to ting i en BOM: «På lager» når du ber om det etter telling og mottak, og antall sett når det endres her (Excel regner «Å bestille» fra det) – alltid med sikkerhetskopi i BOM/Sikkerhetskopi først.</p>
       <p style="margin-top:10px">BOM-mappe: <code id="bomDir"></code></p>
       <p style="margin-top:10px">Stengte perioder: <span id="closedList"></span>.
-        <button class="mini quiet ing" id="closedToggle" type="button" aria-expanded="false" aria-controls="closedEdit">Endre</button></p>
+        <button class="mini quiet eng" id="closedToggle" type="button" aria-expanded="false" aria-controls="closedEdit">Endre</button></p>
       <div class="closededit" id="closedEdit" hidden></div>
     </div>
   </div>

@@ -1,175 +1,175 @@
 import app as arshjul
 import config
-from hjelp import lag_bom
+from helpers import make_bom
 
-G = "/api/gjennomforinger"
+G = "/api/runs"
 
 
-def lag(client, **felt):
-    r = client.post(G, json={"navn": "Insektsløp", "skolear": 2026, **felt})
+def make(client, **fields):
+    r = client.post(G, json={"name": "Insektsløp", "school_year": 2026, **fields})
     assert r.status_code == 200, r.get_json()
     return r.get_json()
 
 
-def test_tom_state(client):
+def test_empty_state(client):
     st = client.get("/api/state").get_json()
-    assert st["prosjekter"] == []
-    assert st["modus"] == "lokal"
-    assert len(st["neste8"]) == 8
-    na = st["skolearNa"]
-    assert {s["ar"] for s in st["skolear"]} >= {na, na + 1}
-    assert all(len(s["uker"]) in (52, 53) for s in st["skolear"])
+    assert st["projects"] == []
+    assert st["mode"] == "lokal"
+    assert len(st["next8"]) == 8
+    current = st["schoolYearNow"]
+    assert {s["year"] for s in st["school_year"]} >= {current, current + 1}
+    assert all(len(s["weeks"]) in (52, 53) for s in st["school_year"])
 
 
-def test_opprett_endre_slett(client):
-    p = lag(client, start=44, slutt=44)
-    assert p["prosjektId"].startswith("insektsl")
-    rad = client.get("/api/state").get_json()["prosjekter"][0]
-    assert rad["navn"] == "Insektsløp" and rad["skolear"] == 2026 and rad["semester"] == "Høst"
-    assert rad["frister"]["start"] == {"dato": "2026-10-26", "uke": 44, "ar": 2026}
-    assert len(rad["hendelser"]) == 4
+def test_create_change_delete(client):
+    p = make(client, start=44, finish=44)
+    assert p["projectId"].startswith("insektsl")
+    row = client.get("/api/state").get_json()["projects"][0]
+    assert row["name"] == "Insektsløp" and row["school_year"] == 2026 and row["semester"] == "Høst"
+    assert row["deadlines"]["start"] == {"date": "2026-10-26", "week": 44, "year": 2026}
+    assert len(row["events"]) == 4
 
-    r = client.patch(f"{G}/{p['id']}", json={"studenter": 30, "notat": "IELS1001", "lev": 4})
-    assert (r.get_json()["sett"], r.get_json()["lev"]) == (30, 4)
+    r = client.patch(f"{G}/{p['id']}", json={"students": 30, "note": "IELS1001", "lead": 4})
+    assert (r.get_json()["sets"], r.get_json()["lead"]) == (30, 4)
 
     assert client.delete(f"{G}/{p['id']}").status_code == 200
-    assert client.get("/api/state").get_json()["prosjekter"] == []
+    assert client.get("/api/state").get_json()["projects"] == []
 
 
-def test_skolearet_vises_i_state(client):
-    lag(client, skolear=2030, start=3, slutt=3)
+def test_school_year_shows_in_state(client):
+    make(client, school_year=2030, start=3, finish=3)
     st = client.get("/api/state").get_json()
-    assert 2030 in {s["ar"] for s in st["skolear"]}
-    assert st["prosjekter"][0]["frister"]["start"]["ar"] == 2031
+    assert 2030 in {s["year"] for s in st["school_year"]}
+    assert st["projects"][0]["deadlines"]["start"]["year"] == 2031
 
 
-def test_uker_holdes_innenfor_1_til_53(client):
-    p = lag(client, start=60, slutt=0)
-    assert (p["start"], p["slutt"]) == (53, 1)
+def test_weeks_stay_within_1_to_53(client):
+    p = make(client, start=60, finish=0)
+    assert (p["start"], p["finish"]) == (53, 1)
 
 
-def test_navn_kreves(client):
-    r = client.post(G, json={"navn": "  "})
+def test_name_required(client):
+    r = client.post(G, json={"name": "  "})
     assert r.status_code == 400
-    assert "navn" in r.get_json()["feil"]
-    p = lag(client)
-    assert client.patch(f"{G}/{p['id']}", json={"navn": ""}).status_code == 400
+    assert "navn" in r.get_json()["error"]
+    p = make(client)
+    assert client.patch(f"{G}/{p['id']}", json={"name": ""}).status_code == 400
 
 
-def test_ugyldig_skolear_og_type(client):
-    assert client.post(G, json={"navn": "X", "skolear": "abc"}).status_code == 400
-    assert client.post(G, json={"navn": "X", "type": "noe"}).status_code == 400
+def test_invalid_school_year_and_type(client):
+    assert client.post(G, json={"name": "X", "school_year": "abc"}).status_code == 400
+    assert client.post(G, json={"name": "X", "type": "noe"}).status_code == 400
 
 
-def test_ukjent_gjennomforing(client):
-    assert client.patch(f"{G}/999", json={"studenter": 1}).status_code == 404
+def test_unknown_run(client):
+    assert client.patch(f"{G}/999", json={"students": 1}).status_code == 404
 
 
-def test_lag_mal_og_kobles(client):
-    p = lag(client)
-    r = client.post(f"{G}/{p['id']}/mal")
+def test_make_template_and_link(client):
+    p = make(client)
+    r = client.post(f"{G}/{p['id']}/template")
     assert r.status_code == 200
-    fil = r.get_json()["fil"]
-    assert (config.BOM_DIR / fil).exists()
-    st = client.get("/api/state").get_json()["prosjekter"][0]
-    assert st["bom"] == fil
-    assert st["bomStatus"]["finnes"] is True
+    file = r.get_json()["file"]
+    assert (config.BOM_DIR / file).exists()
+    st = client.get("/api/state").get_json()["projects"][0]
+    assert st["bom"] == file
+    assert st["bomStatus"]["exists"] is True
 
 
-def test_stengte_perioder(client):
-    lag(client, start=34, slutt=34, lev=1, buf=0)
-    frist = lambda: client.get("/api/state").get_json()["prosjekter"][0]["frister"]["frist"]["uke"]
-    assert frist() == 33
-    r = client.put("/api/stengte", json=[{"navn": "Test", "fra": 33, "til": 33}])
+def test_closed_periods(client):
+    make(client, start=34, finish=34, lead=1, buf=0)
+    deadline = lambda: client.get("/api/state").get_json()["projects"][0]["deadlines"]["deadline"]["week"]
+    assert deadline() == 33
+    r = client.put("/api/closed-periods", json=[{"name": "Test", "from_week": 33, "to_week": 33}])
     assert r.status_code == 200
-    assert frist() == 32
-    assert client.put("/api/stengte", json=[{"navn": "", "fra": 1, "til": 1}]).status_code == 400
-    assert client.put("/api/stengte", json=[{"navn": "X", "fra": 60, "til": 1}]).status_code == 400
+    assert deadline() == 32
+    assert client.put("/api/closed-periods", json=[{"name": "", "from_week": 1, "to_week": 1}]).status_code == 400
+    assert client.put("/api/closed-periods", json=[{"name": "X", "from_week": 60, "to_week": 1}]).status_code == 400
 
 
-def test_bare_lokalt_i_servermodus(client, monkeypatch):
-    monkeypatch.setattr(config, "LOKAL", False)
-    monkeypatch.setattr(config, "MODUS", "server")
-    p = lag(client)
-    assert client.get("/api/state").get_json()["modus"] == "server"
-    assert client.post(f"{G}/{p['id']}/apne").status_code == 400
-    assert client.post("/api/mappe/bom").status_code == 400
-    # mal fungerer fortsatt, men åpnes ikke
-    assert client.post(f"{G}/{p['id']}/mal").status_code == 200
+def test_local_only_in_server_mode(client, monkeypatch):
+    monkeypatch.setattr(config, "LOCAL", False)
+    monkeypatch.setattr(config, "MODE", "server")
+    p = make(client)
+    assert client.get("/api/state").get_json()["mode"] == "server"
+    assert client.post(f"{G}/{p['id']}/open").status_code == 400
+    assert client.post("/api/folder/bom").status_code == 400
+    # the template still works, but isn't opened
+    assert client.post(f"{G}/{p['id']}/template").status_code == 200
 
 
-def test_datafiler_ligger_i_datamappen():
+def test_data_files_live_in_the_data_folder():
     assert arshjul.store.path.parent == config.DATA_DIR
     assert config.SNAP_FILE.parent.parent == config.DATA_DIR
     assert config.BOM_DIR == config.DATA_DIR / "BOM"
 
 
-def test_innstillingsfil(tmp_path):
+def test_settings_file(tmp_path):
     f = tmp_path / "innstillinger.env"
     f.write_text('\ufeff# kommentar\nARSHJUL_BOM=\\\\server\\deling\\BOM\n\nARSHJUL_PORT = "6000"\nugyldig linje\n',
                  encoding="utf-8")
-    assert config.les_innstillinger(f) == {"ARSHJUL_BOM": r"\\server\deling\BOM", "ARSHJUL_PORT": "6000"}
-    assert config.les_innstillinger(tmp_path / "finnes-ikke.env") == {}
+    assert config.read_settings(f) == {"ARSHJUL_BOM": r"\\server\deling\BOM", "ARSHJUL_PORT": "6000"}
+    assert config.read_settings(tmp_path / "finnes-ikke.env") == {}
 
 
-def test_gruppestorrelse_styrer_antall_sett(client):
-    p = lag(client, start=44, studenter=60, gruppe=3)
-    assert p["sett"] == 20
-    r = client.patch(f"{G}/{p['id']}", json={"gruppe": 2}).get_json()
-    assert (r["studenter"], r["gruppe"], r["sett"]) == (60, 2, 30)
-    r = client.patch(f"{G}/{p['id']}", json={"ekstra": 3, "sett": 5}).get_json()  # sett kan ikke settes direkte
-    assert r["sett"] == 33
-    r = client.patch(f"{G}/{p['id']}", json={"gruppe": 0, "studenter": 9999}).get_json()  # grensene
-    assert (r["studenter"], r["gruppe"]) == (2000, 1)
-    assert client.patch(f"{G}/{p['id']}", json={"studenter": ""}).get_json()["sett"] is None
+def test_group_size_drives_the_set_count(client):
+    p = make(client, start=44, students=60, group_size=3)
+    assert p["sets"] == 20
+    r = client.patch(f"{G}/{p['id']}", json={"group_size": 2}).get_json()
+    assert (r["students"], r["group_size"], r["sets"]) == (60, 2, 30)
+    r = client.patch(f"{G}/{p['id']}", json={"spare": 3, "sets": 5}).get_json()  # sets can't be set directly
+    assert r["sets"] == 33
+    r = client.patch(f"{G}/{p['id']}", json={"group_size": 0, "students": 9999}).get_json()  # grensene
+    assert (r["students"], r["group_size"]) == (2000, 1)
+    assert client.patch(f"{G}/{p['id']}", json={"students": ""}).get_json()["sets"] is None
 
 
-def test_emnets_studenter_er_standard_for_nye_prosjekter(client):
-    e = client.post("/api/emner", json={"kode": "IELS1001", "studenter": "60"}).get_json()
-    assert e["studenter"] == 60
-    p = lag(client, start=44, gruppe=3, emne=e["id"])
-    assert (p["studenter"], p["sett"], p["emneStudenter"]) == (60, 20, 60)
-    spesiell = lag(client, navn="Halv klasse", start=45, studenter=30, emne=e["id"])  # avviker fra emnet
-    assert spesiell["studenter"] == 30
-    # å endre emnet endrer ikke prosjekter som finnes
-    assert client.patch(f"/api/emner/{e['id']}", json={"studenter": 70}).get_json()["studenter"] == 70
-    assert client.get("/api/state").get_json()["prosjekter"][0]["studenter"] == 60
-    assert client.patch(f"/api/emner/{e['id']}", json={"studenter": ""}).get_json()["studenter"] is None
-    assert client.patch(f"/api/emner/{e['id']}", json={"studenter": "mange"}).status_code == 400
+def test_course_students_are_the_default_for_new_projects(client):
+    e = client.post("/api/courses", json={"code": "IELS1001", "students": "60"}).get_json()
+    assert e["students"] == 60
+    p = make(client, start=44, group_size=3, course=e["id"])
+    assert (p["students"], p["sets"], p["courseStudents"]) == (60, 20, 60)
+    special = make(client, name="Halv klasse", start=45, students=30, course=e["id"])  # differs from the course
+    assert special["students"] == 30
+    # changing the course doesn't change existing projects
+    assert client.patch(f"/api/courses/{e['id']}", json={"students": 70}).get_json()["students"] == 70
+    assert client.get("/api/state").get_json()["projects"][0]["students"] == 60
+    assert client.patch(f"/api/courses/{e['id']}", json={"students": ""}).get_json()["students"] is None
+    assert client.patch(f"/api/courses/{e['id']}", json={"students": "mange"}).status_code == 400
 
 
-def test_prosjekttyper(client):
-    p = lag(client, start=40, slutt=45, type="prosjekt")
-    assert p["type"] == "prosjekt"
+def test_project_types(client):
+    p = make(client, start=40, finish=45, type="project")
+    assert p["type"] == "project"
     assert client.patch(f"{G}/{p['id']}", json={"type": "lab"}).get_json()["type"] == "lab"
     assert client.patch(f"{G}/{p['id']}", json={"type": "workshop"}).status_code == 400
-    assert client.get("/api/state").get_json()["typer"] == {
-        "sett": "Semestersett", "prosjekt": "Prosjekt", "hack": "Hackathon", "lab": "Lab"}
+    assert client.get("/api/state").get_json()["types"] == {
+        "semester_kit": "Semestersett", "project": "Prosjekt", "hackathon": "Hackathon", "lab": "Lab"}
 
 
-def test_stengt_periode_kan_folge_pasken(client):
-    r = client.put("/api/stengte", json=[{"navn": "Påske", "fra": 1, "til": 1, "paske": True}])
-    assert r.get_json()[0]["paske"] is True
+def test_closed_period_can_follow_easter(client):
+    r = client.put("/api/closed-periods", json=[{"name": "Påske", "from_week": 1, "to_week": 1, "easter": True}])
+    assert r.get_json()[0]["easter"] is True
     st = client.get("/api/state").get_json()
-    stengt = {u["uke"]: u["stengt"] for s in st["skolear"] for u in s["uker"] if s["ar"] == 2027}
-    assert stengt[15] == "Påske" and stengt[1] == ""  # påsken 2028 er i uke 15, ikke uke 1
+    is_closed = {u["week"]: u["closed"] for s in st["school_year"] for u in s["weeks"] if s["year"] == 2027}
+    assert is_closed[15] == "Påske" and is_closed[1] == ""  # Easter 2028 is in week 15, not week 1
 
 
-def test_prosjekt_uten_bom_kan_markeres_som_bestilt(client):
-    p = lag(client, start=44)
-    r = client.post(f"{G}/{p['id']}/bestilt", json={"bestilt": True}).get_json()
-    assert r["bestiltUtenBom"] and r["bestiltUtenBomAv"]
-    assert client.get("/api/state").get_json()["prosjekter"][0]["bestiltUtenBom"] == r["bestiltUtenBom"]
-    assert client.post(f"{G}/{p['id']}/bestilt", json={"bestilt": False}).get_json()["bestiltUtenBom"] is None
-    felt = [e["felt"] for e in client.get("/api/admin/logg").get_json()]
-    assert felt.count("bestilt (uten BOM)") == 2
+def test_project_without_bom_can_be_marked_ordered(client):
+    p = make(client, start=44)
+    r = client.post(f"{G}/{p['id']}/ordered", json={"ordered": True}).get_json()
+    assert r["orderedWithoutBom"] and r["orderedWithoutBomBy"]
+    assert client.get("/api/state").get_json()["projects"][0]["orderedWithoutBom"] == r["orderedWithoutBom"]
+    assert client.post(f"{G}/{p['id']}/ordered", json={"ordered": False}).get_json()["orderedWithoutBom"] is None
+    fields = [e["field"] for e in client.get("/api/admin/log").get_json()]
+    assert fields.count("bestilt (uten BOM)") == 2
 
-    client.patch(f"{G}/{p['id']}", json={"bom": lag_bom().name})  # med BOM: registreres per leverandør
-    assert client.post(f"{G}/{p['id']}/bestilt", json={"bestilt": True}).status_code == 400
+    client.patch(f"{G}/{p['id']}", json={"bom": make_bom().name})  # with a BOM: registered per supplier
+    assert client.post(f"{G}/{p['id']}/ordered", json={"ordered": True}).status_code == 400
 
 
-def test_navn_og_notat_kan_endres(client):
-    p = lag(client, start=44)
-    r = client.patch(f"{G}/{p['id']}", json={"navn": " Nytt navn ", "notat": "IELS1001"}).get_json()
-    assert (r["navn"], r["notat"]) == ("Nytt navn", "IELS1001")
-    assert client.patch(f"{G}/{p['id']}", json={"navn": "  "}).status_code == 400
+def test_name_and_note_can_be_changed(client):
+    p = make(client, start=44)
+    r = client.patch(f"{G}/{p['id']}", json={"name": " Nytt navn ", "note": "IELS1001"}).get_json()
+    assert (r["name"], r["note"]) == ("Nytt navn", "IELS1001")
+    assert client.patch(f"{G}/{p['id']}", json={"name": "  "}).status_code == 400

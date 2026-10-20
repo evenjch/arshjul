@@ -3,37 +3,37 @@ import pytest
 
 import bom
 import config
-from hjelp import lag_bom
+from helpers import make_bom
 
 
-def test_mal_kan_leses_tilbake():
-    b = bom.read_bom(lag_bom())
-    assert b["prosjekt"] == "Testprosjekt"
-    assert b["sett"] == 10
-    assert b["rader"] == []
+def test_template_can_be_read_back():
+    b = bom.read_bom(make_bom())
+    assert b["project"] == "Testprosjekt"
+    assert b["sets"] == 10
+    assert b["rows"] == []
 
 
-def test_mal_overskriver_ikke():
-    lag_bom()
+def test_template_doesnt_overwrite():
+    make_bom()
     with pytest.raises(bom.BomError):
-        lag_bom()
+        make_bom()
 
 
-def test_les_rader_og_regn_ut():
-    path = lag_bom(rader=[("Arduino Uno", "Elfa", "A1", 1, 4, 250.0),
+def test_read_rows_and_calculate():
+    path = make_bom(rows=[("Arduino Uno", "Elfa", "A1", 1, 4, 250.0),
                           ("Motstand 220", "Elfa", "R220", 10, 500, 0.5)])
     b = bom.read_bom(path)
-    assert [r["beskrivelse"] for r in b["rader"]] == ["Arduino Uno", "Motstand 220"]
+    assert [r["description"] for r in b["rows"]] == ["Arduino Uno", "Motstand 220"]
     c = bom.calc(b, 10)
-    arduino, motstand = c["rader"]
-    assert arduino["bestill"] == 6  # 1 × 10 − 4
-    assert motstand["bestill"] == 0  # aldri negativt
-    assert c["bestill"] == 1
-    assert c["eks"] == 1500.0
-    assert c["inkl"] == round(1500.0 * (1 + b["mva"]), 2)
+    arduino, resistor = c["rows"]
+    assert arduino["to_order"] == 6  # 1 × 10 − 4
+    assert resistor["to_order"] == 0  # aldri negativt
+    assert c["to_order"] == 1
+    assert c["excl"] == 1500.0
+    assert c["incl"] == round(1500.0 * (1 + b["vat"]), 2)
 
 
-def test_ikke_en_bom():
+def test_not_a_bom():
     path = config.BOM_DIR / "tilfeldig.xlsx"
     openpyxl.Workbook().save(path)
     with pytest.raises(bom.BomError):
@@ -41,12 +41,12 @@ def test_ikke_en_bom():
 
 
 def test_diff():
-    gammel = [{"beskrivelse": "A", "varenummer": "1", "prSett": 1, "lager": 0, "pris": 10},
-              {"beskrivelse": "B", "varenummer": "2", "prSett": 1, "lager": 0, "pris": 10}]
-    ny = [{"beskrivelse": "A", "varenummer": "1", "prSett": 2, "lager": 0, "pris": 10},
-          {"beskrivelse": "C", "varenummer": "3", "prSett": 1, "lager": 0, "pris": 10}]
-    d = bom.diff(gammel, ny)
-    typer = sorted((e["type"], e["beskrivelse"]) for e in d)
-    assert typer == [("endret", "A"), ("fjernet", "B"), ("ny", "C")]
-    endret = next(e for e in d if e["type"] == "endret")
-    assert (endret["felt"], endret["fra"], endret["til"]) == ("per sett", 1, 2)
+    old_count = [{"description": "A", "part_number": "1", "perSet": 1, "in_stock": 0, "price": 10},
+              {"description": "B", "part_number": "2", "perSet": 1, "in_stock": 0, "price": 10}]
+    new = [{"description": "A", "part_number": "1", "perSet": 2, "in_stock": 0, "price": 10},
+          {"description": "C", "part_number": "3", "perSet": 1, "in_stock": 0, "price": 10}]
+    d = bom.diff(old_count, new)
+    types = sorted((e["type"], e["description"]) for e in d)
+    assert types == [("changed", "A"), ("new", "C"), ("removed", "B")]
+    changed = next(e for e in d if e["type"] == "changed")
+    assert (changed["field"], changed["from"], changed["to"]) == ("per sett", 1, 2)

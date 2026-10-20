@@ -1,26 +1,26 @@
-"""Innlogging, roller og CSRF-beskyttelse.
+"""Login, roles and CSRF protection.
 
-Innlogging er alltid på – lokalt og på serveren – så det som testes lokalt, er det som kjører.
+Login is always on – locally and on the server – so what is tested locally is what runs.
 
-Roller:
-    ingenior        prosjekter i egne emner (og prosjekter uten emne)
-    ingenior+admin  en vanlig ingeniør på hovedsiden, pluss administratorpanelet (/admin):
-                    ser og retter alt, styrer brukere, rydder og tar sikkerhetskopi
-    faglarer        ser hele hjulet; legger til, endrer og fjerner prosjektene i sine egne emner
-                    (navn, type, uker, antall sett, notat). Ser ikke BOM, bestilling, telling eller kostnader.
+Roles:
+    engineer        projects in their own courses (and projects without a course)
+    engineer+admin  a regular engineer on the main page, plus the admin panel (/admin):
+                    sees and fixes everything, manages users, cleans up and takes backups
+    lecturer        sees the whole wheel; adds, changes and removes the projects in their own courses
+                    (name, type, weeks, students and groups, note). Doesn't see BOMs, orders, counts or costs.
 
-Første administrator:
-    lokalt     siden «Opprett administrator» vises når det ikke finnes noen brukere
+The first admin:
+    locally    the «Opprett administrator» page is shown when there are no users
     server     python manage.py ny-bruker <brukernavn> "<Navn>" ingenior --admin
-               (ikke på nettsiden, så ingen andre rekker å gjøre seg til administrator først)
+               (not on the web page, so nobody else can make themselves admin first)
 
-Sikkerhet:
-- passord lagres som hash (werkzeug, scrypt)
-- låst i 15 minutter etter 5 feil passord; i tillegg en grense per IP-adresse
-- informasjonskapselen er HttpOnly og SameSite=Lax, og Secure i servermodus
-- alt som endrer noe krever et CSRF-token (skjemafelt eller X-CSRF-Token-header),
-  så en annen nettside ikke kan få nettleseren din til å endre årshjulet
-- økten slutter å gjelde når passordet endres eller brukeren deaktiveres
+Security:
+- passwords are stored as hashes (werkzeug, scrypt)
+- locked for 15 minutes after 5 wrong passwords; plus a limit per IP address
+- the cookie is HttpOnly and SameSite=Lax, and Secure in server mode
+- anything that changes something requires a CSRF token (form field or X-CSRF-Token header),
+  so another website can't make your browser change the app
+- the session stops working when the password changes or the user is deactivated
 """
 from __future__ import annotations
 
@@ -36,50 +36,50 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import config
 
-ROLLER = ("ingenior", "faglarer")
-ROLLENAVN = {"ingenior": "Ingeniør", "faglarer": "Faglærer"}
-MAKS_FEIL = 5
-LAS_MINUTTER = 15
-IP_MAKS = 20  # feil per IP-adresse per kvarter
-MIN_PASSORD = 10
-HASH_METODE = "scrypt"  # testene bruker en raskere metode
-_TRYGGE = ("GET", "HEAD", "OPTIONS")
-_APNE = {"auth.login", "auth.oppsett", "static"}
-# en hash å sjekke mot når brukeren ikke finnes, så svartiden ikke avslører hvilke brukernavn som finnes
+ROLES = ("engineer", "lecturer")
+ROLE_NAMES = {"engineer": "Ingeniør", "lecturer": "Faglærer"}
+MAX_FAILURES = 5
+LOCK_MINUTES = 15
+IP_MAX = 20  # feil per IP-adresse per kvarter
+MIN_PASSWORD = 10
+HASH_METHOD = "scrypt"  # the tests use a faster method
+_SAFE = ("GET", "HEAD", "OPTIONS")
+_OPEN = {"auth.login", "auth.setup", "static"}
+# a hash to check against when the user doesn't exist, so the response time doesn't reveal which usernames exist
 _DUMMY = generate_password_hash(secrets.token_hex(8))
 
 bp = Blueprint("auth", __name__)
 _store = None
-_ip_feil: dict[str, list[float]] = {}
+_ip_failures: dict[str, list[float]] = {}
 
 
 def init(app, store) -> None:
     global _store
     _store = store
     app.register_blueprint(bp)
-    app.before_request(_vakt)
-    app.context_processor(lambda: {"csrf_token": csrf_token(), "meg": getattr(g, "bruker", None),
-                                   "rollenavn": ROLLENAVN})
+    app.before_request(_guard)
+    app.context_processor(lambda: {"csrf_token": csrf_token(), "me": getattr(g, "user", None),
+                                   "roleName": ROLE_NAMES})
 
 
 # ---------- passord ----------
 
-def passordfeil(passord: str) -> str | None:
-    if len(passord) < MIN_PASSORD:
-        return f"Passordet må være minst {MIN_PASSORD} tegn."
+def password_error(password: str) -> str | None:
+    if len(password) < MIN_PASSWORD:
+        return f"Passordet må være minst {MIN_PASSWORD} tegn."
     return None
 
 
-def hash_passord(passord: str) -> str:
-    feil = passordfeil(passord)
-    if feil:
-        raise ValueError(feil)
-    return generate_password_hash(passord, method=HASH_METODE)
+def hash_password(password: str) -> str:
+    error = password_error(password)
+    if error:
+        raise ValueError(error)
+    return generate_password_hash(password, method=HASH_METHOD)
 
 
-def _passordversjon(bruker: dict) -> str:
-    """Endres når passordet endres, så gamle økter slutter å gjelde."""
-    return bruker["passord"][-16:]
+def _password_version(user: dict) -> str:
+    """Changes when the password changes, so old sessions stop working."""
+    return user["password"][-16:]
 
 
 # ---------- CSRF ----------
@@ -91,148 +91,148 @@ def csrf_token() -> str:
 
 
 def _csrf_ok() -> bool:
-    sendt = request.headers.get("X-CSRF-Token") or request.form.get("csrf") or ""
-    return bool(session.get("csrf")) and hmac.compare_digest(sendt, session["csrf"])
+    sent = request.headers.get("X-CSRF-Token") or request.form.get("csrf") or ""
+    return bool(session.get("csrf")) and hmac.compare_digest(sent, session["csrf"])
 
 
-# ---------- hvem er du ----------
+# ---------- who are you ----------
 
-def meg() -> dict:
-    return g.bruker
-
-
-def er_ingenior() -> bool:
-    """Ingeniør – også administratoren."""
-    return g.bruker is not None and g.bruker["rolle"] == "ingenior"
+def me() -> dict:
+    return g.user
 
 
-def er_admin() -> bool:
-    return er_ingenior() and bool(g.bruker["admin"])
+def is_engineer() -> bool:
+    """Engineer – the admin too."""
+    return g.user is not None and g.user["role"] == "engineer"
 
 
-def krever_admin(f):
+def is_admin() -> bool:
+    return is_engineer() and bool(g.user["admin"])
+
+
+def requires_admin(f):
     @wraps(f)
     def inner(*a, **k):
-        if not er_admin():
-            return jsonify({"feil": "Bare administratoren kan gjøre dette."}), 403
+        if not is_admin():
+            return jsonify({"error": "Bare administratoren kan gjøre dette."}), 403
         return f(*a, **k)
     return inner
 
 
-def _kan_opprette_forste() -> bool:
-    """Første administrator kan bare lages på nettsiden lokalt, og bare før det finnes brukere."""
-    return config.LOKAL and _store.antall_brukere() == 0
+def _can_create_first() -> bool:
+    """The first admin can only be created on the web page locally, and only before there are any users."""
+    return config.LOCAL and _store.user_count() == 0
 
 
-def _vakt():
-    g.bruker = None
+def _guard():
+    g.user = None
     if session.get("uid"):
-        u = _store.bruker(id=session["uid"])
-        if u and u["aktiv"] and session.get("pv") == _passordversjon(u):
-            # admin: kontoen har administratorpanelet (/admin). På hovedsiden er du en vanlig ingeniør.
-            g.bruker = {"id": u["id"], "navn": u["navn"], "brukernavn": u["brukernavn"], "rolle": u["rolle"],
-                        "admin": bool(u["admin"]) and u["rolle"] == "ingenior"}
+        u = _store.user(id=session["uid"])
+        if u and u["active"] and session.get("pv") == _password_version(u):
+            # admin: the account has the admin panel (/admin). On the main page you're a regular engineer.
+            g.user = {"id": u["id"], "name": u["name"], "username": u["username"], "role": u["role"],
+                        "admin": bool(u["admin"]) and u["role"] == "engineer"}
         else:
             session.clear()
 
-    if request.method not in _TRYGGE and not _csrf_ok():
+    if request.method not in _SAFE and not _csrf_ok():
         if request.path.startswith("/api/"):
-            return jsonify({"feil": "Siden er utdatert. Last den på nytt."}), 400
+            return jsonify({"error": "Siden er utdatert. Last den på nytt."}), 400
         return redirect(url_for("auth.login"))
-    if g.bruker is None and request.endpoint not in _APNE:
+    if g.user is None and request.endpoint not in _OPEN:
         if request.path.startswith("/api/"):
-            return jsonify({"feil": "Du er ikke logget inn.", "login": True}), 401
-        if _kan_opprette_forste():
-            return redirect(url_for("auth.oppsett"))
-        return redirect(url_for("auth.login", neste=request.path))
+            return jsonify({"error": "Du er ikke logget inn.", "login": True}), 401
+        if _can_create_first():
+            return redirect(url_for("auth.setup"))
+        return redirect(url_for("auth.login", next=request.path))
     return None
 
 
-def _logg_inn(u: dict) -> None:
+def _log_in(u: dict) -> None:
     session.clear()
     session.permanent = True
     session["uid"] = u["id"]
-    session["pv"] = _passordversjon(u)
+    session["pv"] = _password_version(u)
     csrf_token()  # nytt token ved innlogging
-    _store.endre_bruker(u["id"], feilforsok=0, last_til=None,
-                        sist_inne=dt.datetime.now().isoformat(timespec="seconds"))
+    _store.update_user(u["id"], failed_attempts=0, locked_until=None,
+                        last_login=dt.datetime.now().isoformat(timespec="seconds"))
 
 
 # ---------- innlogging ----------
 
-def _ip_sperret(ip: str) -> bool:
-    na = time.time()
-    _ip_feil[ip] = [t for t in _ip_feil.get(ip, []) if na - t < LAS_MINUTTER * 60]
-    return len(_ip_feil[ip]) >= IP_MAKS
+def _ip_blocked(ip: str) -> bool:
+    current = time.time()
+    _ip_failures[ip] = [t for t in _ip_failures.get(ip, []) if current - t < LOCK_MINUTES * 60]
+    return len(_ip_failures[ip]) >= IP_MAX
 
 
-def _trygg_neste(neste: str | None) -> str:
-    # bare stier på samme nettsted – aldri «//annet.no» eller «https://…»
-    return neste if neste and neste.startswith("/") and not neste.startswith("//") and "\\" not in neste else "/"
+def _safe_next(next_: str | None) -> str:
+    # only paths on the same site – never «//other.no» or «https://…»
+    return next_ if next_ and next_.startswith("/") and not next_.startswith("//") and "\\" not in next_ else "/"
 
 
 @bp.route("/login", methods=["GET", "POST"])
 def login():
-    if _kan_opprette_forste():
-        return redirect(url_for("auth.oppsett"))
-    feil = None
+    if _can_create_first():
+        return redirect(url_for("auth.setup"))
+    error = None
     if request.method == "POST":
         ip = request.remote_addr or "?"
-        brukernavn = (request.form.get("brukernavn") or "").strip()
-        passord = request.form.get("passord") or ""
-        u = _store.bruker(brukernavn=brukernavn) if brukernavn else None
-        na = dt.datetime.now()
-        if _ip_sperret(ip):
-            feil = f"For mange feil forsøk. Prøv igjen om {LAS_MINUTTER} minutter."
-        elif u and u["last_til"] and dt.datetime.fromisoformat(u["last_til"]) > na:
-            igjen = max(1, int((dt.datetime.fromisoformat(u["last_til"]) - na).total_seconds() // 60) + 1)
-            feil = f"For mange feil forsøk. Prøv igjen om {igjen} minutter."
+        username = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
+        u = _store.user(username=username) if username else None
+        current = dt.datetime.now()
+        if _ip_blocked(ip):
+            error = f"For mange feil forsøk. Prøv igjen om {LOCK_MINUTES} minutter."
+        elif u and u["locked_until"] and dt.datetime.fromisoformat(u["locked_until"]) > current:
+            left = max(1, int((dt.datetime.fromisoformat(u["locked_until"]) - current).total_seconds() // 60) + 1)
+            error = f"For mange feil forsøk. Prøv igjen om {left} minutter."
         else:
-            riktig = check_password_hash(u["passord"] if u else _DUMMY, passord)
-            if u and riktig and u["aktiv"]:
-                _logg_inn(u)
-                return redirect(_trygg_neste(request.args.get("neste")))
-            _ip_feil.setdefault(ip, []).append(time.time())
+            correct = check_password_hash(u["password"] if u else _DUMMY, password)
+            if u and correct and u["active"]:
+                _log_in(u)
+                return redirect(_safe_next(request.args.get("next")))
+            _ip_failures.setdefault(ip, []).append(time.time())
             if u:
-                n = u["feilforsok"] + 1
-                if n >= MAKS_FEIL:
-                    _store.endre_bruker(u["id"], feilforsok=0,
-                                        last_til=(na + dt.timedelta(minutes=LAS_MINUTTER)).isoformat(timespec="seconds"))
+                n = u["failed_attempts"] + 1
+                if n >= MAX_FAILURES:
+                    _store.update_user(u["id"], failed_attempts=0,
+                                        locked_until=(current + dt.timedelta(minutes=LOCK_MINUTES)).isoformat(timespec="seconds"))
                 else:
-                    _store.endre_bruker(u["id"], feilforsok=n)
+                    _store.update_user(u["id"], failed_attempts=n)
             time.sleep(0.3)
-            feil = "Feil brukernavn eller passord."
-    ingen_brukere = _store.antall_brukere() == 0  # på serveren: lag administrator med manage.py
-    ingen_admin = not ingen_brukere and _store.aktive_admins() == 0  # f.eks. brukere fra før administrator fantes
-    return render_template("login.html", feil=feil, neste=request.args.get("neste", ""),
-                           ingen_brukere=ingen_brukere, ingen_admin=ingen_admin), (401 if feil else 200)
+            error = "Feil brukernavn eller passord."
+    no_users = _store.user_count() == 0  # on the server: create the admin with manage.py
+    no_admin = not no_users and _store.active_admins() == 0  # e.g. users from before there was an admin
+    return render_template("login.html", error=error, next_=request.args.get("next", ""),
+                           no_users=no_users, no_admin=no_admin), (401 if error else 200)
 
 
 @bp.route("/oppsett", methods=["GET", "POST"])
-def oppsett():
-    """Første gang, lokalt: lag administratoren (deg)."""
-    if not _kan_opprette_forste():
+def setup():
+    """First time, locally: create the admin (you)."""
+    if not _can_create_first():
         return redirect(url_for("auth.login"))
-    feil = None
+    error = None
     if request.method == "POST":
-        brukernavn = (request.form.get("brukernavn") or "").strip()
-        navn = (request.form.get("navn") or "").strip()
-        passord = request.form.get("passord") or ""
-        if not brukernavn or any(c.isspace() for c in brukernavn) or not navn:
-            feil = "Fyll inn brukernavn (uten mellomrom) og navn."
-        elif passord != request.form.get("passord2"):
-            feil = "Passordene er ikke like."
+        username = (request.form.get("username") or "").strip()
+        name = (request.form.get("name") or "").strip()
+        password = request.form.get("password") or ""
+        if not username or any(c.isspace() for c in username) or not name:
+            error = "Fyll inn brukernavn (uten mellomrom) og navn."
+        elif password != request.form.get("password2"):
+            error = "Passordene er ikke like."
         else:
-            feil = passordfeil(passord)
-        if not feil:
+            error = password_error(password)
+        if not error:
             try:
-                uid = _store.ny_bruker(brukernavn, navn, "ingenior", hash_passord(passord), admin=True)
+                uid = _store.new_user(username, name, "engineer", hash_password(password), admin=True)
             except sqlite3.IntegrityError:
-                feil = "Brukernavnet er tatt."
+                error = "Brukernavnet er tatt."
             else:
-                _logg_inn(_store.bruker(id=uid))
-                return redirect("/admin#brukere")  # første gang: lag brukere til de andre
-    return render_template("oppsett.html", feil=feil, min_passord=MIN_PASSORD), (400 if feil else 200)
+                _log_in(_store.user(id=uid))
+                return redirect("/admin#brukere")  # first time: create users for the others
+    return render_template("setup.html", error=error, min_password=MIN_PASSWORD), (400 if error else 200)
 
 
 @bp.post("/logout")

@@ -57,7 +57,7 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
   ```
 
   *Prosjekt* er «malen» som går igjen hvert år. *Gjennomføring* er én konkret kjøring med ekte år og uker. `arshjul.json` ble hentet inn i skoleåret 2026/27 og heter nå `arshjul.json.importert`.
-- [x] **Uke- og fristlogikken på ett sted** (`frister.py`). Serveren regner ut alle datoer; nettleseren plasserer dem bare i hjulet.
+- [x] **Uke- og fristlogikken på ett sted** (`deadlines.py`). Serveren regner ut alle datoer; nettleseren plasserer dem bare i hjulet.
 - [x] Hjulet viser ett skoleår om gangen og starter i august. Uke 53 og årsskiftet regnes med ekte datoer. «Neste 8 uker» og «Neste frist» ser på tvers av skoleår, så juni-frister for høsten kommer med.
 - [x] Stengte perioder lagres i databasen og endres nederst på siden.
 
@@ -65,7 +65,7 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 
 - [x] Én rad per leverandør, hentet fra Leverandør-kolonnen i BOM-en. Linjer uten leverandør samles i «Ukjent leverandør». Linjer der alt er på lager teller ikke.
 - [x] Status: Ikke bestilt → Bestilt → Delvis mottatt / Mottatt. Gjennomføringen får den «dårligste» statusen («2 av 3 bestilt»). Innlevert og telt kommer i fase 3.
-- [x] Når du trykker «Registrer bestilt», lagres dato, ordrenummer, antall sett og en **frosset kopi** av linjene (`bestilling.py`, tabellen `bestilling`). «Hvem» lagres når innlogging kommer i fase 4.
+- [x] Når du trykker «Registrer bestilt», lagres dato, ordrenummer, antall sett og en **frosset kopi** av linjene (`orders.py`, tabellen `orders`). «Hvem» lagres når innlogging kommer i fase 4.
 - [x] **«Trenger mer enn det som er bestilt»**: den frosne kopien sammenlignes med det BOM-en og antall sett krever nå. Du ser hva som mangler per linje, og registrerer en tilleggsbestilling.
 - [x] I hjulet, «neste 8 uker» og toppfeltet: grønn ring = bestilt, gul = frist snart eller må bestille mer, **rød = fristen er passert og ikke bestilt**. «Neste frist» hopper over det som er bestilt. Prosjekter som allerede har startet uten registrert bestilling markeres ikke.
 - [x] Bestillingsliste for én leverandør.
@@ -80,14 +80,14 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 ## Fase 2 – Skoleår og historikk ✓
 
 - [x] **«Kopier til neste skoleår»**: velg hvilke prosjekter som skal være med. Uker, studenter, gruppestørrelse, ekstra sett, BOM, leveringstid og buffer kopieres. Bestillinger kopieres ikke. Prosjekter som allerede finnes i neste år hoppes over.
-- [x] **Påminnelse om våren** (`frister.oppsett_varsel`). Når prosjekter fra i år mangler i neste skoleår, og den første fristen deres er mindre enn 12 uker unna, vises et varsel øverst med en knapp for å sette opp året. Eksempel: Arduino starter kit i uke 34 har frist i **uke 25, i juni** – varselet kommer i starten av april.
+- [x] **Påminnelse om våren** (`deadlines.setup_warning`). Når prosjekter fra i år mangler i neste skoleår, og den første fristen deres er mindre enn 12 uker unna, vises et varsel øverst med en knapp for å sette opp året. Eksempel: Arduino starter kit i uke 34 har frist i **uke 25, i juni** – varselet kommer i starten av april.
 - [x] **Historikk**: hva som er registrert som bestilt (eks. mva.), per prosjekt og skoleår, med pris per sett og sum per år. Regnes fra de frosne kopiene, så tallene står seg selv om BOM-en endres eller fjernes.
 - [ ] Vise de enkelte linjene som ble bestilt et tidligere år (i dag: bla til året og åpne «Bestilling»).
 
-- [x] **Sommeren og årsskiftet**: fra uke 26 åpner årshjulet på skoleåret som kommer (`frister.skolear_vis`). Hvert hjul viser nøyaktig sitt skoleårs uker; det som stikker inn fra året før eller etter (neste års frister i juni, fjorårets telling i august) tegnes svakt, med statusring på fristene.
-- [x] **«Kopier til neste skoleår» er en sjekkliste**: uker og antall studenter kan rettes per prosjekt før kopiering (med «Bruk emnets N» når emnet har et annet tall), datoen for startuka neste år vises, og om BOM-en er telt og skrevet etter i år – ellers blir «På lager» og neste års bestilling feil. Bare det som er endret sendes (`endringer` i `/api/skolear/<år>/kopier`).
-- [x] **BOM, leveringstid og buffer per gjennomføring** (migrering 14), ikke per prosjekt. Endres de, følger senere skoleår med hvis de hadde samme verdi (`db.FREMOVER_FELT`) – tidligere år endres aldri, så en ny BOM-versjon ikke endrer historikken. Kolonnene i `prosjekt` står ubrukt.
-- [x] **Påsken flytter seg** (migrering 13): en stengt periode kan «følge påsken» – uka med påskedag, regnet ut for hvert år (`frister.paskeuke`). Den gamle «Påske» i uke 12 ble gjort om.
+- [x] **Sommeren og årsskiftet**: fra uke 26 åpner årshjulet på skoleåret som kommer (`deadlines.school_year_shown`). Hvert hjul viser nøyaktig sitt skoleårs uker; det som stikker inn fra året før eller etter (neste års frister i juni, fjorårets telling i august) tegnes svakt, med statusring på fristene.
+- [x] **«Kopier til neste skoleår» er en sjekkliste**: uker og antall studenter kan rettes per prosjekt før kopiering (med «Bruk emnets N» når emnet har et annet tall), datoen for startuka neste år vises, og om BOM-en er telt og skrevet etter i år – ellers blir «På lager» og neste års bestilling feil. Bare det som er endret sendes (`changes` i `/api/school-years/<år>/copy`).
+- [x] **BOM, leveringstid og buffer per gjennomføring** (migrering 14), ikke per prosjekt. Endres de, følger senere skoleår med hvis de hadde samme verdi (`db.FORWARD_FIELDS`) – tidligere år endres aldri, så en ny BOM-versjon ikke endrer historikken. Kolonnene i `prosjekt` står ubrukt.
+- [x] **Påsken flytter seg** (migrering 13): en stengt periode kan «følge påsken» – uka med påskedag, regnet ut for hvert år (`deadlines.easter_week`). Den gamle «Påske» i uke 12 ble gjort om.
 - [x] **Semester-valget i skjemaet er fjernet**: semesteret følger startuka, og skjemaet viser de faktiske datoene («Vår 2027: 18. jan – 13. juni 2027»).
 
 ## Fase 3 – Telling etter prosjektet ✓
@@ -104,12 +104,12 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 
 **Innlogging og roller** (`auth.py`, `manage.py`, migrering 7)
 - [x] **Administrator** (migrering 9): en ingeniør med alle emner, som styrer brukerne under «Brukere» på nettsiden (lage, nytt passord, admin, deaktivere). Det må alltid finnes minst én aktiv administrator. Ingen selvregistrering.
-- [x] **Administratorpanel** (`/admin`, `adminpanel.py`, `admin.js`) i stedet for en adminbryter: på hovedsiden er administratoren alltid en vanlig ingeniør; panelet ser og retter alt. Faner: Oversikt (det som bør ryddes), Prosjekter (rett/gjenopprett/slett, med konsekvens først), Emner, Brukere, Bestillinger og tellinger (fjern feilregistreringer; BOM-skrivinger angres først), Endringslogg (søk), Opprydding (kvitter alle, slett skoleår), System (database, BOM-mappe, sikkerhetskopi). Alle `adminpanel.*`-endepunkter krever administrator på serveren, og rettinger logges med rolle «admin».
+- [x] **Administratorpanel** (`/admin`, `admin_panel.py`, `admin.js`) i stedet for en adminbryter: på hovedsiden er administratoren alltid en vanlig ingeniør; panelet ser og retter alt. Faner: Oversikt (det som bør ryddes), Prosjekter (rett/gjenopprett/slett, med konsekvens først), Emner, Brukere, Bestillinger og tellinger (fjern feilregistreringer; BOM-skrivinger angres først), Endringslogg (søk), Opprydding (kvitter alle, slett skoleår), System (database, BOM-mappe, sikkerhetskopi). Alle `admin_panel.*`-endepunkter krever administrator på serveren, og rettinger logges med rolle «admin».
 - [x] Første administrator: lokalt på siden «Velkommen til årshjulet» når det ikke finnes brukere; på serveren bare med `python manage.py ny-bruker <brukernavn> "<Navn>" ingenior --admin`, så ingen andre rekker det først. `manage.py` er også reserve (`passord`, `admin`, `aktiver`, `deaktiver`, `liste`).
 - [x] Passord lagres som hash (scrypt), minst 10 tegn. Låst i 15 minutter etter 5 feil; i tillegg en grense per IP-adresse. Samme melding for feil brukernavn og feil passord.
 - [x] **Innlogging er alltid på – lokalt også.** Ingen bruker uten navn, så det som testes lokalt er det som kjører på serveren, og loggen viser alltid hvem. Lokalt lagres nøkkelen i datamappen, og du forblir innlogget i 30 dager (serveren: 12 timer).
 - [x] Økten varer 12 timer, og slutter å gjelde når passordet endres eller brukeren deaktiveres.
-- [x] **Rollene sjekkes på serveren**, ikke bare i nettleseren. En faglærer når bare de endepunktene som er listet som tillatt (`FAGLARER_TILLATT`) – alt annet er stengt som standard.
+- [x] **Rollene sjekkes på serveren**, ikke bare i nettleseren. En faglærer når bare de endepunktene som er listet som tillatt (`LECTURER_ALLOWED`) – alt annet er stengt som standard.
 
 **Faglærerpanelet**
 - [x] Faglæreren ser bare prosjektene i sine egne emner, og ikke BOM, bestillinger, telling eller kostnader (de sendes ikke engang til nettleseren).
@@ -119,14 +119,15 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 **Emner og flere ingeniører** (migrering 8)
 - [x] Studieprogram (bachelor/master) → **emne** (én faglærer, én ansvarlig ingeniør) → prosjekt → gjennomføring per skoleår. En faglærer kan ha emner med ulike ingeniører.
 - [x] **Alle ser bare det de er involvert i** – filtrert på serveren. Ingeniøren: egne emner, pluss prosjekter uten emne/ingeniør (så ingenting blir usynlig). Faglæreren: egne emner. Administratoren: alt. (En instituttoversikt – kollisjoner, felles lager – er parkert; se under.)
-- [x] **Eierskap sjekkes på serveren for alt som endrer en gjennomføring** (`kan_handle` i `_eierskap`): ingeniører kan ikke bestille, telle, endre eller slette i andres emner; faglærere bare i egne emner.
+- [x] **Eierskap sjekkes på serveren for alt som endrer en gjennomføring** (`can_handle` i `_ownership`): ingeniører kan ikke bestille, telle, endre eller slette i andres emner; faglærere bare i egne emner.
 - [x] Faglærerens endringer varsles til emnets ingeniør. Bytter emnet ingeniør, overtar den nye varslene som ikke er kvittert.
 - [x] Alle ingeniører kan legge inn og endre emner (seksjonen «Emner»). Emner deaktiveres, ikke slettes.
 - [x] **Faglæreren lager sine egne emner og velger ingeniør** (migrering 10). Faglæreren kan ikke bytte faglærer eller endre andres emner. Ingeniøren som velges – og den som tas av – får et varsel med «OK, sett» (ikke når du velger deg selv). Ingen godkjenning: ingeniøren får emnet med en gang.
 - [x] «Kopier til neste skoleår» og vårpåminnelsen gjelder egne emner.
-- [x] **Antall sett regnes ut av studenter og grupper** (migrering 11): antall studenter ÷ studenter per gruppe, rundet opp, + ekstra sett (`db.antall_sett` – eneste stedet det regnes). `sett` lagres fortsatt, så bestilling, telling og historikk er uendret, men kan ikke settes direkte. Eksisterende gjennomføringer fikk studenter = sett og grupper på 1. Endrer antall sett seg, logges og varsles det sammen med feltet som ble endret.
+- [x] **Antall sett regnes ut av studenter og grupper** (migrering 11): antall studenter ÷ studenter per gruppe, rundet opp, + ekstra sett (`db.set_count` – eneste stedet det regnes). Antall sett lagres fortsatt, så bestilling, telling og historikk er uendret, men kan ikke settes direkte. Eksisterende gjennomføringer fikk studenter = sett og grupper på 1. Endrer antall sett seg, logges og varsles det sammen med feltet som ble endret.
+- [x] **Koden er på engelsk** (migrering 16): navn, kommentarer, API-felt og -adresser, databasens tabeller, kolonner og koder, nøklene i lagrede data, testnavn og commit-meldinger. Ordliste i CLAUDE.md. Tekst brukerne ser er fortsatt norsk – også mappene i datamappen, Excel-malene, `innstillinger.env` og kommandolinjen i `manage.py`. Migreringen kjører med fremmednøkler av (brukere og prosjekter bygges om) og tar sikkerhetskopi først. «BOM sist sett»-filen gjøres om én gang (`bom-last-seen.json`).
 - [x] **Sikkerhetskopi før oppgradering**: før databasen migreres, kopieres den til `Sikkerhetskopi-db/` (samme sted og navn som «Ta sikkerhetskopi nå» i administratorpanelet).
-- [x] **Fire prosjekttyper** (`frister.TYPER`): semestersett, prosjekt, hackathon og lab. Typen gir navnene i hjulet og telleuka (sett og lab: siste bruksuke; prosjekt og hackathon: uka etter). Gamle «Hackathon / lab» ble Hackathon – lab-ene endres i tabellen. Ingen migrering: typen er fritekst i databasen og sjekkes i API-et.
+- [x] **Fire prosjekttyper** (`deadlines.TYPES`): semestersett, prosjekt, hackathon og lab. Typen gir navnene i hjulet og telleuka (sett og lab: siste bruksuke; prosjekt og hackathon: uka etter). Gamle «Hackathon / lab» ble Hackathon – lab-ene endres i tabellen. Ingen migrering: typen er fritekst i databasen og sjekkes i API-et.
 - [x] **Antall studenter hører til emnet** (migrering 12) og er standard når et nytt prosjekt legges i emnet. Prosjektet har sitt eget tall og kan avvike; å endre emnet endrer ikke prosjekter som finnes. Avviker prosjektet, vises emnets tall under.
 - Lager og BOM er fortsatt per prosjekt (felles lager på tvers av emner er parkert).
 - [x] Mens faglæreren endrer, vises konsekvensen ved fristen: «Fristen er om 1 uke – ingeniøren varsles».
@@ -159,7 +160,6 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 
 ## Parkert / senere
 
-- **Koden over på engelsk**: variabelnavn, funksjoner, kommentarer, commit-meldinger og API-felt. Tekst brukerne ser (grensesnitt, feilmeldinger, LES MEG) forblir norsk. Gjøres samlet, med testene som sikkerhetsnett – ikke bit for bit.
 
 - **Instituttoversikt**: se alle emner samtidig for å finne kollisjoner (travle uker, delte rom og utstyr) og felles lager. Bevisst tatt bort for nå – i et stort institutt blir det rot. Administratoren ser allerede alt; en egen visning kan komme senere.
 

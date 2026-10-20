@@ -1,15 +1,15 @@
-"""Brukere til årshjulet – fra kommandolinjen. Det finnes ingen registreringsside.
+"""Users for the app – from the command line. There is no sign-up page.
 
     python manage.py ny-bruker <brukernavn> "<Fullt navn>" ingenior|faglarer [--admin]
-    python manage.py admin <brukernavn> [--fjern]  (gjør en ingeniør til administrator, eller ikke)
+    python manage.py admin <brukernavn> [--fjern]  (make an engineer admin, or not)
     python manage.py passord <brukernavn>
-    python manage.py deaktiver <brukernavn>      (kan ikke logge inn, men historikken står)
-    python manage.py aktiver <brukernavn>        (også: opphever låsing etter feil passord)
+    python manage.py deaktiver <brukernavn>      (can't log in, but the history stays)
+    python manage.py aktiver <brukernavn>        (also: lifts a lock-out after wrong passwords)
     python manage.py liste
 
-Passordet spørres om i terminalen (vises ikke). For skript på serveren kan det gis i
-miljøvariabelen ARSHJUL_NYTT_PASSORD i stedet. Bruker samme innstillinger som appen
-(ARSHJUL_DATA, innstillinger.env), så det er samme database.
+The password is asked for in the terminal (not shown). For scripts on the server it can be given in
+the environment variable ARSHJUL_NYTT_PASSORD instead. Uses the same settings as the app
+(ARSHJUL_DATA, innstillinger.env), so it's the same database.
 """
 from __future__ import annotations
 
@@ -24,15 +24,15 @@ import config
 from db import Db
 
 
-def _passord() -> str:
+def _password() -> str:
     pw = os.environ.get("ARSHJUL_NYTT_PASSORD")
     if pw:
         return pw
     while True:
         pw = getpass.getpass("Passord: ")
-        feil = auth.passordfeil(pw)
-        if feil:
-            print(feil)
+        error = auth.password_error(pw)
+        if error:
+            print(error)
             continue
         if getpass.getpass("Gjenta passordet: ") != pw:
             print("Passordene er ikke like.")
@@ -40,81 +40,90 @@ def _passord() -> str:
         return pw
 
 
-def _finn(store: Db, brukernavn: str) -> dict:
-    u = store.bruker(brukernavn=brukernavn)
+def _find(store: Db, username: str) -> dict:
+    u = store.user(username=username)
     if not u:
-        sys.exit(f"Fant ingen bruker «{brukernavn}».")
+        sys.exit(f"Fant ingen bruker «{username}».")
     return u
+
+
+CLI_COMMANDS = {"ny-bruker": "new-user", "passord": "password", "deaktiver": "deactivate", "aktiver": "activate",
+                "liste": "list"}
+CLI_ROLES = {"ingenior": "engineer", "faglarer": "lecturer"}
 
 
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description="Brukere til årshjulet.")
-    sub = p.add_subparsers(dest="kommando", required=True)
-    ny = sub.add_parser("ny-bruker", help="lag en ny bruker")
-    ny.add_argument("brukernavn")
-    ny.add_argument("navn", help="fullt navn, slik det vises i årshjulet")
-    ny.add_argument("rolle", choices=auth.ROLLER)
-    ny.add_argument("--admin", action="store_true", help="administrator (bare for ingeniører)")
+    sub = p.add_subparsers(dest="command", required=True)
+    # the command line is what admins type, so it stays Norwegian; the code uses English names
+    new = sub.add_parser("ny-bruker", help="lag en ny bruker")
+    new.add_argument("username", metavar="brukernavn")
+    new.add_argument("name", metavar="navn", help="fullt navn, slik det vises i årshjulet")
+    new.add_argument("role", metavar="rolle", choices=CLI_ROLES, help="ingenior eller faglarer")
+    new.add_argument("--admin", action="store_true", help="administrator (bare for ingeniører)")
     for k in ("passord", "deaktiver", "aktiver"):
-        sub.add_parser(k).add_argument("brukernavn")
+        sub.add_parser(k).add_argument("username", metavar="brukernavn")
     adm = sub.add_parser("admin", help="gjør en ingeniør til administrator")
-    adm.add_argument("brukernavn")
-    adm.add_argument("--fjern", action="store_true", help="ta bort administratorrollen")
+    adm.add_argument("username", metavar="brukernavn")
+    adm.add_argument("--fjern", dest="remove", action="store_true", help="ta bort administratorrollen")
     sub.add_parser("liste")
     a = p.parse_args(argv)
+    a.command = CLI_COMMANDS.get(a.command, a.command)
+    if a.command == "new-user":
+        a.role = CLI_ROLES[a.role]
 
     store = Db(config.DB_FILE)
     store.init(config.DATA_FILE)
 
-    if a.kommando == "ny-bruker":
-        brukernavn = a.brukernavn.strip()
-        if not brukernavn or any(c.isspace() for c in brukernavn):
+    if a.command == "new-user":
+        username = a.username.strip()
+        if not username or any(c.isspace() for c in username):
             sys.exit("Brukernavnet kan ikke være tomt eller inneholde mellomrom.")
-        if a.admin and a.rolle != "ingenior":
+        if a.admin and a.role != "engineer":
             sys.exit("Bare ingeniører kan være administrator.")
         try:
-            hashet = auth.hash_passord(_passord())
+            hashed = auth.hash_password(_password())
         except ValueError as e:
             sys.exit(str(e))
         try:
-            store.ny_bruker(brukernavn, a.navn.strip(), a.rolle, hashet, admin=a.admin)
+            store.new_user(username, a.name.strip(), a.role, hashed, admin=a.admin)
         except sqlite3.IntegrityError:
-            sys.exit(f"Brukernavnet «{brukernavn}» er tatt.")
-        print(f"Laget {auth.ROLLENAVN[a.rolle].lower()}{' (administrator)' if a.admin else ''} «{brukernavn}» ({a.navn}).")
-    elif a.kommando == "admin":
-        u = _finn(store, a.brukernavn)
-        if u["rolle"] != "ingenior":
+            sys.exit(f"Brukernavnet «{username}» er tatt.")
+        print(f"Laget {auth.ROLE_NAMES[a.role].lower()}{' (administrator)' if a.admin else ''} «{username}» ({a.name}).")
+    elif a.command == "admin":
+        u = _find(store, a.username)
+        if u["role"] != "engineer":
             sys.exit("Bare ingeniører kan være administrator.")
-        if a.fjern and u["admin"] and store.aktive_admins() <= 1:
+        if a.remove and u["admin"] and store.active_admins() <= 1:
             sys.exit("Det må finnes minst én aktiv administrator.")
-        store.endre_bruker(u["id"], admin=0 if a.fjern else 1)
-        print(f"«{u['brukernavn']}» er {'ikke lenger' if a.fjern else 'nå'} administrator.")
-    elif a.kommando == "passord":
-        u = _finn(store, a.brukernavn)
+        store.update_user(u["id"], admin=0 if a.remove else 1)
+        print(f"«{u['username']}» er {'ikke lenger' if a.remove else 'nå'} administrator.")
+    elif a.command == "password":
+        u = _find(store, a.username)
         try:
-            store.endre_bruker(u["id"], passord=auth.hash_passord(_passord()), feilforsok=0, last_til=None)
+            store.update_user(u["id"], password=auth.hash_password(_password()), failed_attempts=0, locked_until=None)
         except ValueError as e:
             sys.exit(str(e))
-        print(f"Nytt passord for «{u['brukernavn']}». Økter med det gamle passordet er avsluttet.")
-    elif a.kommando == "deaktiver":
-        u = _finn(store, a.brukernavn)
-        store.endre_bruker(u["id"], aktiv=0)
-        print(f"«{u['brukernavn']}» kan ikke lenger logge inn.")
-    elif a.kommando == "aktiver":
-        u = _finn(store, a.brukernavn)
-        store.endre_bruker(u["id"], aktiv=1, feilforsok=0, last_til=None)
-        print(f"«{u['brukernavn']}» kan logge inn igjen.")
+        print(f"Nytt passord for «{u['username']}». Økter med det gamle passordet er avsluttet.")
+    elif a.command == "deactivate":
+        u = _find(store, a.username)
+        store.update_user(u["id"], active=0)
+        print(f"«{u['username']}» kan ikke lenger logge inn.")
+    elif a.command == "activate":
+        u = _find(store, a.username)
+        store.update_user(u["id"], active=1, failed_attempts=0, locked_until=None)
+        print(f"«{u['username']}» kan logge inn igjen.")
     else:
-        brukere = store.brukere()
-        if not brukere:
+        users = store.users()
+        if not users:
             print("Ingen brukere ennå. Lag administratoren med: python manage.py ny-bruker <brukernavn> \"<Navn>\" ingenior --admin")
-        for u in brukere:
-            status = "aktiv" if u["aktiv"] else "deaktivert"
-            if u["last_til"]:
-                status += f", låst til {u['last_til']}"
-            rolle = auth.ROLLENAVN[u["rolle"]] + (" (admin)" if u["admin"] else "")
-            print(f"{u['brukernavn']:<16} {u['navn']:<28} {rolle:<18} {status}"
-                  f"   sist inne: {u['sist_inne'] or '–'}")
+        for u in users:
+            status = "aktiv" if u["active"] else "deaktivert"  # printed for the admin
+            if u["locked_until"]:
+                status += f", låst til {u['locked_until']}"
+            role = auth.ROLE_NAMES[u["role"]] + (" (admin)" if u["admin"] else "")
+            print(f"{u['username']:<16} {u['name']:<28} {role:<18} {status}"
+                  f"   sist inne: {u['last_login'] or '–'}")
 
 
 if __name__ == "__main__":

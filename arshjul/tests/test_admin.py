@@ -1,172 +1,172 @@
-"""Alltid innlogging, administrator og brukere på nettsiden."""
+"""Always logged in; admin and users on the web page."""
 import pytest
 
 import app as arshjul
 import auth
 import config
-from conftest import ADMIN_PASSORD, som
+from conftest import ADMIN_PASSWORD, som
 
-PASSORD = "et-langt-passord"
+PASSWORD = "et-langt-passord"
 
 
-def ny_klient():
+def new_client():
     arshjul.app.config["TESTING"] = True
     return arshjul.app.test_client()
 
 
-def bruker(navn, rolle="ingenior", admin=False):
-    return arshjul.store.ny_bruker(navn, navn.title(), rolle, auth.hash_passord(PASSORD), admin=admin)
+def user(name, role="engineer", admin=False):
+    return arshjul.store.new_user(name, name.title(), role, auth.hash_password(PASSWORD), admin=admin)
 
 
-# ---------- første gang ----------
+# ---------- first time ----------
 
-def oppsett(c, **felt):
+def setup(c, **fields):
     c.get("/oppsett")
     with c.session_transaction() as s:
-        token = s.get("csrf", "ingen")  # finnes det brukere, sendes du videre uten skjema
-    data = {"brukernavn": "even", "navn": "Even", "passord": "mitt-gode-passord", "passord2": "mitt-gode-passord",
-            "csrf": token, **felt}
+        token = s.get("csrf", "ingen")  # if there are users, you're sent on without the form
+    data = {"username": "even", "name": "Even", "password": "mitt-gode-passord", "password2": "mitt-gode-passord",
+            "csrf": token, **fields}
     return c.post("/oppsett", data=data)
 
 
-def test_forste_gang_lokalt_lages_administrator():
-    c = ny_klient()
+def test_first_time_locally_creates_the_admin():
+    c = new_client()
     r = c.get("/")
     assert r.status_code == 302 and r.headers["Location"].endswith("/oppsett")
     assert c.get("/login").headers["Location"].endswith("/oppsett")
-    assert oppsett(c, passord2="noe-annet-her").status_code == 400
-    assert oppsett(c, passord="kort", passord2="kort").status_code == 400
-    r = oppsett(c)
-    assert r.status_code == 302 and r.headers["Location"] == "/admin#brukere"  # rett til å lage brukere
+    assert setup(c, password2="noe-annet-her").status_code == 400
+    assert setup(c, password="kort", password2="kort").status_code == 400
+    r = setup(c)
+    assert r.status_code == 302 and r.headers["Location"] == "/admin#brukere"  # allowed to create users
     with c.session_transaction() as s:
         c.environ_base["HTTP_X_CSRF_TOKEN"] = s["csrf"]
     st = c.get("/api/state").get_json()
-    assert st["meg"]["navn"] == "Even" and st["meg"]["admin"] is True and st["meg"]["rolle"] == "ingenior"
-    # bare én gang: nå finnes det en bruker
-    assert ny_klient().get("/oppsett").headers["Location"].endswith("/login")
-    assert oppsett(ny_klient(), brukernavn="inntrenger").status_code == 302  # sendt til innlogging
-    assert arshjul.store.bruker(brukernavn="inntrenger") is None
+    assert st["me"]["name"] == "Even" and st["me"]["admin"] is True and st["me"]["role"] == "engineer"
+    # only once: now there is a user
+    assert new_client().get("/oppsett").headers["Location"].endswith("/login")
+    assert setup(new_client(), username="inntrenger").status_code == 302  # sent to login
+    assert arshjul.store.user(username="inntrenger") is None
 
 
-def test_forste_gang_pa_server_bare_med_manage(monkeypatch):
-    monkeypatch.setattr(config, "LOKAL", False)
-    c = ny_klient()
+def test_first_time_on_server_only_with_manage(monkeypatch):
+    monkeypatch.setattr(config, "LOCAL", False)
+    c = new_client()
     assert c.get("/").headers["Location"].startswith("/login")
     assert "manage.py ny-bruker" in c.get("/login").get_data(as_text=True)
-    oppsett(c)
-    assert arshjul.store.antall_brukere() == 0
+    setup(c)
+    assert arshjul.store.user_count() == 0
 
 
-def test_ingen_anonym_tilgang_lokalt():
-    bruker("ing")
-    c = ny_klient()
+def test_no_anonymous_access_locally():
+    user("eng")
+    c = new_client()
     assert c.get("/api/state").status_code == 401
     assert c.get("/").headers["Location"].startswith("/login")
-    # brukere fra før administrator fantes: siden forteller hvordan du blir administrator
+    # users from before there was an admin: the page explains how to become admin
     assert "manage.py admin" in c.get("/login").get_data(as_text=True)
 
 
-def test_hemmelig_nokkel_lagres_lokalt():
-    # laget én gang og gjenbrukt, så du forblir innlogget etter omstart
-    assert len(config.SECRET_KEY) >= 32 and config.OKT_TIMER == 24 * 30
+def test_secret_key_is_stored_locally():
+    # created once and reused, so you stay logged in after a restart
+    assert len(config.SECRET_KEY) >= 32 and config.SESSION_HOURS == 24 * 30
 
 
 # ---------- administrator ----------
 
-def test_admin_er_vanlig_ingenior_pa_hovedsiden(client):
-    """På hovedsiden har administratoren akkurat en vanlig ingeniørs rettigheter – panelet er stedet for alt."""
-    bjorn = bruker("bjorn")
-    e = arshjul.store.nytt_emne({"kode": "E1", "ingenior_id": bjorn})["id"]
-    g = som(ny_klient(), bjorn).post("/api/gjennomforinger", json={"navn": "Bjørns", "skolear": 2030, "emne": e}).get_json()
-    assert client.get("/api/state").get_json()["prosjekter"] == []  # ikke admins emne
-    assert client.patch(f"/api/gjennomforinger/{g['id']}", json={"start": 40}).status_code == 403
-    # men i panelet ser og retter administratoren alt
-    assert [r["navn"] for r in client.get("/api/admin/data").get_json()["gjennomforinger"]] == ["Bjørns"]
-    assert client.patch(f"/api/admin/gjennomforinger/{g['id']}", json={"start": 40}).status_code == 200
+def test_admin_is_a_regular_engineer_on_the_main_page(client):
+    """On the main page the admin has exactly a regular engineer's rights – the panel is the place for everything."""
+    bjorn = user("bjorn")
+    e = arshjul.store.new_course({"code": "E1", "engineer_id": bjorn})["id"]
+    g = som(new_client(), bjorn).post("/api/runs", json={"name": "Bjørns", "school_year": 2030, "course": e}).get_json()
+    assert client.get("/api/state").get_json()["projects"] == []  # not the admin's course
+    assert client.patch(f"/api/runs/{g['id']}", json={"start": 40}).status_code == 403
+    # but in the panel the admin sees and fixes everything
+    assert [r["name"] for r in client.get("/api/admin/data").get_json()["runs"]] == ["Bjørns"]
+    assert client.patch(f"/api/admin/runs/{g['id']}", json={"start": 40}).status_code == 200
 
 
-def test_admin_lager_og_endrer_brukere(client):
-    r = client.post("/api/brukere", json={"brukernavn": "ola", "navn": "Ola", "rolle": "faglarer", "passord": PASSORD,
+def test_admin_creates_and_changes_users(client):
+    r = client.post("/api/users", json={"username": "ola", "name": "Ola", "role": "lecturer", "password": PASSWORD,
                                           "admin": True})
     u = r.get_json()
-    assert (u["rolle"], u["admin"], u["aktiv"]) == ("faglarer", False, True)  # faglærer kan ikke være admin
-    assert "passord" not in u
-    assert client.post("/api/brukere", json={"brukernavn": "OLA", "navn": "X", "rolle": "faglarer", "passord": PASSORD}).status_code == 400
-    assert client.post("/api/brukere", json={"brukernavn": "kort", "navn": "X", "rolle": "faglarer", "passord": "kort"}).status_code == 400
-    assert client.post("/api/brukere", json={"brukernavn": "a b", "navn": "X", "rolle": "faglarer", "passord": PASSORD}).status_code == 400
-    assert client.post("/api/brukere", json={"brukernavn": "x", "navn": "X", "rolle": "sjef", "passord": PASSORD}).status_code == 400
+    assert (u["role"], u["admin"], u["active"]) == ("lecturer", False, True)  # a lecturer can't be admin
+    assert "password" not in u
+    assert client.post("/api/users", json={"username": "OLA", "name": "X", "role": "lecturer", "password": PASSWORD}).status_code == 400
+    assert client.post("/api/users", json={"username": "kort", "name": "X", "role": "lecturer", "password": "kort"}).status_code == 400
+    assert client.post("/api/users", json={"username": "a b", "name": "X", "role": "lecturer", "password": PASSWORD}).status_code == 400
+    assert client.post("/api/users", json={"username": "x", "name": "X", "role": "sjef", "password": PASSWORD}).status_code == 400
 
-    assert client.patch(f"/api/brukere/{u['id']}", json={"navn": "Ola Nordmann"}).get_json()["navn"] == "Ola Nordmann"
-    brukere = client.get("/api/admin/data").get_json()["brukere"]
-    assert {b["brukernavn"] for b in brukere} == {"admin", "ola"} and all("passord" not in b for b in brukere)
+    assert client.patch(f"/api/users/{u['id']}", json={"name": "Ola Nordmann"}).get_json()["name"] == "Ola Nordmann"
+    users = client.get("/api/admin/data").get_json()["users"]
+    assert {b["username"] for b in users} == {"admin", "ola"} and all("password" not in b for b in users)
 
-    # ny ingeniør som admin
-    r = client.post("/api/brukere", json={"brukernavn": "kari", "navn": "Kari", "rolle": "ingenior", "passord": PASSORD, "admin": True})
+    # a new engineer as admin
+    r = client.post("/api/users", json={"username": "kari", "name": "Kari", "role": "engineer", "password": PASSWORD, "admin": True})
     assert r.get_json()["admin"] is True
 
 
-def test_nytt_passord_og_deaktivering_avslutter_okten(client):
-    uid = bruker("anne")
-    a = som(ny_klient(), uid)
+def test_new_password_and_deactivation_end_the_session(client):
+    uid = user("anne")
+    a = som(new_client(), uid)
     assert a.get("/api/state").status_code == 200
-    client.patch(f"/api/brukere/{uid}", json={"passord": "et-helt-nytt-passord"})
+    client.patch(f"/api/users/{uid}", json={"password": "et-helt-nytt-passord"})
     assert a.get("/api/state").status_code == 401
-    a = som(ny_klient(), uid)
-    client.patch(f"/api/brukere/{uid}", json={"aktiv": False})
+    a = som(new_client(), uid)
+    client.patch(f"/api/users/{uid}", json={"active": False})
     assert a.get("/api/state").status_code == 401
 
 
-def test_aktivering_og_nytt_passord_laaser_opp(client):
-    uid = bruker("anne")
-    arshjul.store.endre_bruker(uid, last_til="2999-01-01T00:00:00", feilforsok=3)
-    client.patch(f"/api/brukere/{uid}", json={"aktiv": True})
-    u = arshjul.store.bruker(id=uid)
-    assert (u["last_til"], u["feilforsok"]) == (None, 0)
+def test_activation_and_new_password_unlock(client):
+    uid = user("anne")
+    arshjul.store.update_user(uid, locked_until="2999-01-01T00:00:00", failed_attempts=3)
+    client.patch(f"/api/users/{uid}", json={"active": True})
+    u = arshjul.store.user(id=uid)
+    assert (u["locked_until"], u["failed_attempts"]) == (None, 0)
 
 
-def test_det_finnes_alltid_en_administrator(client):
-    admin = arshjul.store.bruker(brukernavn="admin")["id"]
-    for endring in ({"admin": False}, {"aktiv": False}, {"rolle": "faglarer"}):
-        r = client.patch(f"/api/brukere/{admin}", json=endring)
-        assert r.status_code == 400 and "minst én aktiv administrator" in r.get_json()["feil"]
-    bruker("kari", admin=True)
-    assert client.patch(f"/api/brukere/{admin}", json={"admin": False}).status_code == 200
+def test_there_is_always_an_admin(client):
+    admin = arshjul.store.user(username="admin")["id"]
+    for change in ({"admin": False}, {"active": False}, {"role": "lecturer"}):
+        r = client.patch(f"/api/users/{admin}", json=change)
+        assert r.status_code == 400 and "minst én aktiv administrator" in r.get_json()["error"]
+    user("kari", admin=True)
+    assert client.patch(f"/api/users/{admin}", json={"admin": False}).status_code == 200
 
 
-def test_rolle_kan_ikke_byttes_mens_brukeren_star_pa_emner(client):
-    uid = bruker("anne")
-    arshjul.store.nytt_emne({"kode": "E1", "ingenior_id": uid})
-    r = client.patch(f"/api/brukere/{uid}", json={"rolle": "faglarer"})
-    assert r.status_code == 400 and "E1" in r.get_json()["feil"]
+def test_role_cant_change_while_the_user_is_on_courses(client):
+    uid = user("anne")
+    arshjul.store.new_course({"code": "E1", "engineer_id": uid})
+    r = client.patch(f"/api/users/{uid}", json={"role": "lecturer"})
+    assert r.status_code == 400 and "E1" in r.get_json()["error"]
 
 
-@pytest.mark.parametrize("rolle", ["ingenior", "faglarer"])
-def test_bare_admin_styrer_brukere(client, rolle):
-    c = som(ny_klient(), bruker("vanlig", rolle))
-    assert c.post("/api/brukere", json={"brukernavn": "x", "navn": "X", "rolle": "faglarer", "passord": PASSORD}).status_code == 403
-    assert c.patch("/api/brukere/1", json={"admin": True}).status_code == 403
+@pytest.mark.parametrize("role", ["engineer", "lecturer"])
+def test_only_the_admin_manages_users(client, role):
+    c = som(new_client(), user("vanlig", role))
+    assert c.post("/api/users", json={"username": "x", "name": "X", "role": "lecturer", "password": PASSWORD}).status_code == 403
+    assert c.patch("/api/users/1", json={"admin": True}).status_code == 403
     assert c.get("/api/admin/data").status_code == 403
 
 
 def test_manage_admin(capsys, monkeypatch):
     import manage
-    monkeypatch.setenv("ARSHJUL_NYTT_PASSORD", ADMIN_PASSORD)
+    monkeypatch.setenv("ARSHJUL_NYTT_PASSORD", ADMIN_PASSWORD)
     manage.main(["ny-bruker", "sjef", "Sjefen", "ingenior", "--admin"])
-    assert arshjul.store.bruker(brukernavn="sjef")["admin"] == 1
+    assert arshjul.store.user(username="sjef")["admin"] == 1
     with pytest.raises(SystemExit):
         manage.main(["ny-bruker", "ola", "Ola", "faglarer", "--admin"])
     with pytest.raises(SystemExit):
-        manage.main(["admin", "sjef", "--fjern"])  # den eneste
+        manage.main(["admin", "sjef", "--fjern"])  # the only one
     manage.main(["ny-bruker", "anne", "Anne", "ingenior"])
     manage.main(["admin", "anne"])
     manage.main(["admin", "sjef", "--fjern"])
-    assert arshjul.store.bruker(brukernavn="sjef")["admin"] == 0
+    assert arshjul.store.user(username="sjef")["admin"] == 0
     manage.main(["liste"])
     assert "(admin)" in capsys.readouterr().out
 
 
-def test_siden_som_admin(client):
-    from test_side import kjor_siden
-    bruker("anne")
-    res = kjor_siden(client.get("/api/state").get_json())
+def test_page_as_admin(client):
+    from test_page import run_page
+    user("anne")
+    res = run_page(client.get("/api/state").get_json())
     assert res["errors"] == []
