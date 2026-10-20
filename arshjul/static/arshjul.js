@@ -109,6 +109,7 @@
   //   soon = frist innen 2 uker · pending = god tid · gone = prosjektet har startet uten registrert bestilling
   function orderState(p) {
     const b = p.bestilling;
+    if (!p.bom && p.bestiltUtenBom) return "ok"; // uten BOM: ingeniøren har markert det som bestilt
     if (b && b.tillegg) return "tillegg";
     if (b && b.ferdig) return "ok";
     if (!IDAG) return "pending";
@@ -385,6 +386,11 @@
   const COLS = 11;
   function orderCell(p) {
     const b = p.bestilling, t = p.telling, L = t && t.lagret;
+    if (!p.bom) { // ingen BOM å registrere per leverandør: bare «bestilt» eller ikke
+      return p.bestiltUtenBom
+        ? `<span class="ostat ok">Bestilt ${dfmt.format(toD(p.bestiltUtenBom))}</span> <button type="button" class="mini quiet" data-act="utenbom" data-id="${esc(p.id)}" data-v="0">Angre</button>`
+        : `<button type="button" class="mini" data-act="utenbom" data-id="${esc(p.id)}" data-v="1" title="Prosjektet har ingen BOM – marker at det som trengs, er bestilt">Marker som bestilt</button>`;
+    }
     if (!b && !L) return `<span class="muted">${hasBom(p) ? "" : "—"}</span>`;
     const cls = b ? ({ ok: "ok", late: "late", soon: "soon", tillegg: "soon" }[orderState(p)] || "") : "";
     const open = openOrders.has(p.id);
@@ -561,6 +567,20 @@
   const typeValg = (p) => `<select data-act="type" data-id="${esc(p.id)}" aria-label="Type for ${esc(p.navn)}">`
     + Object.entries(TYPER).map(([k, n]) => `<option value="${k}"${k === p.type ? " selected" : ""}>${esc(n)}</option>`).join("") + `</select>`;
 
+  // navn og notat: «Endre» åpner to felt i cellen (egne prosjekter, også for faglærer)
+  const navnRedigeres = new Map(); // prosjekt-id → {navn, notat} slik du har skrevet dem
+  function navnCelle(p) {
+    const u = navnRedigeres.get(p.id);
+    if (u) return `<div class="navnedit" data-id="${esc(p.id)}">`
+      + `<input type="text" data-navn="navn" value="${esc(u.navn)}" aria-label="Navn på prosjekt" maxlength="120">`
+      + `<input type="text" data-navn="notat" value="${esc(u.notat)}" placeholder="Notat (valgfritt)" aria-label="Notat">`
+      + `<span><button type="button" class="mini" data-act="navnlagre" data-id="${esc(p.id)}">Lagre</button> `
+      + `<button type="button" class="mini quiet" data-act="navnavbryt" data-id="${esc(p.id)}">Avbryt</button></span></div>`;
+    return `<b><span class="dot" style="background:${col(p)}"></span>${esc(p.navn)}`
+      + (p.egen ? ` <button type="button" class="mini quiet endre" data-act="navnendre" data-id="${esc(p.id)}" aria-label="Endre navn og notat for ${esc(p.navn)}">Endre</button>` : "")
+      + `</b>${p.notat ? `<small>${esc(p.notat)}</small>` : ""}`;
+  }
+
   function drawTable() {
     if (mode === "loading") { $("tbody").innerHTML = `<tr><td colspan="${COLS}" class="blank">Henter prosjekter …</td></tr>`; return; }
     const list = sorted();
@@ -587,7 +607,7 @@
       // en annen ingeniørs prosjekt (hele instituttet): bare til å se på
       const andres = ING && !p.egen ? `<span class="muted">${esc(p.ingeniorNavn || "")}</span>` : "";
       return `<tr data-id="${esc(p.id)}">
-        <td class="name"><b><span class="dot" style="background:${col(p)}"></span>${esc(p.navn)}</b>${p.notat ? `<small>${esc(p.notat)}</small>` : ""}${eier}</td>
+        <td class="name">${navnCelle(p)}${eier}</td>
         <td>${p.egen ? typeValg(p) : esc(TYPER[p.type] || p.type)}<div class="muted" style="font-size:12px">${esc(p.semester)} ${p.frister.start.ar}</div></td>
         <td>${num("start", 1, 53, "I bruk fra uke")}</td><td>${num("slutt", 1, 53, "Til uke")}</td><td>${num("lev", 0, 20, "Leveringstid i uker")}</td><td>${num("buf", 0, 20, "Buffer i uker")}</td>
         <td><div class="settcalc"><span class="sf">${num("studenter", 0, 2000, "Antall studenter")}<small>studenter</small></span><span class="op">÷</span>`
@@ -875,6 +895,7 @@
   $("tbody").addEventListener("input", (e) => {
     const t = e.target;
     if (t.matches("input[data-role=telt]")) { tellEdit(t); return; }
+    if (t.matches("input[data-navn]")) { const u = navnRedigeres.get(t.closest(".navnedit").dataset.id); if (u) u[t.dataset.navn] = t.value; return; }
     if (!t.matches("input[type=number][data-k]")) return;
     const p = projects.find((x) => x.id === t.dataset.id); if (!p) return;
     const k = t.dataset.k;
@@ -943,6 +964,13 @@
     const s = t.closest("select[data-act=koble]"); if (!s || !s.value) return;
     act(() => api("PATCH", P(s.dataset.id), { bom: s.value }), "BOM koblet: " + s.value);
   });
+  // Enter lagrer, Escape avbryter når du endrer navn og notat
+  $("tbody").addEventListener("keydown", (e) => {
+    if (!e.target.matches("input[data-navn]") || !["Enter", "Escape"].includes(e.key)) return;
+    e.preventDefault();
+    const b = e.target.closest(".navnedit").querySelector(`[data-act=${e.key === "Enter" ? "navnlagre" : "navnavbryt"}]`);
+    if (b) b.click();
+  });
   $("tbody").addEventListener("click", async (e) => {
     const b = e.target.closest("button[data-act]");
     if (b) {
@@ -950,6 +978,20 @@
       const id = b.dataset.id, a = b.dataset.act, lev = b.dataset.lev;
       const ordrenr = () => { const i = b.closest(".levact") && b.closest(".levact").querySelector("[data-role=ordrenr]"); return i ? i.value : ""; };
       if (a === "vis") { openOrders.has(id) ? openOrders.delete(id) : openOrders.add(id); drawTable(); return; }
+      if (a === "navnendre") {
+        const p = projects.find((x) => x.id === id); if (!p) return;
+        navnRedigeres.set(id, { navn: p.navn, notat: p.notat || "" }); drawTable();
+        const i = document.querySelector(`.navnedit[data-id="${CSS.escape(id)}"] input`); if (i) i.focus();
+        return;
+      }
+      if (a === "navnavbryt") { navnRedigeres.delete(id); drawTable(); return; }
+      if (a === "navnlagre") {
+        const u = navnRedigeres.get(id); if (!u) return;
+        if (!u.navn.trim()) { feilVed(b, "Gi prosjektet et navn."); return; }
+        act(async () => { const r = await api("PATCH", P(id), { navn: u.navn.trim(), notat: u.notat.trim() }); navnRedigeres.delete(id); return r; }, "Navn og notat er lagret.");
+        return;
+      }
+      if (a === "utenbom") act(() => api("POST", P(id) + "/bestilt", { bestilt: b.dataset.v === "1" }), b.dataset.v === "1" ? "Markert som bestilt." : "Ikke lenger markert som bestilt.");
       if (a === "bomsett") act(() => api("POST", P(id) + "/bom/sett"), (r) => r.skrevet ? `Antall sett i BOM-en er nå ${r.fil} (sikkerhetskopi i BOM/Sikkerhetskopi).` : "BOM-en hadde allerede riktig antall sett.");
       if (a === "bestilt") act(() => orderApi(id, { handling: "bestilt", leverandor: lev, ordrenr: ordrenr() }), "Registrert som bestilt.");
       if (a === "tillegg") act(() => orderApi(id, { handling: "tillegg", leverandor: lev }), "Tilleggsbestillingen er registrert.");

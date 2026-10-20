@@ -1,5 +1,6 @@
 import app as arshjul
 import config
+from hjelp import lag_bom
 
 G = "/api/gjennomforinger"
 
@@ -152,3 +153,23 @@ def test_stengt_periode_kan_folge_pasken(client):
     st = client.get("/api/state").get_json()
     stengt = {u["uke"]: u["stengt"] for s in st["skolear"] for u in s["uker"] if s["ar"] == 2027}
     assert stengt[15] == "Påske" and stengt[1] == ""  # påsken 2028 er i uke 15, ikke uke 1
+
+
+def test_prosjekt_uten_bom_kan_markeres_som_bestilt(client):
+    p = lag(client, start=44)
+    r = client.post(f"{G}/{p['id']}/bestilt", json={"bestilt": True}).get_json()
+    assert r["bestiltUtenBom"] and r["bestiltUtenBomAv"]
+    assert client.get("/api/state").get_json()["prosjekter"][0]["bestiltUtenBom"] == r["bestiltUtenBom"]
+    assert client.post(f"{G}/{p['id']}/bestilt", json={"bestilt": False}).get_json()["bestiltUtenBom"] is None
+    felt = [e["felt"] for e in client.get("/api/admin/logg").get_json()]
+    assert felt.count("bestilt (uten BOM)") == 2
+
+    client.patch(f"{G}/{p['id']}", json={"bom": lag_bom().name})  # med BOM: registreres per leverandør
+    assert client.post(f"{G}/{p['id']}/bestilt", json={"bestilt": True}).status_code == 400
+
+
+def test_navn_og_notat_kan_endres(client):
+    p = lag(client, start=44)
+    r = client.patch(f"{G}/{p['id']}", json={"navn": " Nytt navn ", "notat": "IELS1001"}).get_json()
+    assert (r["navn"], r["notat"]) == ("Nytt navn", "IELS1001")
+    assert client.patch(f"{G}/{p['id']}", json={"navn": "  "}).status_code == 400

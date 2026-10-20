@@ -198,8 +198,14 @@ MIGRERINGER = [
         lev = (SELECT p.lev FROM prosjekt p WHERE p.id = gjennomforing.prosjekt_id),
         buf = (SELECT p.buf FROM prosjekt p WHERE p.id = gjennomforing.prosjekt_id)
     """,
+    # 15: prosjekter uten BOM kan markeres som bestilt (dato og hvem) – ellers står de som «frist passert»
+    """
+    ALTER TABLE gjennomforing ADD COLUMN bestilt_uten_bom TEXT;
+    ALTER TABLE gjennomforing ADD COLUMN bestilt_uten_bom_av TEXT
+    """,
 ]
 _JSON_BESTILLING = ("linjer", "paa_lager", "lager_logg")
+KOPI_DIR_NAVN = "Sikkerhetskopi-db"  # sikkerhetskopier av databasen, i datamappen
 
 PROSJEKT_FELT = ("navn", "type", "notat", "color", "emne_id")  # gjelder alle år
 EMNE_FELT = ("kode", "navn", "program", "studenter", "faglarer_id", "ingenior_id", "aktiv")
@@ -233,8 +239,11 @@ class Db:
     # ---------- oppstart ----------
 
     def init(self, json_file: Path | None = None) -> None:
-        """Lag eller oppgrader databasen. Første gang hentes prosjektene fra arshjul.json."""
+        """Lag eller oppgrader databasen. Første gang hentes prosjektene fra arshjul.json.
+        Før en oppgradering tas en sikkerhetskopi i Sikkerhetskopi-db/ (samme sted som i administratorpanelet)."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        if self.path.exists() and 0 < self.versjon() < len(MIGRERINGER):
+            self.sikkerhetskopi(self.path.parent / KOPI_DIR_NAVN / f"arshjul {dt.datetime.now():%Y-%m-%d %H%M%S}.db")
         with self.tx() as con:
             con.execute("BEGIN")  # oppgradering og import i én transaksjon
             versjon = con.execute("PRAGMA user_version").fetchone()[0]
@@ -289,6 +298,7 @@ class Db:
 
     _SELECT = """SELECT g.id, g.prosjekt_id AS prosjektId, g.skolear, g.start, g.slutt, g.sett,
                         g.studenter, g.gruppe, g.ekstra, g.bom, g.lev, g.buf, g.slettet, g.slettet_av AS slettetAv,
+                        g.bestilt_uten_bom AS bestiltUtenBom, g.bestilt_uten_bom_av AS bestiltUtenBomAv,
                         p.navn, p.type, p.notat, p.color,
                         p.emne_id AS emneId, e.kode AS emneKode, e.navn AS emneNavn, e.program,
                         e.studenter AS emneStudenter,
@@ -381,6 +391,11 @@ class Db:
                 finnes.add(r["prosjekt_id"])
                 nye.append(str(cur.lastrowid))
         return nye
+
+    def bestilt_uten_bom(self, gid: str, dato: str | None, av: str | None) -> None:
+        """Marker (eller fjern merket) at det som trengs til et prosjekt uten BOM, er bestilt."""
+        with self.tx() as con:
+            con.execute("UPDATE gjennomforing SET bestilt_uten_bom = ?, bestilt_uten_bom_av = ? WHERE id = ?", (dato, av, gid))
 
     def myk_slett(self, gid: str, av: str) -> None:
         """Faglærer fjerner: gjennomføringen skjules til ingeniøren bekrefter eller gjenoppretter."""

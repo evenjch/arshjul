@@ -150,3 +150,24 @@ def test_migrering_13_paske_folger_paskedagen(tmp_path):
                         [("Juleferie", 52, 1), ("Påske", 12, 12), ("Høstferie", 40, 40)])
     db.init()
     assert [(c["navn"], c["paske"]) for c in db.stengte()] == [("Juleferie", False), ("Påske", True), ("Høstferie", False)]
+
+
+def test_sikkerhetskopi_for_oppgradering(tmp_path):
+    """En database som skal oppgraderes, kopieres først – en ny eller oppdatert database ikke."""
+    kopier = tmp_path / "Sikkerhetskopi-db"
+    Db(tmp_path / "ny.db").init()
+    assert not kopier.exists()  # ny database: ingenting å ta vare på
+
+    db = Db(tmp_path / "gammel.db")
+    with db.tx() as con:
+        for sql in MIGRERINGER[:14]:
+            for stmt in sql.split(";"):
+                if stmt.strip():
+                    con.execute(stmt)
+        con.execute("PRAGMA user_version = 14")
+        con.execute("INSERT INTO prosjekt (id, navn) VALUES ('kit', 'Kit')")
+    db.init()
+    filer = list(kopier.glob("arshjul *.db"))
+    assert len(filer) == 1 and Db(filer[0]).versjon() == 14  # kopien er slik den var før
+    db.init()  # oppdatert: ingen ny kopi
+    assert len(list(kopier.glob("arshjul *.db"))) == 1

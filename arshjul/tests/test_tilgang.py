@@ -175,7 +175,7 @@ def test_faglarer_lager_og_endrer_egne_prosjekter(innlogging):
     ("post", "/{id}/mal", None), ("post", "/{id}/apne", None), ("post", "/{id}/liste", None),
     ("post", "/{id}/bestilling", {"handling": "bestilt", "leverandor": "elfa"}), ("post", "/{id}/sett", None),
     ("post", "/{id}/telling", {"linjer": [{"key": "elfa|a1", "telt": 1}]}), ("post", "/{id}/telling/skriv", None),
-    ("post", "/{id}/telling/angre", None), ("post", "/{id}/gjenopprett", None), ("post", "/{id}/bom/sett", None),
+    ("post", "/{id}/telling/angre", None), ("post", "/{id}/gjenopprett", None), ("post", "/{id}/bom/sett", None), ("post", "/{id}/bestilt", {"bestilt": True}),
 ])
 def test_faglarer_kan_ikke_ingeniorens_handlinger(innlogging, metode, sti, body):
     ing = logg_inn("ing")

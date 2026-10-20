@@ -71,7 +71,7 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 - [x] Bestillingsliste for én leverandør.
 - [x] **Varemottak** (migrering 5): «Registrer mottak …» legger det som kom til «På lager» i BOM-en (helt eller per linje), og setter status til Mottatt eller Delvis mottatt. Legges til det cellen har nå, så endringer i Excel imens ikke forsvinner. «Angre mottak» trekker det fra igjen (aldri under 0). Sikkerhetskopi og logg som ved telling. BOM-en viser dermed alltid det som står på hylla, og «Å bestille» i Excel blir riktig.
 - [x] «Trenger mer / bestilt for mye» sjekkes bare før prosjektet starter og før det er telt – etterpå endres BOM-en av tellinger og neste års innkjøp.
-- [ ] Prosjekter uten BOM kan ikke markeres som bestilt ennå.
+- [x] Prosjekter uten BOM markeres som bestilt med en knapp (migrering 15), så fristen ikke står som passert.
 
 **En BOM-linje kjennes igjen på leverandør + varenummer** (eller leverandør + beskrivelse uten varenummer), fordi varenumre bare er unike hos én leverandør – RS og Farnell kan ha samme nummer på hver sin vare. Bytter en linje leverandør, regnes den som en ny linje. (Migrering 6 gjorde om lagrede bestillinger; tellinger fra testingen ble fjernet.)
 
@@ -125,12 +125,13 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 - [x] **Faglæreren lager sine egne emner og velger ingeniør** (migrering 10). Faglæreren kan ikke bytte faglærer eller endre andres emner. Ingeniøren som velges – og den som tas av – får et varsel med «OK, sett» (ikke når du velger deg selv). Ingen godkjenning: ingeniøren får emnet med en gang.
 - [x] «Kopier til neste skoleår» og vårpåminnelsen gjelder egne emner.
 - [x] **Antall sett regnes ut av studenter og grupper** (migrering 11): antall studenter ÷ studenter per gruppe, rundet opp, + ekstra sett (`db.antall_sett` – eneste stedet det regnes). `sett` lagres fortsatt, så bestilling, telling og historikk er uendret, men kan ikke settes direkte. Eksisterende gjennomføringer fikk studenter = sett og grupper på 1. Endrer antall sett seg, logges og varsles det sammen med feltet som ble endret.
+- [x] **Sikkerhetskopi før oppgradering**: før databasen migreres, kopieres den til `Sikkerhetskopi-db/` (samme sted og navn som «Ta sikkerhetskopi nå» i administratorpanelet).
 - [x] **Fire prosjekttyper** (`frister.TYPER`): semestersett, prosjekt, hackathon og lab. Typen gir navnene i hjulet og telleuka (sett og lab: siste bruksuke; prosjekt og hackathon: uka etter). Gamle «Hackathon / lab» ble Hackathon – lab-ene endres i tabellen. Ingen migrering: typen er fritekst i databasen og sjekkes i API-et.
 - [x] **Antall studenter hører til emnet** (migrering 12) og er standard når et nytt prosjekt legges i emnet. Prosjektet har sitt eget tall og kan avvike; å endre emnet endrer ikke prosjekter som finnes. Avviker prosjektet, vises emnets tall under.
 - Lager og BOM er fortsatt per prosjekt (felles lager på tvers av emner er parkert).
 - [x] Mens faglæreren endrer, vises konsekvensen ved fristen: «Fristen er om 1 uke – ingeniøren varsles».
 - [x] Fjerning er **myk**: prosjektet skjules, og ingeniøren kan gjenopprette eller bekrefte sletting.
-- [ ] Endre navn og notat i tabellen (i dag bare når prosjektet legges til).
+- [x] Endre navn og notat i tabellen («Endre» i navnecellen; Enter lagrer, Escape avbryter).
 
 **Varsler til ingeniøren**
 - [x] Hver endring logges (hvem, når, felt, fra → til) – også ingeniørens, for sporbarhet. Bestilling, varemottak og telling lagrer hvem som gjorde det.

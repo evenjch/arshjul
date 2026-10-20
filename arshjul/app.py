@@ -163,7 +163,7 @@ def nektet(e):
 # ---------- endringslogg ----------
 
 FELTNAVN = {"navn": "navn", "type": "type", "start": "uke fra", "slutt": "uke til", "sett": "antall sett",
-            "studenter": "studenter", "gruppe": "per gruppe", "ekstra": "ekstra sett", "bomSett": "antall sett i BOM-en", "notat": "notat", "lev": "leveringstid", "buf": "buffer", "bom": "BOM", "color": "farge",
+            "studenter": "studenter", "gruppe": "per gruppe", "ekstra": "ekstra sett", "bomSett": "antall sett i BOM-en", "bestiltUtenBom": "bestilt (uten BOM)", "notat": "notat", "lev": "leveringstid", "buf": "buffer", "bom": "BOM", "color": "farge",
             "emneId": "emne"}
 
 
@@ -776,6 +776,20 @@ def sett_til_bom(g0: dict, g1: dict) -> dict | None:
     if res["skrevet"]:
         logg(g1, "endret", {"bomSett": (res["for"], res["fil"])})
     return res
+
+
+@app.post("/api/gjennomforinger/<gid>/bestilt")
+def order_without_bom(gid):
+    """Ingeniøren: prosjekter uten BOM markeres som bestilt (eller ikke), så fristen ikke står som passert."""
+    g = _aktiv(gid)
+    if g["bom"]:
+        raise bomlib.BomError("Prosjektet har en BOM – registrer bestillingen per leverandør.")
+    bestilt = bool((request.get_json(silent=True) or {}).get("bestilt"))
+    if bestilt == bool(g["bestiltUtenBom"]):
+        return jsonify(g)
+    store.bestilt_uten_bom(gid, dt.date.today().isoformat() if bestilt else None, auth.meg()["navn"] if bestilt else None)
+    logg(g, "endret", {"bestiltUtenBom": ("nei" if bestilt else "ja", "ja" if bestilt else "nei")})
+    return jsonify(store.gjennomforing(gid))
 
 
 @app.post("/api/gjennomforinger/<gid>/bom/sett")

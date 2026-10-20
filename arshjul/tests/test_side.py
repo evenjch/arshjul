@@ -170,6 +170,7 @@ def test_siden_tegner_alle_tilstander(client):
     assert 'data-k="gruppe"' in res["tbody"] and 'data-k="ekstra"' in res["tbody"]
     assert "= 22 sett" in res["tbody"]  # «Grupper»: 61 studenter i grupper på 3 + 1 ekstra
     assert "Antall studenter?" in res["tbody"]  # «Uten BOM»: ingen studenter ennå
+    assert "Marker som bestilt" in res["tbody"] and 'data-act="navnendre"' in res["tbody"]  # «Uten BOM»
     assert 'data-act="type"' in res["tbody"] and ">Lab</option>" in res["tbody"]  # typen kan endres i tabellen
     d = res["datoer"]  # uke 3–23 er våren etter (januar–juni neste kalenderår), ikke januar i år
     assert d.startswith("Vår ") and " jan" in d and " jun" in d and d.count(d[4:8]) == 3, d
@@ -200,3 +201,11 @@ def test_kopier_til_neste_ar_er_en_sjekkliste(client):
     assert 'data-c="start"' in k and 'data-c="studenter"' in k and "÷ 4 + 0" in k
     assert "Bruk emnets 60" in k  # klassen i emnet er en annen enn i fjor
     assert "Ikke ferdig ennå" in k and "Ingen BOM koblet til" in k
+
+
+def test_markert_bestilt_uten_bom(client):
+    g = client.post(G, json={"navn": "Lodding", "skolear": SY, "start": 44}).get_json()
+    client.post(f"{G}/{g['id']}/bestilt", json={"bestilt": True})
+    res = kjor_siden(client.get("/api/state").get_json())
+    assert res["errors"] == []
+    assert '<span class="ostat ok">Bestilt ' in res["tbody"] and 'data-v="0"' in res["tbody"]

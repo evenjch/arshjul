@@ -90,6 +90,10 @@
   tr.hl td { background: var(--hover); }
   td.name b { display: flex; align-items: center; gap: 8px; }
   td.name small { display: block; color: var(--muted); margin-left: 18px; }
+  td.name .endre { font-size: 11px; padding: 1px 6px; opacity: .45; }
+  tr:hover td.name .endre, td.name .endre:focus-visible { opacity: 1; }  /* tydelig når du peker på raden */
+  .navnedit { display: grid; gap: 4px; }
+  .navnedit input { font: 400 13px var(--sans); padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
   input[type=number] { font: 500 13px var(--mono); width: 56px; padding: 5px 6px; border: 1px solid var(--line); border-radius: 7px;
                        background: var(--bg); color: var(--ink); font-variant-numeric: tabular-nums; }
   /* BOM-en har et annet antall sett enn årshjulet: Excel regner feil «Å bestille» til det er rettet */

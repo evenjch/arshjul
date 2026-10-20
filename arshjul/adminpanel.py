@@ -20,10 +20,10 @@ import bestilling
 import config
 import frister
 import telling
+from db import KOPI_DIR_NAVN  # samme mappe som sikkerhetskopien før oppgraderinger
 
 bp = Blueprint("adminpanel", __name__)
 A = None  # app-modulen (settes i init – unngår å importere app.py to ganger når den kjøres som skript)
-KOPI_DIR_NAVN = "Sikkerhetskopi-db"
 
 
 def init(app, app_modul) -> None:
