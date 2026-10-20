@@ -83,7 +83,7 @@ RADER = [
 
 
 def oppsett(client):
-    g = client.post(G, json={"navn": "Testprosjekt", "skolear": NESTE, "start": 44, "slutt": 44, "sett": 10}).get_json()
+    g = client.post(G, json={"navn": "Testprosjekt", "skolear": NESTE, "start": 44, "slutt": 44, "studenter": 10}).get_json()
     fil = lag_bom(rader=RADER).name
     client.patch(f"{G}/{g['id']}", json={"bom": fil})
     return g["id"]
@@ -116,7 +116,7 @@ def test_bestillingsflyt(client):
     assert (b["status"], b["ferdig"], b["tillegg"]) == ("bestilt", True, False)
 
     # faglæreren øker til 12 sett etter bestilling
-    client.patch(f"{G}/{gid}", json={"sett": 12})
+    client.patch(f"{G}/{gid}", json={"studenter": 12})
     b = best(client)
     assert (b["ferdig"], b["tillegg"]) == (False, True)
     mangler = {g["key"]: [t["mangler"] for t in g["tillegg"]] for g in b["grupper"]}

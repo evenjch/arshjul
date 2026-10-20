@@ -35,7 +35,7 @@ def test_diff_med_helt_like_linjer():
 
 def test_ok_sett_virker(client):
     """Ingeniørens test: legg til to linjer med samme varenummer, lagre, trykk «OK, sett»."""
-    g = client.post(G, json={"navn": "Multi leverandør - test", "skolear": 2026, "start": 44, "sett": 10}).get_json()
+    g = client.post(G, json={"navn": "Multi leverandør - test", "skolear": 2026, "start": 44, "studenter": 10}).get_json()
     fil = lag_bom("Multi – BOM.xlsx", rader=[("Første", "Elfa", "E1", 1, 0, 1.0)]).name
     client.patch(f"{G}/{g['id']}", json={"bom": fil})
     client.get("/api/state")  # «sist sett» lagres
@@ -47,7 +47,7 @@ def test_ok_sett_virker(client):
 
 
 def test_telling_og_mottak_holder_linjene_fra_hverandre(client):
-    g = client.post(G, json={"navn": "Multi", "skolear": 2026, "start": 44, "sett": 10}).get_json()
+    g = client.post(G, json={"navn": "Multi", "skolear": 2026, "start": 44, "studenter": 10}).get_json()
     fil = lag_bom("Multi – BOM.xlsx", rader=RADER).name
     client.patch(f"{G}/{g['id']}", json={"bom": fil})
     lager = lambda: {r["leverandor"]: r["lager"] for r in bom.read_bom(config.BOM_DIR / fil)["rader"]}

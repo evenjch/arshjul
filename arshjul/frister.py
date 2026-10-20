@@ -28,6 +28,16 @@ def skolear_for(d: dt.date) -> int:
     return d.year if d >= skolear_start(d.year) else d.year - 1
 
 
+VIS_NESTE_UKE = 26  # fra denne uka om sommeren åpner årshjulet på skoleåret som kommer
+
+
+def skolear_vis(d: dt.date) -> int:
+    """Skoleåret siden åpner på. Om sommeren er det året som kommer: høstens bestillinger er gjort,
+    og det er neste år du jobber med – selv om skoleåret formelt skifter først i uke 32."""
+    na = skolear_for(d)
+    return na + 1 if d >= mandag(na + 1, VIS_NESTE_UKE) else na
+
+
 def skolear_navn(sy: int) -> str:
     return f"{sy}/{(sy + 1) % 100:02d}"
 
@@ -42,9 +52,36 @@ def in_range(w: int, a: int, b: int) -> bool:
     return a <= w <= b if a <= b else (w >= a or w <= b)
 
 
+def paskedag(ar: int) -> dt.date:
+    """Første påskedag (gregoriansk, «anonym» algoritme)."""
+    a, b, c = ar % 19, ar // 100, ar % 100
+    d, e = b // 4, b % 4
+    g = (8 * b + 13) // 25
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = c // 4, c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    maned = (h + l - 7 * m + 114) // 31
+    return dt.date(ar, maned, (h + l - 7 * m + 114) % 31 + 1)
+
+
+def paskeuke(ar: int) -> int:
+    """Uka med skjærtorsdag, langfredag og påskedag (søndagen er siste dag i ISO-uka)."""
+    return paskedag(ar).isocalendar()[1]
+
+
+def i_periode(d: dt.date, c: dict) -> bool:
+    """Er uka d i den stengte perioden c? En periode som følger påsken, har ikke faste uker."""
+    ar, w, _ = d.isocalendar()
+    return w == paskeuke(ar) if c.get("paske") else in_range(w, c["fra"], c["til"])
+
+
 def stengt(d: dt.date, closed: list[dict]) -> bool:
-    w = d.isocalendar()[1]
-    return any(in_range(w, c["fra"], c["til"]) for c in closed)
+    return any(i_periode(d, c) for c in closed)
+
+
+def stengt_navn(d: dt.date, closed: list[dict]) -> str:
+    return ", ".join(c["navn"] for c in closed if i_periode(d, c))
 
 
 def back_open(d: dt.date, n: int, closed: list[dict]) -> dt.date:
@@ -60,7 +97,7 @@ def uke_info(d: dt.date, closed: list[dict] | None = None) -> dict:
     ar, uke, _ = d.isocalendar()
     out = {"dato": (d - dt.timedelta(days=d.weekday())).isoformat(), "uke": uke, "ar": ar}
     if closed is not None:
-        out["stengt"] = stengt(d, closed)
+        out["stengt"] = stengt_navn(d, closed)  # navnet på perioden, tomt hvis åpen
     return out
 
 
@@ -104,20 +141,28 @@ def semester(uke: int) -> str:
     return "Høst" if uke >= SKOLEAR_UKE else "Vår"
 
 
+# prosjekttyper: navn, hva starten heter, når det telles (uker etter siste bruksuke) og hva tellingen heter
+TYPER = {
+    "sett":     {"navn": "Semestersett", "start": "Utdeling",      "retur": 0, "telling": "Innlevering og telling"},
+    "prosjekt": {"navn": "Prosjekt",     "start": "Prosjektstart", "retur": 1, "telling": "Innlevering og telling"},
+    "hack":     {"navn": "Hackathon",    "start": "Hackathon",     "retur": 1, "telling": "Tell opp restlager"},
+    "lab":      {"navn": "Lab",          "start": "Lab",           "retur": 0, "telling": "Innlevering og telling"},
+}
+
+
 def frister(g: dict, closed: list[dict]) -> dict:
     """Datoer for én gjennomføring: frist, forberedelse, start, slutt og innlevering."""
     start = uke_dato(g["skolear"], g["start"])
     slutt = max(start, uke_dato(g["skolear"], g["slutt"]))
     frist = back_open(start, (g.get("lev") or 0) + (g.get("buf") or 0), closed)
     prep = back_open(frist, 2, closed)
-    sett = g.get("type") == "sett"
-    retur = slutt if sett else slutt + UKE
-    hack = "Hackathon" if start == slutt else "Gjennomføring starter"
+    typ = TYPER.get(g.get("type"), TYPER["hack"])
+    retur = slutt + typ["retur"] * UKE
     hendelser = [
         {"kind": "prep", "what": "Oppdater BOM og tell lager", **uke_info(prep)},
         {"kind": "frist", "what": "Bestillingsfrist", **uke_info(frist)},
-        {"kind": "start", "what": "Utdeling" if sett else hack, **uke_info(start)},
-        {"kind": "retur", "what": "Innlevering og telling" if sett else "Tell opp restlager", **uke_info(retur)},
+        {"kind": "start", "what": typ["start"], **uke_info(start)},
+        {"kind": "retur", "what": typ["telling"], **uke_info(retur)},
     ]
     return {"frist": uke_info(frist), "prep": uke_info(prep), "start": uke_info(start),
             "slutt": uke_info(slutt), "retur": uke_info(retur), "hendelser": hendelser}

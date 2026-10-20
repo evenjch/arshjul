@@ -1,5 +1,6 @@
 import datetime as dt
 
+import app as arshjul
 import bestilling
 import config
 import frister
@@ -47,8 +48,8 @@ def test_varsel_for_ett_manglende_prosjekt():
 
 def test_kopier_til_neste_skolear():
     db = Db(config.DB_FILE)
-    a = db.ny("kit", 2026, {"navn": "Kit", "start": 34, "slutt": 50, "sett": 60})
-    b = db.ny("insekt", 2026, {"navn": "Insekt", "start": 44, "slutt": 44, "sett": 30})
+    a = db.ny("kit", 2026, {"navn": "Kit", "start": 34, "slutt": 50, "studenter": 60})
+    b = db.ny("insekt", 2026, {"navn": "Insekt", "start": 44, "slutt": 44, "studenter": 30})
     db.ny_bestilling(a["id"], "elfa", "Elfa", dato="2026-06-01", ordrenr="", sett=60, linjer=[])
 
     assert len(db.kopier(2026, [a["id"]])) == 1
@@ -62,7 +63,7 @@ def test_kopier_til_neste_skolear():
 
 
 def test_kopier_via_api(client):
-    a = client.post(G, json={"navn": "Kit", "skolear": 2026, "start": 34, "slutt": 50, "sett": 60}).get_json()
+    a = client.post(G, json={"navn": "Kit", "skolear": 2026, "start": 34, "slutt": 50, "studenter": 60}).get_json()
     client.post(G, json={"navn": "Insekt", "skolear": 2026, "start": 44})
     r = client.post("/api/skolear/2026/kopier", json={"ids": [a["id"]]})
     assert r.get_json()["navn"] == "2027/28" and len(r.get_json()["nye"]) == 1
@@ -82,7 +83,7 @@ def test_kostnad_fra_frosne_kopier():
 
 
 def test_bestilt_kr_i_state(client):
-    g = client.post(G, json={"navn": "Test", "skolear": 2026, "start": 44, "sett": 10}).get_json()
+    g = client.post(G, json={"navn": "Test", "skolear": 2026, "start": 44, "studenter": 10}).get_json()
     fil = lag_bom(rader=[("Arduino", "Elfa", "A1", 1, 4, 250.0), ("Ledning", "Kjell", "L1", 2, 0, 10.0)]).name
     client.patch(f"{G}/{g['id']}", json={"bom": fil})
     state = lambda: client.get("/api/state").get_json()["prosjekter"][0]
@@ -92,3 +93,15 @@ def test_bestilt_kr_i_state(client):
     # kostnaden står seg selv om BOM-en senere fjernes
     (config.BOM_DIR / fil).unlink()
     assert state()["bestiltKr"] == 1500.0
+
+
+def test_kopier_med_endringer(client):
+    a = client.post(G, json={"navn": "Kit", "skolear": 2026, "start": 34, "slutt": 50, "studenter": 60, "gruppe": 3}).get_json()
+    b = client.post(G, json={"navn": "Lodding", "skolear": 2026, "start": 44, "studenter": 30}).get_json()
+    r = client.post("/api/skolear/2026/kopier", json={"ids": [a["id"], b["id"]],
+                                                       "endringer": {a["id"]: {"start": 35, "studenter": 72, "sett": 999}}})
+    assert r.status_code == 200, r.get_json()
+    neste = {g["navn"]: g for g in arshjul.store.gjennomforinger() if g["skolear"] == 2027}
+    assert (neste["Kit"]["start"], neste["Kit"]["slutt"], neste["Kit"]["studenter"], neste["Kit"]["sett"]) == (35, 50, 72, 24)
+    assert (neste["Lodding"]["start"], neste["Lodding"]["sett"]) == (44, 30)  # uten endringer: som i år
+    assert client.post("/api/skolear/2026/kopier", json={"endringer": {a["id"]: "x"}}).status_code == 400

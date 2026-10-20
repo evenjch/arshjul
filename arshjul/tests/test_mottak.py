@@ -24,7 +24,7 @@ def post(client, gid, **body):
 
 def arduino_prosjekt(client, sy, lager_for=30):
     """Ett prosjekt, 30 studenter, én Arduino Uno hver."""
-    g = client.post(G, json={"navn": "Arduino-kurs", "skolear": sy, "start": 34, "slutt": 50, "sett": 30, "type": "sett"}).get_json()
+    g = client.post(G, json={"navn": "Arduino-kurs", "skolear": sy, "start": 34, "slutt": 50, "studenter": 30, "type": "sett"}).get_json()
     fil = lag_bom(rader=[("Arduino Uno", "Elfa", "A1", 1, lager_for, 250.0)]).name
     client.patch(f"{G}/{g['id']}", json={"bom": fil})
     return g["id"], fil

@@ -1,12 +1,13 @@
 """SQLite-databasen i datamappen: prosjekter, gjennomføringer og stengte perioder.
 
 Prosjekt        det som går igjen hvert år: navn, type, BOM, farge, leveringstid og buffer
-Gjennomføring   én kjøring av et prosjekt i et skoleår: uker og antall sett
+Gjennomføring   én kjøring av et prosjekt i et skoleår: uker, studenter, gruppestørrelse og antall sett
 """
 from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 import sqlite3
 from contextlib import closing, contextmanager
 from pathlib import Path
@@ -14,9 +15,9 @@ from pathlib import Path
 import frister
 
 DEFAULT_STENGT = [
-    {"navn": "Juleferie", "fra": 52, "til": 1},
-    {"navn": "Påske", "fra": 12, "til": 12},
-    {"navn": "Fellesferie", "fra": 28, "til": 31},
+    {"navn": "Juleferie", "fra": 52, "til": 1, "paske": False},
+    {"navn": "Påske", "fra": 12, "til": 12, "paske": True},  # følger påsken; ukene brukes ikke
+    {"navn": "Fellesferie", "fra": 28, "til": 31, "paske": False},
 ]
 
 # Hver oppgradering kjøres én gang, i rekkefølge. Legg nye til nederst – endre aldri en gammel.
@@ -169,12 +170,51 @@ MIGRERINGER = [
     ALTER TABLE endring ADD COLUMN emne_id INTEGER;
     ALTER TABLE endring ADD COLUMN mottaker_id INTEGER;
     """,
+    # 11: antall sett regnes ut fra studenter, gruppestørrelse og ekstra sett (sett lagres fortsatt).
+    #     Eksisterende gjennomføringer får studenter = sett og grupper på 1, så ingen tall endres.
+    """
+    ALTER TABLE gjennomforing ADD COLUMN studenter INTEGER;
+    ALTER TABLE gjennomforing ADD COLUMN gruppe INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE gjennomforing ADD COLUMN ekstra INTEGER NOT NULL DEFAULT 0;
+    UPDATE gjennomforing SET studenter = sett;
+    """,
+    # 12: antall studenter i emnet – standard for nye prosjekter i emnet (prosjektet kan avvike)
+    """
+    ALTER TABLE emne ADD COLUMN studenter INTEGER;
+    """,
+    # 13: en stengt periode kan følge påsken (uka med påskedag), som flytter seg fra år til år
+    """
+    ALTER TABLE stengt_periode ADD COLUMN paske INTEGER NOT NULL DEFAULT 0;
+    UPDATE stengt_periode SET paske = 1 WHERE navn = 'Påske'
+    """,
+    # 14: BOM, leveringstid og buffer hører til gjennomføringen, ikke prosjektet – så en ny BOM-versjon
+    #     neste år ikke endrer historikken. Kolonnene i prosjekt brukes ikke lenger (migreringer endres aldri).
+    """
+    ALTER TABLE gjennomforing ADD COLUMN bom TEXT;
+    ALTER TABLE gjennomforing ADD COLUMN lev INTEGER NOT NULL DEFAULT 2;
+    ALTER TABLE gjennomforing ADD COLUMN buf INTEGER NOT NULL DEFAULT 2;
+    UPDATE gjennomforing SET
+        bom = (SELECT p.bom FROM prosjekt p WHERE p.id = gjennomforing.prosjekt_id),
+        lev = (SELECT p.lev FROM prosjekt p WHERE p.id = gjennomforing.prosjekt_id),
+        buf = (SELECT p.buf FROM prosjekt p WHERE p.id = gjennomforing.prosjekt_id)
+    """,
 ]
 _JSON_BESTILLING = ("linjer", "paa_lager", "lager_logg")
 
-PROSJEKT_FELT = ("navn", "type", "lev", "buf", "notat", "color", "bom", "emne_id")
-EMNE_FELT = ("kode", "navn", "program", "faglarer_id", "ingenior_id", "aktiv")
-GJENNOMFORING_FELT = ("start", "slutt", "sett", "skolear")  # skoleår endres bare i administratorpanelet
+PROSJEKT_FELT = ("navn", "type", "notat", "color", "emne_id")  # gjelder alle år
+EMNE_FELT = ("kode", "navn", "program", "studenter", "faglarer_id", "ingenior_id", "aktiv")
+GJENNOMFORING_FELT = ("start", "slutt", "studenter", "gruppe", "ekstra", "bom", "lev", "buf",
+                      "skolear")  # skoleår: bare administratorpanelet
+# endres de, følger senere skoleår med – men bare de som hadde samme verdi (ikke historikken, ikke det som er rettet)
+FREMOVER_FELT = ("bom", "lev", "buf")
+SETT_FELT = ("studenter", "gruppe", "ekstra")
+
+
+def antall_sett(studenter: int | None, gruppe: int | None, ekstra: int | None) -> int | None:
+    """Antall sett = studenter / gruppestørrelse, rundet opp, + ekstra sett. Det ENESTE stedet det regnes ut."""
+    if studenter is None:
+        return None
+    return math.ceil(studenter / max(gruppe or 1, 1)) + (ekstra or 0)
 
 
 class Db:
@@ -215,11 +255,13 @@ class Db:
         data = json.loads(json_file.read_text(encoding="utf-8"))
         sy = frister.skolear_for(dt.date.today())
         for p in data.get("prosjekter", []):
-            con.execute("INSERT INTO prosjekt (id, navn, type, lev, buf, notat, color, bom) VALUES (?,?,?,?,?,?,?,?)",
-                        (p["id"], p.get("navn") or "Prosjekt", p.get("type") or "hack", p.get("lev") or 0,
-                         p.get("buf") or 0, p.get("notat") or "", p.get("color") or 0, p.get("bom")))
-            con.execute("INSERT INTO gjennomforing (prosjekt_id, skolear, start, slutt, sett) VALUES (?,?,?,?,?)",
-                        (p["id"], sy, p.get("start") or 40, p.get("slutt") or p.get("start") or 40, p.get("sett")))
+            con.execute("INSERT INTO prosjekt (id, navn, type, notat, color) VALUES (?,?,?,?,?)",
+                        (p["id"], p.get("navn") or "Prosjekt", p.get("type") or "hack", p.get("notat") or "",
+                         p.get("color") or 0))
+            con.execute("""INSERT INTO gjennomforing (prosjekt_id, skolear, start, slutt, sett, studenter, bom, lev, buf)
+                           VALUES (?,?,?,?,?,?,?,?,?)""",
+                        (p["id"], sy, p.get("start") or 40, p.get("slutt") or p.get("start") or 40, p.get("sett"),
+                         p.get("sett"), p.get("bom"), p.get("lev") or 0, p.get("buf") or 0))
         self._sett_stengte(con, data.get("stengte_perioder") or DEFAULT_STENGT)
 
     # ---------- stengte perioder ----------
@@ -227,12 +269,17 @@ class Db:
     @staticmethod
     def _sett_stengte(con, perioder: list[dict]) -> None:
         con.execute("DELETE FROM stengt_periode")
-        con.executemany("INSERT INTO stengt_periode (navn, fra, til) VALUES (?,?,?)",
-                        [(c["navn"], c["fra"], c["til"]) for c in perioder])
+        if "paske" not in {r[1] for r in con.execute("PRAGMA table_info(stengt_periode)")}:  # før migrering 13
+            con.executemany("INSERT INTO stengt_periode (navn, fra, til) VALUES (?,?,?)",
+                            [(c["navn"], c["fra"], c["til"]) for c in perioder])
+            return
+        con.executemany("INSERT INTO stengt_periode (navn, fra, til, paske) VALUES (?,?,?,?)",
+                        [(c["navn"], c["fra"], c["til"], 1 if c.get("paske") else 0) for c in perioder])
 
     def stengte(self) -> list[dict]:
         with self.tx() as con:
-            return [dict(r) for r in con.execute("SELECT navn, fra, til FROM stengt_periode ORDER BY id")]
+            return [{**dict(r), "paske": bool(r["paske"])}
+                    for r in con.execute("SELECT navn, fra, til, paske FROM stengt_periode ORDER BY id")]
 
     def sett_stengte(self, perioder: list[dict]) -> None:
         with self.tx() as con:
@@ -241,9 +288,10 @@ class Db:
     # ---------- gjennomføringer ----------
 
     _SELECT = """SELECT g.id, g.prosjekt_id AS prosjektId, g.skolear, g.start, g.slutt, g.sett,
-                        g.slettet, g.slettet_av AS slettetAv,
-                        p.navn, p.type, p.lev, p.buf, p.notat, p.color, p.bom,
+                        g.studenter, g.gruppe, g.ekstra, g.bom, g.lev, g.buf, g.slettet, g.slettet_av AS slettetAv,
+                        p.navn, p.type, p.notat, p.color,
                         p.emne_id AS emneId, e.kode AS emneKode, e.navn AS emneNavn, e.program,
+                        e.studenter AS emneStudenter,
                         e.faglarer_id AS faglarerId, f.navn AS faglarerNavn,
                         e.ingenior_id AS ingeniorId, i.navn AS ingeniorNavn
                  FROM gjennomforing g JOIN prosjekt p ON p.id = g.prosjekt_id
@@ -271,21 +319,29 @@ class Db:
     def ny(self, prosjekt_id: str, skolear: int, felt: dict) -> dict:
         """Nytt prosjekt med sin første gjennomføring."""
         with self.tx() as con:
-            con.execute("""INSERT INTO prosjekt (id, navn, type, lev, buf, notat, color, bom, emne_id)
-                           VALUES (?,?,?,?,?,?,?,?,?)""",
-                        (prosjekt_id, felt["navn"], felt.get("type", "hack"), felt.get("lev", 2), felt.get("buf", 2),
-                         felt.get("notat", ""), felt.get("color", 0), felt.get("bom"), felt.get("emne_id")))
-            cur = con.execute("INSERT INTO gjennomforing (prosjekt_id, skolear, start, slutt, sett) VALUES (?,?,?,?,?)",
+            con.execute("INSERT INTO prosjekt (id, navn, type, notat, color, emne_id) VALUES (?,?,?,?,?,?)",
+                        (prosjekt_id, felt["navn"], felt.get("type", "hack"), felt.get("notat", ""),
+                         felt.get("color", 0), felt.get("emne_id")))
+            studenter, gruppe, ekstra = felt.get("studenter"), felt.get("gruppe") or 1, felt.get("ekstra") or 0
+            cur = con.execute("""INSERT INTO gjennomforing (prosjekt_id, skolear, start, slutt, sett, studenter, gruppe, ekstra,
+                                                            bom, lev, buf)
+                                 VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                               (prosjekt_id, skolear, felt.get("start", 40), felt.get("slutt", felt.get("start", 40)),
-                               felt.get("sett")))
+                               antall_sett(studenter, gruppe, ekstra), studenter, gruppe, ekstra,
+                               felt.get("bom"), felt.get("lev", 2), felt.get("buf", 2)))
             gid = cur.lastrowid
         return self.gjennomforing(str(gid))
 
     def endre(self, gid: str, felt: dict) -> dict:
-        """Endre en gjennomføring. Prosjektfeltene gjelder prosjektet (alle år)."""
+        """Endre en gjennomføring. Prosjektfeltene gjelder prosjektet (alle år); BOM, leveringstid og buffer
+        gjelder denne og senere skoleår som hadde samme verdi (se FREMOVER_FELT) – aldri tidligere år."""
         g = self.gjennomforing(gid)
         pf = {k: v for k, v in felt.items() if k in PROSJEKT_FELT}
         gf = {k: v for k, v in felt.items() if k in GJENNOMFORING_FELT}
+        if any(k in gf for k in SETT_FELT):
+            ny = {**{k: g[k] for k in SETT_FELT}, **gf}
+            gf["gruppe"], gf["ekstra"] = ny["gruppe"] or 1, ny["ekstra"] or 0
+            gf["sett"] = antall_sett(ny["studenter"], gf["gruppe"], gf["ekstra"])
         with self.tx() as con:
             if pf:
                 con.execute(f"UPDATE prosjekt SET {', '.join(k + ' = ?' for k in pf)} WHERE id = ?",
@@ -293,23 +349,35 @@ class Db:
             if gf:
                 con.execute(f"UPDATE gjennomforing SET {', '.join(k + ' = ?' for k in gf)} WHERE id = ?",
                             (*gf.values(), gid))
+            for k in FREMOVER_FELT:
+                if k in gf and gf[k] != g[k]:
+                    con.execute(f"UPDATE gjennomforing SET {k} = ? WHERE prosjekt_id = ? AND skolear > ? AND {k} IS ?",
+                                (gf[k], g["prosjektId"], g["skolear"], g[k]))
         return self.gjennomforing(gid)
 
-    def kopier(self, fra: int, ids: list[str] | None = None) -> list[str]:
-        """Kopier gjennomføringer fra skoleåret «fra» til året etter, med samme uker og antall sett.
+    def kopier(self, fra: int, ids: list[str] | None = None, endringer: dict[str, dict] | None = None) -> list[str]:
+        """Kopier gjennomføringer fra skoleåret «fra» til året etter, med samme uker, studenter og grupper.
 
         ids: hvilke gjennomføringer (standard: alle). Prosjekter som allerede finnes
         i neste skoleår hoppes over. Bestillinger kopieres ikke. Returnerer de nye id-ene.
+        endringer: {id: {start, slutt, studenter, gruppe, ekstra}} – det som skal være annerledes neste år.
         """
-        nye = []
+        nye, endringer = [], endringer or {}
         with self.tx() as con:
             rader = con.execute("SELECT * FROM gjennomforing WHERE skolear = ? AND slettet IS NULL", (fra,)).fetchall()
             finnes = {r[0] for r in con.execute("SELECT prosjekt_id FROM gjennomforing WHERE skolear = ?", (fra + 1,))}
             for r in rader:
                 if (ids is not None and str(r["id"]) not in ids) or r["prosjekt_id"] in finnes:
                     continue
-                cur = con.execute("INSERT INTO gjennomforing (prosjekt_id, skolear, start, slutt, sett) VALUES (?,?,?,?,?)",
-                                  (r["prosjekt_id"], fra + 1, r["start"], r["slutt"], r["sett"]))
+                n = {**dict(r), **{k: v for k, v in endringer.get(str(r["id"]), {}).items()
+                                   if k in ("start", "slutt", *SETT_FELT)}}
+                n["gruppe"], n["ekstra"] = n["gruppe"] or 1, n["ekstra"] or 0
+                cur = con.execute("""INSERT INTO gjennomforing (prosjekt_id, skolear, start, slutt, sett, studenter, gruppe, ekstra,
+                                                                bom, lev, buf)
+                                     VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                                  (r["prosjekt_id"], fra + 1, n["start"], n["slutt"],
+                                   antall_sett(n["studenter"], n["gruppe"], n["ekstra"]), n["studenter"], n["gruppe"], n["ekstra"],
+                                   r["bom"], r["lev"], r["buf"]))
                 finnes.add(r["prosjekt_id"])
                 nye.append(str(cur.lastrowid))
         return nye
@@ -360,7 +428,7 @@ class Db:
 
     # ---------- emner ----------
 
-    _EMNE = """SELECT e.id, e.kode, e.navn, e.program, e.aktiv,
+    _EMNE = """SELECT e.id, e.kode, e.navn, e.program, e.studenter, e.aktiv,
                       e.faglarer_id AS faglarerId, f.navn AS faglarerNavn,
                       e.ingenior_id AS ingeniorId, i.navn AS ingeniorNavn,
                       (SELECT COUNT(*) FROM prosjekt p WHERE p.emne_id = e.id) AS prosjekter
@@ -379,8 +447,9 @@ class Db:
 
     def nytt_emne(self, felt: dict) -> dict:
         with self.tx() as con:
-            cur = con.execute("INSERT INTO emne (kode, navn, program, faglarer_id, ingenior_id) VALUES (?,?,?,?,?)",
-                              (felt["kode"], felt.get("navn", ""), felt.get("program", "bachelor"),
+            cur = con.execute("""INSERT INTO emne (kode, navn, program, studenter, faglarer_id, ingenior_id)
+                                 VALUES (?,?,?,?,?,?)""",
+                              (felt["kode"], felt.get("navn", ""), felt.get("program", "bachelor"), felt.get("studenter"),
                                felt.get("faglarer_id"), felt.get("ingenior_id")))
             eid = cur.lastrowid
         return self.emne(eid)

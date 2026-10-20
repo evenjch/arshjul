@@ -2,7 +2,7 @@
   :root {
     --bg: #f2f5f6; --card: #ffffff; --ink: #1d2830; --muted: #65737d; --line: #e0e6e9;
     --head: #24343f; --accent: #2e5e73; --accent-soft: #e6eff2; --hover: #eef4f6;
-    --closed: #c9d2d7; --warn: #a2461f; --warn-soft: #fbece4;
+    --closed: #c9d2d7; --warn: #a2461f; --warn-soft: #fbece4; --danger: #b42318; --danger-soft: #fdecea;
     --ok: #2f7d4f; --ok-soft: #e3f2e8; --soon: #9a6a00; --soon-soft: #fbf1d9;
     --p1: #3a7ca5; --p2: #c9821a; --p3: #b8457a; --p4: #3f8a55; --p5: #7659b0; --p6: #2a8a84; --p7: #7f8a24; --p8: #5b6b7a;
     --sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
@@ -12,7 +12,7 @@
     :root:not([data-theme="light"]) {
       --bg: #12181c; --card: #1a2228; --ink: #e5eaee; --muted: #93a0aa; --line: #2a343c;
       --head: #0d1316; --accent: #80b4c9; --accent-soft: #1e2e36; --hover: #212e36;
-      --closed: #3a454d; --warn: #f0a07a; --warn-soft: #3a2419;
+      --closed: #3a454d; --warn: #f0a07a; --warn-soft: #3a2419; --danger: #ff8a80; --danger-soft: #3d1a18;
       --ok: #74c493; --ok-soft: #1c3326; --soon: #e3b555; --soon-soft: #362b14;
       --p1: #6aa9d1; --p2: #e4a649; --p3: #df76a6; --p4: #72bb86; --p5: #a78be0; --p6: #5cc4bd; --p7: #bdc85c; --p8: #9fb0c0;
       color-scheme: dark;
@@ -21,7 +21,7 @@
   :root[data-theme="dark"] {
     --bg: #12181c; --card: #1a2228; --ink: #e5eaee; --muted: #93a0aa; --line: #2a343c;
     --head: #0d1316; --accent: #80b4c9; --accent-soft: #1e2e36; --hover: #212e36;
-    --closed: #3a454d; --warn: #f0a07a; --warn-soft: #3a2419;
+    --closed: #3a454d; --warn: #f0a07a; --warn-soft: #3a2419; --danger: #ff8a80; --danger-soft: #3d1a18;
       --ok: #74c493; --ok-soft: #1c3326; --soon: #e3b555; --soon-soft: #362b14;
     --p1: #6aa9d1; --p2: #e4a649; --p3: #df76a6; --p4: #72bb86; --p5: #a78be0; --p6: #5cc4bd; --p7: #bdc85c; --p8: #9fb0c0;
     color-scheme: dark;
@@ -61,6 +61,10 @@
   .ring-hit { cursor: pointer; }
   g.proj.dim { opacity: .18; transition: opacity .15s; }
   g.proj { transition: opacity .15s; }
+  /* nabo-skoleåret (neste års frister i juni, fjorårets telling i august): svakt, men statusringen vises */
+  g.proj.nabo .ring-hit { opacity: .3; }
+  g.proj.nabo [data-ev] { opacity: .55; }
+  .legend .sw.nabo { opacity: .35; }
 
   .weeks { display: grid; gap: 0; }
   .week { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
@@ -88,6 +92,18 @@
   td.name small { display: block; color: var(--muted); margin-left: 18px; }
   input[type=number] { font: 500 13px var(--mono); width: 56px; padding: 5px 6px; border: 1px solid var(--line); border-radius: 7px;
                        background: var(--bg); color: var(--ink); font-variant-numeric: tabular-nums; }
+  /* BOM-en har et annet antall sett enn årshjulet: Excel regner feil «Å bestille» til det er rettet */
+  .bomavvik { font-size: 11.5px; color: var(--danger); background: var(--danger-soft); border-left: 3px solid var(--danger);
+              border-radius: 4px; padding: 4px 6px; margin-top: 4px; white-space: normal; max-width: 220px; }
+  .bomavvik b { font-weight: 600; }
+  .bomavvik span { display: block; margin-top: 2px; }
+  .bomavvik .mini { margin-top: 4px; }
+  .settcalc { display: flex; align-items: flex-start; gap: 3px; white-space: nowrap; }
+  /* hvert tall med en liten etikett under; ÷ og + står på høyde med feltene */
+  .settcalc .sf { display: flex; flex-direction: column; align-items: center; }
+  .settcalc .sf small { font-size: 10px; line-height: 1.2; color: var(--muted); margin: 2px 0 0; }
+  .settcalc .op { color: var(--muted); line-height: 28px; }
+  table .settcalc input:not([data-k=studenter]):not([data-f=studenter]) { width: 42px; }
   input[type=number]:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .fristcell { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
   .fristcell small { display: block; font-family: var(--sans); font-weight: 400; color: var(--muted); }
@@ -127,6 +143,7 @@
   .del:hover { border-color: var(--line); color: var(--warn); }
   .del.confirm { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
   .status { font-size: 12.5px; color: var(--muted); }
+  .status.feil { color: var(--danger); font-weight: 600; }  /* noe gikk ikke – må ses */
   .bomcell { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .mini { font: 600 12px var(--sans); border: 1px solid var(--line); background: var(--card); color: var(--accent);
           border-radius: 7px; padding: 5px 9px; cursor: pointer; white-space: nowrap; }
@@ -154,6 +171,8 @@
   .formnote { margin: 0; color: var(--muted); font-size: 12.5px; }
   .closededit { display: grid; gap: 8px; margin-top: 10px; justify-items: start; }
   .closedrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--muted); }
+  .closedrow .paske { display: inline-flex; gap: 4px; align-items: center; font-size: 12.5px; }
+  .closedrow input:disabled { opacity: .45; }
   .closedrow input[type=text] { font: 400 13px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line);
                                 border-radius: 7px; padding: 5px 8px; width: 140px; }
 
@@ -199,9 +218,19 @@
   .notice > div { max-width: 90ch; }
   .boxtitle { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
   .copylist { display: grid; gap: 6px; margin: 12px 0; }
-  .copyrow { display: flex; gap: 8px; align-items: center; cursor: pointer; }
-  .copyrow.done { cursor: default; opacity: .65; }
-  .copyrow input { accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+  /* sjekkliste: navn til venstre, uker og studenter i midten, om BOM-en er telt til høyre */
+  .copyrow { display: grid; grid-template-columns: minmax(180px, 1.2fr) 2fr minmax(160px, 1fr); gap: 6px 14px; align-items: center;
+             padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
+  .copyrow.done { grid-template-columns: minmax(180px, 1.2fr) 3fr; opacity: .65; }
+  .copyvelg { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+  .copyvelg input { accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+  .copyfelt { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; }
+  .copyfelt input[type=number] { width: 52px; }
+  .copyfelt small { color: var(--muted); }
+  .copybom { font-size: 12px; color: var(--muted); }
+  .copybom.ok { color: var(--ok); }
+  .copybom.warn { color: var(--danger); }
+  @media (max-width: 760px) { .copyrow, .copyrow.done { grid-template-columns: 1fr; } }
   section.history { margin-top: 20px; }
   section.history > p { margin: -6px 0 10px; font-size: 12.5px; }
   #histTable { min-width: 0; }
@@ -240,7 +269,7 @@
   .mottakform small { color: var(--muted); }
   .mottak > .tlogg { flex-basis: 100%; margin-top: 2px; }
   .inlineerr { flex-basis: 100%; margin: 6px 0 0; padding: 6px 10px; border-radius: 7px; font-size: 12.5px;
-               background: var(--warn-soft); color: var(--warn); border: 1px solid var(--warn); }
+               background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger); }
   /* innlogging og roller */
   .loginbox { max-width: 360px; margin: 12vh auto; padding-inline: 16px; }
   .loginbox h1 { margin-bottom: 18px; }

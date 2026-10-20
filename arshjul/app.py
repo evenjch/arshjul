@@ -35,9 +35,9 @@ from config import BOM_DIR, DATA_FILE, LIST_DIR, SNAP_FILE, TEMPLATE_BOM, TEMPLA
 from db import Db
 
 FIELDS = {"navn": str, "type": str, "start": int, "slutt": int, "lev": int, "buf": int,
-          "sett": int, "notat": str, "color": int, "bom": str, "emne": int}
+          "studenter": int, "gruppe": int, "ekstra": int, "notat": str, "color": int, "bom": str, "emne": int}
 # det en faglærer kan endre på sine egne prosjekter (ingeniøren eier leveringstid, buffer, BOM, farge og emne)
-FAGLARER_FELT = {"navn", "type", "start", "slutt", "sett", "notat"}
+FAGLARER_FELT = {"navn", "type", "start", "slutt", "studenter", "gruppe", "ekstra", "notat"}
 # endepunktene en faglærer kan bruke – alt annet er bare for ingeniører
 FAGLARER_TILLATT = {"index", "state", "create", "update", "delete", "create_subject", "update_subject",
                     "acknowledge_mine", "auth.login", "auth.logout", "static"}
@@ -163,8 +163,18 @@ def nektet(e):
 # ---------- endringslogg ----------
 
 FELTNAVN = {"navn": "navn", "type": "type", "start": "uke fra", "slutt": "uke til", "sett": "antall sett",
-            "notat": "notat", "lev": "leveringstid", "buf": "buffer", "bom": "BOM", "color": "farge",
+            "studenter": "studenter", "gruppe": "per gruppe", "ekstra": "ekstra sett", "bomSett": "antall sett i BOM-en", "notat": "notat", "lev": "leveringstid", "buf": "buffer", "bom": "BOM", "color": "farge",
             "emneId": "emne"}
+
+
+def endringer(g0: dict, g1: dict, body: dict) -> dict:
+    """{felt: (fra, til)} for feltene i body som faktisk endret seg – og antall sett, som regnes ut av dem."""
+    endret = {}
+    for k in [*body, "sett"]:
+        kol = "emneId" if k == "emne_id" else k
+        if g0[kol] != g1[kol]:
+            endret[kol] = (g0["emneKode"], g1["emneKode"]) if kol == "emneId" else (g0[kol], g1[kol])
+    return endret
 
 
 def logg(g: dict, handling: str, endret: dict | None = None, rolle: str | None = None) -> None:
@@ -287,9 +297,9 @@ def index():
 
 
 # det en faglærer får se av en gjennomføring – ikke BOM, bestilling, telling eller kostnader
-_OFFENTLIG = ("id", "prosjektId", "skolear", "start", "slutt", "sett", "navn", "type", "lev", "buf", "notat",
-              "color", "emneId", "emneKode", "emneNavn", "program", "faglarerId", "faglarerNavn",
-              "ingeniorId", "ingeniorNavn")
+_OFFENTLIG = ("id", "prosjektId", "skolear", "start", "slutt", "sett", "studenter", "gruppe", "ekstra",
+              "navn", "type", "lev", "buf", "notat", "color", "emneId", "emneKode", "emneNavn", "program", "emneStudenter",
+              "faglarerId", "faglarerNavn", "ingeniorId", "ingeniorNavn")
 
 
 @app.get("/api/state")
@@ -306,6 +316,7 @@ def state():
         bestilt = store.bestillinger()
         tellinger = store.tellinger()
         typer = store.linjetyper()
+        aktive = aktive_bom_kjoringer(closed)
         with _lock:
             snaps = _read_json(SNAP_FILE, {})
             dirty = False
@@ -320,6 +331,7 @@ def state():
                 out.append({**g, "semester": frister.semester(g["start"]), "hendelser": f.pop("hendelser"),
                             "frister": f, "bomStatus": st, "bestilling": best,
                             "bestiltKr": bestilling.kostnad(lagret), "egen": kan_handle(g),
+                            "bomSettAktiv": aktive.get(g["bom"]) == g["id"],
                             "telling": telling_status(g, c, st, lagret, tellinger.get(g["id"]), typer)})
             if dirty:
                 _write_json(SNAP_FILE, snaps)
@@ -338,11 +350,13 @@ def state():
     neste8 = [frister.uke_info(mandag + i * frister.UKE, closed) for i in range(8)]
 
     svar = {"prosjekter": out, "stengte": closed, "modus": config.MODUS,
-            "idag": frister.uke_info(idag), "skolearNa": na, "skolear": skolear, "neste8": neste8,
+            "idag": frister.uke_info(idag), "skolearNa": na, "skolearVis": frister.skolear_vis(idag),
+            "skolear": skolear, "neste8": neste8,
             "meg": {"id": meg["id"], "navn": meg["navn"], "rolle": meg["rolle"], "admin": meg["admin"]},
             "brukere": [],
             "ledigeBom": [], "oppsett": None, "mapper": {}, "endringer": [], "slettede": [],
-            "emner": [], "faglarere": [], "ingeniorer": [], "program": PROGRAM}
+            "emner": [], "faglarere": [], "ingeniorer": [], "program": PROGRAM,
+            "typer": {k: t["navn"] for k, t in frister.TYPER.items()}}
     emner = store.emner()
     if ing:
         mine = [g for g in alle if kan_handle(g)]  # varsler og påminnelser gjelder egne emner
@@ -375,14 +389,20 @@ def state():
 
 @app.post("/api/skolear/<int:fra>/kopier")
 def copy_year(fra):
-    """Kopier gjennomføringer til neste skoleår. «ids» velger hvilke (standard: alle)."""
-    ids = (request.get_json(silent=True) or {}).get("ids")
+    """Kopier gjennomføringer til neste skoleår. «ids» velger hvilke (standard: alle).
+    «endringer»: {id: {start, slutt, studenter, gruppe, ekstra}} for det som er annerledes neste år."""
+    body = request.get_json(silent=True) or {}
+    ids, raw = body.get("ids"), body.get("endringer") or {}
     if ids is not None and (not isinstance(ids, list) or not all(isinstance(i, (str, int)) for i in ids)):
         raise bomlib.BomError("Ugyldig liste over prosjekter.")
+    if not isinstance(raw, dict) or not all(isinstance(v, dict) for v in raw.values()):
+        raise bomlib.BomError("Ugyldige endringer.")
+    lov = {"start", "slutt", "studenter", "gruppe", "ekstra"}
+    endringer = {str(k): _clean({f: v[f] for f in lov if f in v}, partial=True) for k, v in raw.items()}
     # bare prosjekter i egne emner (og uten emne) kopieres
     mine = {g["id"] for g in store.gjennomforinger() if g["skolear"] == fra and kan_handle(g)}
     valgt = mine if ids is None else {str(i) for i in ids} & mine
-    nye = store.kopier(fra, sorted(valgt))
+    nye = store.kopier(fra, sorted(valgt), endringer)
     return jsonify({"nye": nye, "til": fra + 1, "navn": frister.skolear_navn(fra + 1)})
 
 
@@ -392,17 +412,18 @@ def _clean(body: dict, partial: bool) -> dict:
         if k not in body:
             continue
         v = body[k]
-        if v in (None, "") and k in ("sett", "bom", "notat", "emne"):
+        if v in (None, "") and k in ("studenter", "bom", "notat", "emne"):
             out[k] = None if k != "notat" else ""
             continue
         try:
             out[k] = typ(v)
         except (TypeError, ValueError):
             raise bomlib.BomError(f"Ugyldig verdi for {k}.")
-    for k, lo, hi in (("start", 1, 53), ("slutt", 1, 53), ("lev", 0, 20), ("buf", 0, 20), ("sett", 0, 999)):
+    for k, lo, hi in (("start", 1, 53), ("slutt", 1, 53), ("lev", 0, 20), ("buf", 0, 20),
+                      ("studenter", 0, 2000), ("gruppe", 1, 20), ("ekstra", 0, 99)):
         if out.get(k) is not None:
             out[k] = min(hi, max(lo, out[k]))
-    if "type" in out and out["type"] not in ("hack", "sett"):
+    if "type" in out and out["type"] not in frister.TYPER:
         raise bomlib.BomError("Ugyldig type.")
     if "navn" in out:
         out["navn"] = out["navn"].strip()
@@ -440,6 +461,8 @@ def create():
             raise Nektet("Velg ett av dine emner.")
         body = {k: v for k, v in body.items() if k in FAGLARER_FELT or k == "color"}
     body["emne_id"] = emne["id"] if emne else None
+    if body.get("studenter") is None and emne:
+        body["studenter"] = emne["studenter"]  # emnets antall er standard; prosjektet kan avvike
     slug = re.sub(r"[^a-z0-9]+", "-", body["navn"].lower()).strip("-")[:24] or "prosjekt"
     g = store.ny(f"{slug}-{secrets.token_hex(2)}", sy, body)
     logg(g, "opprettet")
@@ -475,14 +498,10 @@ def update(gid):
         emne = _emne(body.pop("emne"))
         body["emne_id"] = emne["id"] if emne else None
     g1 = store.endre(gid, body)
-    endret = {}
-    for k in body:
-        kol = "emneId" if k == "emne_id" else k
-        if g0[kol] != g1[kol]:
-            endret[kol] = ((g0["emneKode"], g1["emneKode"]) if kol == "emneId" else (g0[kol], g1[kol]))
+    endret = endringer(g0, g1, body)
     if endret:
         logg(g1, "endret", endret)
-    return jsonify(g1)
+    return jsonify({**g1, "bomSett": sett_til_bom(g0, g1)})
 
 
 @app.delete("/api/gjennomforinger/<gid>")
@@ -515,6 +534,11 @@ def _emnefelt(body: dict, nytt: bool) -> dict:
         if body["program"] not in PROGRAM:
             raise bomlib.BomError("Studieprogram må være bachelor eller master.")
         out["program"] = body["program"]
+    if "studenter" in body:
+        try:
+            out["studenter"] = None if body["studenter"] in (None, "") else min(2000, max(0, int(body["studenter"])))
+        except (TypeError, ValueError):
+            raise bomlib.BomError("Antall studenter må være et tall.")
     for felt, rolle, tekst in (("faglarer", "faglarer", "faglærer"), ("ingenior", "ingenior", "ingeniør")):
         if felt in body:
             uid = body[felt]
@@ -706,6 +730,63 @@ def open_bom(gid):
     only_local()
     open_path(bom_path(store.gjennomforing(gid)))
     return jsonify({"ok": True})
+
+
+def aktive_bom_kjoringer(closed: list[dict]) -> dict[str, str]:
+    """BOM-fil → gjennomføringen BOM-ens antall sett (B10) skal følge.
+
+    Flere skoleår deler én BOM, men B10 har bare ett tall: det gjelder den neste gjennomføringen
+    som ikke har startet og ikke er telt. Ferdige gjennomføringer bryr seg ikke om B10 lenger.
+    """
+    idag, telt, neste = dt.date.today().isoformat(), store.tellinger(), {}
+    for g in store.gjennomforinger():
+        if not g["bom"] or g["slettet"] or g["id"] in telt:
+            continue
+        start = frister.frister(g, closed)["start"]["dato"]
+        if start > idag and (g["bom"] not in neste or start < neste[g["bom"]][0]):
+            neste[g["bom"]] = (start, g["id"])
+    return {bom: gid for bom, (_, gid) in neste.items()}
+
+
+def sett_til_bom(g0: dict, g1: dict) -> dict | None:
+    """Antall sett er endret: skriv det i BOM-ens B10, som Excel regner «Å bestille» fra.
+
+    Skrives bare for gjennomføringen B10 følger (se aktive_bom_kjoringer), når filen ikke er åpen
+    i Excel, og når B10 fortsatt har årshjulets forrige tall (ikke endret for hånd). Ellers står det
+    som avvik hos ingeniøren, som kan skrive det med en knapp (write_bom_sets). Endringen i årshjulet
+    gjelder uansett. feil=True: noe må gjøres (vises i rødt); ellers bare til orientering.
+    """
+    if g0["sett"] == g1["sett"] or not g1.get("bom") or not (BOM_DIR / g1["bom"]).exists():
+        return None
+    aktiv = aktive_bom_kjoringer(store.stengte()).get(g1["bom"])
+    if aktiv != g1["id"]:
+        if aktiv is None:
+            return {"skrevet": False, "feil": False, "grunn": "Prosjektet har startet eller er telt – BOM-en er ikke endret."}
+        a = store.gjennomforing(aktiv)
+        return {"skrevet": False, "feil": False,
+                "grunn": f"BOM-en følger «{a['navn']}» {frister.skolear_navn(a['skolear'])} til det har startet – ikke endret nå."}
+    try:
+        with _lock:
+            res = bomlib.write_sett(BOM_DIR / g1["bom"], g1["sett"], BOM_DIR / "Sikkerhetskopi", forventet=g0["sett"])
+    except bomlib.BomError as e:
+        return {"skrevet": False, "feil": True, "grunn": f"{e} BOM-en har fortsatt det gamle antallet."}
+    if res.get("konflikt"):
+        res["feil"] = True
+        res["grunn"] = f"Antall sett i BOM-en er endret i Excel ({res['fil']}) – ikke overskrevet."
+    if res["skrevet"]:
+        logg(g1, "endret", {"bomSett": (res["for"], res["fil"])})
+    return res
+
+
+@app.post("/api/gjennomforinger/<gid>/bom/sett")
+def write_bom_sets(gid):
+    """Ingeniøren: skriv årshjulets antall sett i BOM-en (B10), også over det som står der."""
+    g = _aktiv(gid)
+    with _lock:
+        res = bomlib.write_sett(bom_path(g), g["sett"], BOM_DIR / "Sikkerhetskopi")
+    if res["skrevet"]:
+        logg(g, "endret", {"bomSett": (res["for"], res["fil"])})
+    return jsonify(res)
 
 
 def beregn(g: dict) -> tuple[dict, dict, int, Path]:
@@ -1002,7 +1083,7 @@ def set_closed():
             raise bomlib.BomError("Ugyldig stengt periode.")
         if not navn or not (1 <= fra <= 53 and 1 <= til <= 53):
             raise bomlib.BomError("En stengt periode trenger navn og uker mellom 1 og 53.")
-        out.append({"navn": navn, "fra": fra, "til": til})
+        out.append({"navn": navn, "fra": fra, "til": til, "paske": bool(c.get("paske"))})
     store.sett_stengte(out)
     return jsonify(out)
 

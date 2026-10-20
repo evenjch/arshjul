@@ -11,7 +11,7 @@
   let SYS = [], SY = null, IDAG = null, NESTE8 = [], OPPSETT = null;
   // innlogget bruker; ING = ingeniør (alt), ellers faglærer (egne prosjekter, ingen BOM/bestilling)
   let MEG = { rolle: document.body.dataset.rolle || "ingenior" }, ING = MEG.rolle === "ingenior";
-  let ENDRINGER = [], SLETTEDE = [], FAGLARERE = [], INGENIORER = [], EMNER = [], PROGRAM = {};
+  let ENDRINGER = [], SLETTEDE = [], FAGLARERE = [], INGENIORER = [], EMNER = [], PROGRAM = {}, TYPER = {};
   // ALLE = alt serveren sendte, som bare er det du er involvert i (serveren filtrerer).
   let ALLE = [];
   const synlige = () => ALLE;
@@ -29,7 +29,8 @@
     if (!res.ok) throw new Error(data.feil || "Noe gikk galt (" + res.status + ").");
     return data;
   }
-  function setStatus(t) { $("status").textContent = t; }
+  // feil: rød statuslinje – noe gikk ikke, og det må du se
+  function setStatus(t, feil) { $("status").textContent = t; $("status").classList.toggle("feil", !!feil); }
 
   let loading = null, again = false;
   function load() {
@@ -49,8 +50,9 @@
       SYS = st.skolear; IDAG = st.idag; NESTE8 = st.neste8; OPPSETT = st.oppsett;
       MEG = st.meg; ING = MEG.rolle === "ingenior"; document.body.dataset.rolle = MEG.rolle;
       ENDRINGER = st.endringer; SLETTEDE = st.slettede; FAGLARERE = st.faglarere;
-      INGENIORER = st.ingeniorer; EMNER = st.emner; PROGRAM = st.program;
-      if (SY === null || !SYS.some((s) => s.ar === SY)) SY = st.skolearNa;
+      INGENIORER = st.ingeniorer; EMNER = st.emner; PROGRAM = st.program; TYPER = st.typer || {};
+      // om sommeren åpner siden på skoleåret som kommer (se frister.skolear_vis)
+      if (SY === null || !SYS.some((s) => s.ar === SY)) SY = st.skolearVis ?? st.skolearNa;
       LOKAL = st.modus !== "server";
       $("openBomDir").hidden = $("openListDir").hidden = !LOKAL;
       $("bomDir").textContent = st.mapper.bom || ""; $("openBomDir").title = "Åpner " + (st.mapper.bom || "BOM-mappen");
@@ -72,6 +74,7 @@
   }
 
   const pending = {};
+  const bomGrunn = new Map(); // prosjekt-id → hvorfor antall sett ikke ble skrevet i BOM-en
   function queueUpdate(id, patch) {
     const pend = pending[id] || (pending[id] = { patch: {}, timer: 0, chain: Promise.resolve() });
     Object.assign(pend.patch, patch);
@@ -79,8 +82,14 @@
     pend.timer = setTimeout(() => {
       const body = pend.patch; pend.patch = {};
       pend.chain = pend.chain.then(() => api("PATCH", P(id), body))
-        .then(() => { if (!Object.keys(pend.patch).length) { delete pending[id]; load(); } })
-        .catch((e) => setStatus(e.message));
+        .then((r) => {
+          // nytt antall sett skrives også i BOM-en (B10) – si fra til ingeniøren om det ikke gikk
+          const b = ING && r && r.bomSett;
+          if (b && b.skrevet) { bomGrunn.delete(id); setStatus(`Antall sett er også endret i BOM-en (${b.fil}).`); }
+          else if (b && b.grunn) { if (b.feil) bomGrunn.set(id, b.grunn); setStatus(b.grunn, b.feil); }
+          if (!Object.keys(pend.patch).length) { delete pending[id]; load(); }
+        })
+        .catch((e) => setStatus(e.message, true));
     }, 500);
   }
 
@@ -114,7 +123,6 @@
   const C = 300, R_OUT = 252, R_IN = 96;
   let N = 52, SY_START = "";
   const pos = (dato) => weeksBetween(SY_START, dato); // uker fra skoleårets start, kan være < 0 eller ≥ N
-  const wrapPos = (x) => ((x % N) + N) % N;
   const ang = (x) => (x / N) * Math.PI * 2 - Math.PI / 2;
   const pt = (r, a) => [C + r * Math.cos(a), C + r * Math.sin(a)];
   const f = (n) => n.toFixed(2);
@@ -128,18 +136,36 @@
   let laneOf = new Map(), laneR = () => [0, 0, 0, 0];
   const MONTHS = ["jan", "feb", "mar", "apr", "mai", "jun", "jul", "aug", "sep", "okt", "nov", "des"];
 
+  // Hjulet viser nøyaktig skoleårets uker: alt klippes til dem. Nabo-skoleårene tegnes svakt der de
+  // stikker inn – neste års frister i juni, fjorårets telling i august – så de ses der de skjer.
+  const klipp = ([a, b]) => [Math.max(0, a), Math.min(N, b)];
+  const inni = (x) => x >= 0 && x < N;
+  const harRetur = (p) => p.type === "sett" || p.type === "prosjekt"; // innlevering etter flere uker: egen markering
+  function biter() {
+    const naboer = projects.filter((p) => Math.abs(p.skolear - SY) === 1)
+      .sort((a, b) => toD(a.frister.start.dato) - toD(b.frister.start.dato));
+    return [...sorted(), ...naboer].map((p) => ({
+      p, nabo: p.skolear !== SY, use: klipp(useSpan(p)),
+      // faglæreren ser bare perioden prosjektet er i bruk – ikke bestilling og levering
+      lead: ING ? klipp(leadSpan(p)) : [0, 0],
+      frist: ING && inni(pos(p.frister.frist.dato)),
+      retur: ING && harRetur(p) && inni(pos(p.frister.retur.dato)),
+    })).filter((b) => !b.nabo || b.use[1] > b.use[0] || b.lead[1] > b.lead[0] || b.frist || b.retur);
+  }
+
   // Prosjekter deler nivå når verken bruksperiodene eller bestillingsperiodene overlapper.
   // Bruk tegnes i det brede ytre båndet, bestilling og levering i en smal skinne innerst.
-  const slots = ([a, b]) => { const out = []; for (let x = a; x < Math.max(b, a + 1); x++) out.push(wrapPos(x)); return out; };
+  const slots = ([a, b]) => { const out = []; for (let x = a; x < b; x++) out.push(x); return out; };
   function assignLanes(list) {
     const lanes = [], map = new Map();
-    list.forEach((p) => {
-      // faglæreren ser bare perioden prosjektet er i bruk – ikke bestilling og levering
-      const use = slots(useSpan(p)), lead = ING ? slots(leadSpan(p)) : [];
+    list.forEach((b) => {
+      const use = slots(b.use), lead = slots(b.lead);
+      if (b.frist) lead.push(pos(b.p.frister.frist.dato));  // merkene trenger plass selv uten bånd
+      if (b.retur) use.push(pos(b.p.frister.retur.dato));
       let j = lanes.findIndex((L) => !use.some((w) => L.use[w]) && !lead.some((w) => L.lead[w]));
       if (j < 0) { lanes.push({ use: [], lead: [] }); j = lanes.length - 1; }
       use.forEach((w) => (lanes[j].use[w] = true)); lead.forEach((w) => (lanes[j].lead[w] = true));
-      map.set(p.id, j);
+      map.set(b.p.id, j);
     });
     return { map, count: lanes.length };
   }
@@ -150,7 +176,7 @@
     N = cur.uker.length; SY_START = cur.start;
     $("syName").textContent = cur.navn; $("syTable").textContent = cur.navn;
     $("syPrev").disabled = SYS[0].ar === SY; $("syNext").disabled = SYS[SYS.length - 1].ar === SY;
-    const list = sorted();
+    const list = biter(), egne = list.filter((b) => !b.nabo).length;
     const L = assignLanes(list); laneOf = L.map;
     const n = Math.max(L.count, 1);
     const step = Math.min(34, (232 - R_IN) / n);
@@ -184,7 +210,7 @@
       if (!cur.uker[i].stengt || (i > 0 && cur.uker[i - 1].stengt)) continue;
       let j = i; while (j + 1 < N && cur.uker[j + 1].stengt) j++;
       const a = cur.uker[i].uke, b = cur.uker[j].uke;
-      const navn = CLOSED.filter((c) => inRange(a, c.fra, c.til)).map((c) => c.navn).join(", ") || "Stengt";
+      const navn = [...new Set(cur.uker.slice(i, j + 1).map((u) => u.stengt))].join(", ") || "Stengt"; // navnet kommer fra serveren (påsken flytter seg)
       s += `<path d="${sector(inner, R_OUT - 20, i, j + 1)}" fill="url(#hatch)" opacity=".85"><title>${esc(navn)} (uke ${a}${a !== b ? "–" + b : ""})</title></path>`;
     }
     for (let j = 0; j < L.count; j++) {
@@ -192,28 +218,30 @@
       s += `<path d="${sector(r0, r1, 0, N - 0.001)}" fill="none" stroke="var(--line)" stroke-dasharray="2 3"/>`;
     }
     const mr = Math.max(3, Math.min(6, band * 0.2));
-    list.forEach((p) => {
+    list.forEach(({ p, nabo, use, lead, frist, retur }) => {
       const d = p.frister, [r0, r1, rl, ru] = laneR(laneOf.get(p.id)), c = col(p);
-      s += `<g class="proj" data-id="${esc(p.id)}">`;
-      const use = useSpan(p);
-      const brukTittel = `${esc(p.navn)}: i bruk uke ${d.start.uke}${d.start.uke !== d.slutt.uke ? "–" + d.slutt.uke : ""}`;
+      const navn = nabo ? `${esc(p.navn)} (${esc(syName(p.skolear))})` : esc(p.navn);
+      s += `<g class="proj${nabo ? " nabo" : ""}" data-id="${esc(p.id)}">`;
+      const brukTittel = `${navn}: i bruk uke ${d.start.uke}${d.start.uke !== d.slutt.uke ? "–" + d.slutt.uke : ""}`;
       if (!ING) {
         // faglærer: bare bruksperioden, over hele nivået
-        s += `<path class="ring-hit" data-kind="use" d="${sector(r0, r1, use[0], use[1])}" fill="${c}"><title>${brukTittel}</title></path></g>`;
+        if (use[1] > use[0]) s += `<path class="ring-hit" data-kind="use" d="${sector(r0, r1, use[0], use[1])}" fill="${c}"><title>${brukTittel}</title></path>`;
+        s += `</g>`;
         return;
       }
-      const lead = leadSpan(p);
       if (lead[1] > lead[0]) {
-        s += `<path class="ring-hit" data-kind="lead" d="${sector(r0, rl, lead[0], lead[1])}" fill="${c}" opacity=".45"><title>${esc(p.navn)}: bestilling og levering fra uke ${d.frist.uke}${d.frist.ar !== d.start.ar ? " " + d.frist.ar : ""}</title></path>`;
+        s += `<path class="ring-hit" data-kind="lead" d="${sector(r0, rl, lead[0], lead[1])}" fill="${c}" opacity=".45"><title>${navn}: bestilling og levering fra uke ${d.frist.uke}${d.frist.ar !== d.start.ar ? " " + d.frist.ar : ""}</title></path>`;
       }
-      s += `<path class="ring-hit" data-kind="use" d="${sector(ru, r1, use[0], use[1])}" fill="${c}"><title>${brukTittel}</title></path>`;
-      const [fx, fy] = pt((r0 + rl) / 2, ang(pos(d.frist.dato) + .5));
-      const os = orderState(p), ring = ING ? STATE_COLOR[os] : null; // bestillingsstatus er ingeniørens sak
-      if (ring) s += `<circle cx="${fx.toFixed(1)}" cy="${fy.toFixed(1)}" r="${(mr + 3).toFixed(1)}" fill="none" stroke="${ring}" stroke-width="2.5"/>`;
-      s += `<circle cx="${fx.toFixed(1)}" cy="${fy.toFixed(1)}" r="${mr.toFixed(1)}" fill="${c}" stroke="var(--card)" stroke-width="2"><title>${esc(p.navn)}: bestillingsfrist uke ${d.frist.uke}, ${dfmtY.format(toD(d.frist.dato))} · ${esc(stateText(p))}</title></circle>`;
-      if (p.type === "sett") {
+      if (use[1] > use[0]) s += `<path class="ring-hit" data-kind="use" d="${sector(ru, r1, use[0], use[1])}" fill="${c}"><title>${brukTittel}</title></path>`;
+      if (frist) {
+        const [fx, fy] = pt((r0 + rl) / 2, ang(pos(d.frist.dato) + .5));
+        const ring = STATE_COLOR[orderState(p)]; // bestillingsstatus – også for neste års frister i juni
+        if (ring) s += `<circle class="statusring" cx="${fx.toFixed(1)}" cy="${fy.toFixed(1)}" r="${(mr + 3).toFixed(1)}" fill="none" stroke="${ring}" stroke-width="2.5"/>`;
+        s += `<circle data-ev="frist" cx="${fx.toFixed(1)}" cy="${fy.toFixed(1)}" r="${mr.toFixed(1)}" fill="${c}" stroke="var(--card)" stroke-width="2"><title>${navn}: bestillingsfrist uke ${d.frist.uke}, ${dfmtY.format(toD(d.frist.dato))} · ${esc(stateText(p))}</title></circle>`;
+      }
+      if (retur) {
         const [qx, qy] = pt((ru + r1) / 2, ang(pos(d.retur.dato) + .5)), q = mr * 0.85;
-        s += `<rect x="${(qx - q).toFixed(1)}" y="${(qy - q).toFixed(1)}" width="${(2 * q).toFixed(1)}" height="${(2 * q).toFixed(1)}" fill="var(--card)" stroke="${c}" stroke-width="2.5"><title>${esc(p.navn)}: innlevering og telling uke ${d.retur.uke}</title></rect>`;
+        s += `<rect data-ev="retur" x="${(qx - q).toFixed(1)}" y="${(qy - q).toFixed(1)}" width="${(2 * q).toFixed(1)}" height="${(2 * q).toFixed(1)}" fill="var(--card)" stroke="${c}" stroke-width="2.5"><title>${navn}: innlevering og telling uke ${d.retur.uke}</title></rect>`;
       }
       s += `</g>`;
     });
@@ -228,7 +256,7 @@
     s += `<text x="${C}" y="${C + 2}" text-anchor="middle" font-size="26" font-weight="700" style="fill:var(--accent);font-family:var(--mono)">${iAr ? "uke " + IDAG.uke : esc(cur.navn)}</text>`;
     if (mode === "loading") {
       s += `<text x="${C}" y="${C + 26}" text-anchor="middle" font-size="11">Henter prosjekter …</text>`;
-    } else if (!list.length) {
+    } else if (!egne) {
       s += `<text x="${C}" y="${C + 26}" text-anchor="middle" font-size="11">Ingen prosjekter dette skoleåret</text>`;
     } else if (ING && next && iAr) {
       s += `<text x="${C}" y="${C + 26}" text-anchor="middle" font-size="11">neste frist: uke ${next.uke}</text>`;
@@ -300,7 +328,7 @@
       h += `<div class="week${i === 0 ? " now" : ""}"><div class="wk"><b>Uke ${w.uke}</b><small>${i === 0 ? "denne uken" : range(w.dato)}</small></div><div class="evs">`;
       h += list.length ? list.map((e) =>
         `<div class="ev ${e.kind}" data-id="${esc(e.p.id)}" data-kind="${e.kind}" data-d="${e.dato}" data-w="${e.uke}"><span class="dot" style="background:${col(e.p)}"></span><span><span class="what">${esc(e.what)}</span> <span class="who">· ${esc(e.p.navn)}</span>${evTag(e)}</span></div>`).join("")
-        : `<span class="empty">${w.stengt ? "Stengt periode" : "Ingenting planlagt"}</span>`;
+        : `<span class="empty">${w.stengt ? esc(w.stengt) : "Ingenting planlagt"}</span>`;
       h += `</div></div>`;
     });
     $("weeks").innerHTML = h;
@@ -530,18 +558,29 @@
     return `<span class="eier">${esc(p.emneKode)}${folk ? ` · ${folk}` : ""}</span>`;
   }
 
+  const typeValg = (p) => `<select data-act="type" data-id="${esc(p.id)}" aria-label="Type for ${esc(p.navn)}">`
+    + Object.entries(TYPER).map(([k, n]) => `<option value="${k}"${k === p.type ? " selected" : ""}>${esc(n)}</option>`).join("") + `</select>`;
+
   function drawTable() {
     if (mode === "loading") { $("tbody").innerHTML = `<tr><td colspan="${COLS}" class="blank">Henter prosjekter …</td></tr>`; return; }
     const list = sorted();
     if (!list.length) { $("tbody").innerHTML = `<tr><td colspan="${COLS}" class="blank">Ingen prosjekter dette skoleåret. Trykk «Legg til nytt prosjekt» for å legge inn det første.</td></tr>`; return; }
     $("tbody").innerHTML = list.map((p) => {
-      // egne prosjekter kan endres; faglærer bare uker og sett, leveringstid og buffer er ingeniørens
-      const kan = (k) => p.egen && (ING || k === "start" || k === "slutt" || k === "sett");
+      // egne prosjekter kan endres; faglærer bare uker og studenter/grupper, leveringstid og buffer er ingeniørens
+      const kan = (k) => p.egen && (ING || ["start", "slutt", "studenter", "gruppe", "ekstra"].includes(k));
       const num = (k, min, max, lbl) => kan(k)
         ? `<input type="number" id="in-${esc(p.id)}-${k}" data-id="${esc(p.id)}" data-k="${k}" min="${min}" max="${max}" value="${p[k] ?? ""}" aria-label="${lbl}">`
         : `<span class="ro">${p[k] ?? "–"}</span>`;
-      const warn = p.bomStatus && p.bomStatus.settFil && p.sett && p.bomStatus.settFil !== p.sett
-        ? `<div class="muted" style="font-size:11.5px" title="Årshjulets tall brukes">BOM-filen: ${p.bomStatus.settFil}</div>` : "";
+      // BOM-en regner «Å bestille» fra sitt eget antall sett (B10) – det skal være likt årshjulets.
+      // Bare for gjennomføringen B10 følger: den neste som ikke har startet og ikke er telt.
+      const b = p.bomStatus, avvik = p.bomSettAktiv && b && b.finnes && !b.feil && p.sett != null && (b.settFil ?? null) !== p.sett;
+      if (!avvik) bomGrunn.delete(p.id);
+      const warn = (avvik
+        ? `<div class="bomavvik" title="Excel regner «Å bestille» fra antallet i BOM-en. Årshjulets tall brukes her.">`
+          + `<b>BOM-en har ${b.settFil ?? "ikke noe"} sett</b>${bomGrunn.has(p.id) ? `<span>${esc(bomGrunn.get(p.id))}</span>` : ""}`
+          + (p.egen ? ` <button type="button" class="mini" data-act="bomsett" data-id="${esc(p.id)}">Skriv ${p.sett} til BOM-en</button>` : "") + `</div>` : "")
+        + (p.emneStudenter != null && p.studenter !== p.emneStudenter
+          ? `<div class="muted" style="font-size:11.5px" title="Dette prosjektet avviker fra antallet i emnet">Emnet: ${p.emneStudenter} studenter</div>` : "");
       const eier = emneLinje(p);
       const slett = !p.egen ? "" : ING ? `<button type="button" class="del" data-id="${esc(p.id)}">Slett</button>`
         : `<button type="button" class="del" data-id="${esc(p.id)}" title="Ingeniøren får beskjed og kan gjenopprette">Fjern</button>`;
@@ -549,9 +588,12 @@
       const andres = ING && !p.egen ? `<span class="muted">${esc(p.ingeniorNavn || "")}</span>` : "";
       return `<tr data-id="${esc(p.id)}">
         <td class="name"><b><span class="dot" style="background:${col(p)}"></span>${esc(p.navn)}</b>${p.notat ? `<small>${esc(p.notat)}</small>` : ""}${eier}</td>
-        <td>${p.type === "sett" ? "Semestersett" : "Hackathon / lab"}<div class="muted" style="font-size:12px">${esc(p.semester)} ${p.frister.start.ar}</div></td>
+        <td>${p.egen ? typeValg(p) : esc(TYPER[p.type] || p.type)}<div class="muted" style="font-size:12px">${esc(p.semester)} ${p.frister.start.ar}</div></td>
         <td>${num("start", 1, 53, "I bruk fra uke")}</td><td>${num("slutt", 1, 53, "Til uke")}</td><td>${num("lev", 0, 20, "Leveringstid i uker")}</td><td>${num("buf", 0, 20, "Buffer i uker")}</td>
-        <td>${num("sett", 0, 999, "Antall sett")}${warn}</td>
+        <td><div class="settcalc"><span class="sf">${num("studenter", 0, 2000, "Antall studenter")}<small>studenter</small></span><span class="op">÷</span>`
+          + `<span class="sf">${num("gruppe", 1, 20, "Studenter per gruppe")}<small>per gruppe</small></span><span class="op">+</span>`
+          + `<span class="sf">${num("ekstra", 0, 99, "Ekstra sett")}<small>ekstra</small></span></div>`
+          + `<div class="muted settsum" style="font-size:11.5px">${p.sett != null ? `= ${p.sett} sett` : "Antall studenter?"}</div>${warn}</td>
         <td class="fristcell">${fristHtml(p)}</td>
         <td class="ordercell ing">${ING && p.egen ? orderCell(p) : andres}</td>
         <td class="ing">${ING && p.egen ? bomCell(p) : ""}</td>
@@ -588,8 +630,7 @@
   const syName = (ar) => { const s = SYS.find((x) => x.ar === ar); return s ? s.navn : `${ar}/${String((ar + 1) % 100).padStart(2, "0")}`; };
   // ---------- faglærernes endringer (bare for ingeniøren) ----------
   const tidFmt = (s) => { const d = new Date(s); return isNaN(d) ? esc(s) : d.toLocaleString("nb-NO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
-  const TYPENAVN = { hack: "Hackathon / lab", sett: "Semestersett" };
-  const verdi = (felt, v) => (v === null || v === undefined || v === "" ? "tom" : felt === "type" ? (TYPENAVN[v] || v) : String(v));
+  const verdi = (felt, v) => (v === null || v === undefined || v === "" ? "tom" : felt === "type" ? (TYPER[v] || v) : String(v));
   const HANDLING = { opprettet: "La til prosjektet", gjenopprettet: "Gjenopprettet", fjernet: "Fjernet prosjektet" };
   function changeNotices() {
     if (!ING) return "";
@@ -676,22 +717,67 @@
     if (!open) return;
     const neste = new Set(ALLE.filter((p) => p.skolear === SY + 1).map((p) => p.prosjektId));
     $("copyTitle").textContent = `Kopier fra ${syName(SY)} til ${syName(SY + 1)}`;
+    // én sjekkliste-rad per prosjekt: uker og studenter kan rettes før kopiering, og du ser om BOM-en er telt
     $("copyList").innerHTML = sorted().filter((p) => p.egen).map((p) => { // bare egne emner kopieres
       const finnes = neste.has(p.prosjektId);
-      return `<label class="copyrow${finnes ? " done" : ""}"><input type="checkbox" value="${esc(p.id)}"${finnes ? " disabled" : " checked"}>`
-        + `<span class="dot" style="background:${col(p)}"></span><span><b>${esc(p.navn)}</b> <span class="muted">· uke ${p.start}${p.start !== p.slutt ? "–" + p.slutt : ""}${p.sett ? " · " + p.sett + " sett" : ""}${finnes ? " · finnes allerede" : ""}</span></span></label>`;
+      const hode = `<label class="copyvelg"><input type="checkbox" value="${esc(p.id)}"${finnes ? " disabled" : " checked"}>`
+        + `<span class="dot" style="background:${col(p)}"></span><b>${esc(p.navn)}</b> <span class="muted">${esc(TYPER[p.type] || p.type)}</span></label>`;
+      if (finnes) return `<div class="copyrow done">${hode}<span class="muted">finnes allerede i ${esc(syName(SY + 1))}</span></div>`;
+      const inn = (k, v, min, max, lbl) => `<input type="number" data-c="${k}" min="${min}" max="${max}" value="${v ?? ""}" aria-label="${lbl}">`;
+      const emne = p.emneStudenter != null && p.emneStudenter !== p.studenter
+        ? `<button type="button" class="mini quiet" data-act="emnestud" data-n="${p.emneStudenter}" title="Antallet i emnet ${esc(p.emneKode || "")}">Bruk emnets ${p.emneStudenter}</button>` : "";
+      const [kl, bomTekst] = copyBom(p);
+      return `<div class="copyrow" data-id="${esc(p.id)}">${hode}`
+        + `<div class="copyfelt"><span>uke ${inn("start", p.start, 1, 53, "Fra uke")}–${inn("slutt", p.slutt, 1, 53, "Til uke")} <small class="copydato"></small></span>`
+        + `<span>${inn("studenter", p.studenter, 0, 2000, "Antall studenter")} studenter ÷ ${p.gruppe} + ${p.ekstra} = <b class="copysett"></b> ${emne}</span></div>`
+        + `<div class="copybom ${kl}">${bomTekst}</div></div>`;
     }).join("");
+    $("copyList").querySelectorAll(".copyrow[data-id]").forEach(copyOppdater);
   }
+  // er BOM-en telt etter i fjor? Ellers er «På lager» feil, og neste års bestilling blir feil
+  function copyBom(p) {
+    if (!p.bom) return ["muted", "Ingen BOM koblet til"];
+    const L = p.telling && p.telling.lagret;
+    if (L && L.skrevet) return ["ok", `Telt og skrevet til BOM-en ${dfmtY.format(toD(String(L.skrevet).slice(0, 10)))}`];
+    if (L) return ["warn", "Telt, men ikke skrevet til BOM-en – «På lager» er ikke oppdatert"];
+    if (IDAG && p.frister.retur.dato <= IDAG.dato) return ["warn", "Ikke telt – «På lager» i BOM-en kan være feil"];
+    return ["muted", "Ikke ferdig ennå – tell når prosjektet er over"];
+  }
+  // datoen for startuka neste år, og antall sett slik det blir
+  function copyOppdater(rad) {
+    const p = projects.find((x) => x.id === rad.dataset.id); if (!p) return;
+    const v = (k) => rad.querySelector(`[data-c=${k}]`).value;
+    const uke = parseInt(v("start"), 10), ny = SYS.find((s) => s.ar === SY + 1);
+    const u = ny && ny.uker.find((x) => x.uke === uke);
+    rad.querySelector(".copydato").textContent = u ? `fra ${dfmtY.format(toD(u.dato))}` : "";
+    const n = antallSett(v("studenter") === "" ? null : parseInt(v("studenter"), 10) || 0, p.gruppe, p.ekstra);
+    rad.querySelector(".copysett").textContent = n != null ? `${n} sett` : "–";
+  }
+  $("copyList").addEventListener("input", (e) => { const rad = e.target.closest(".copyrow[data-id]"); if (rad) copyOppdater(rad); });
+  $("copyList").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-act=emnestud]"); if (!b) return;
+    const rad = b.closest(".copyrow"); rad.querySelector("[data-c=studenter]").value = b.dataset.n; copyOppdater(rad);
+  });
   $("copyOpen").addEventListener("click", () => openCopy($("copybox").hidden));
   $("copyCancel").addEventListener("click", () => openCopy(false));
   $("copyGo").addEventListener("click", async () => {
-    const ids = [...$("copyList").querySelectorAll("input:checked")].map((i) => i.value);
-    if (!ids.length) { $("copyErr").textContent = "Velg minst ett prosjekt."; return; }
+    const rader = [...$("copyList").querySelectorAll(".copyrow[data-id]")].filter((r) => r.querySelector("input[type=checkbox]").checked);
+    if (!rader.length) { $("copyErr").textContent = "Velg minst ett prosjekt."; return; }
+    // bare det du har endret, sendes med; resten kopieres som i år
+    const endringer = {};
+    rader.forEach((r) => {
+      const p = projects.find((x) => x.id === r.dataset.id), e = {};
+      r.querySelectorAll("[data-c]").forEach((i) => {
+        const v = i.value === "" ? null : parseInt(i.value, 10);
+        if (v !== (p[i.dataset.c] ?? null)) e[i.dataset.c] = v;
+      });
+      if (Object.keys(e).length) endringer[p.id] = e;
+    });
     $("copyGo").disabled = true;
     try {
-      const r = await api("POST", `/api/skolear/${SY}/kopier`, { ids });
+      const r = await api("POST", `/api/skolear/${SY}/kopier`, { ids: rader.map((x) => x.dataset.id), endringer });
       openCopy(false); await load(); goSY(r.til);
-      setStatus(`Kopierte ${r.nye.length} ${r.nye.length === 1 ? "prosjekt" : "prosjekter"} til ${r.navn}. Sjekk ukene og antall sett.`);
+      setStatus(`Kopierte ${r.nye.length} ${r.nye.length === 1 ? "prosjekt" : "prosjekter"} til ${r.navn}.`);
     } catch (err) { $("copyErr").textContent = err.message; }
     finally { $("copyGo").disabled = false; }
   });
@@ -733,15 +819,16 @@
       + `<td><input type="text" data-ef="kode" value="${esc(e ? e.kode : "")}" placeholder="IELS1001" aria-label="Emnekode" maxlength="20"></td>`
       + `<td><input type="text" data-ef="navn" value="${esc(e ? e.navn : "")}" placeholder="Emnenavn" aria-label="Emnenavn"></td>`
       + `<td>${program(e ? e.program : "bachelor")}</td>`
+      + `<td><input type="number" data-ef="studenter" min="0" max="2000" value="${e && e.studenter != null ? e.studenter : ""}" placeholder="F.eks. 60" aria-label="Antall studenter i emnet"></td>`
       // faglæreren er alltid seg selv på egne emner; ingeniører velger faglærer
       + `<td>${ING ? velg("faglarer", FAGLARERE, e && e.faglarerId, "Faglærer") : "deg"}</td>`
       + `<td>${velg("ingenior", INGENIORER, e ? e.ingeniorId : (ING ? MEG.id : null), "Ansvarlig ingeniør")}</td>`
       + (e ? `<td class="num">${e.prosjekter}</td><td><label class="aktiv"><input type="checkbox" data-ef="aktiv"${e.aktiv ? " checked" : ""}> aktiv</label></td>`
            : `<td></td><td><button type="button" class="mini" data-act="emnelagre">Lagre</button> <button type="button" class="mini quiet" data-act="emneavbryt">Avbryt</button></td>`)
       + `</tr>`;
-    $("emneTable").innerHTML = `<thead><tr><th>Kode</th><th>Navn</th><th>Program</th><th>Faglærer</th><th>Ansvarlig ingeniør</th><th class="num">Prosjekter</th><th></th></tr></thead><tbody>`
+    $("emneTable").innerHTML = `<thead><tr><th>Kode</th><th>Navn</th><th>Program</th><th title="Standard for nye prosjekter i emnet">Studenter</th><th>Faglærer</th><th>Ansvarlig ingeniør</th><th class="num">Prosjekter</th><th></th></tr></thead><tbody>`
       + (nyttEmne ? rad(null) : "") + EMNER.map(rad).join("")
-      + (!EMNER.length && !nyttEmne ? `<tr><td colspan="7" class="blank">Ingen emner ennå. Trykk «+ Nytt emne»${ING ? "" : " for å lage ditt første"}.</td></tr>` : "") + `</tbody>`;
+      + (!EMNER.length && !nyttEmne ? `<tr><td colspan="8" class="blank">Ingen emner ennå. Trykk «+ Nytt emne»${ING ? "" : " for å lage ditt første"}.</td></tr>` : "") + `</tbody>`;
     $("emneNy").hidden = nyttEmne;
   }
   const emneVerdier = (tr) => {
@@ -781,15 +868,28 @@
   $("syNow").addEventListener("click", () => { const na = SYS.find((s) => IDAG && s.uker.some((u) => u.dato === IDAG.dato)); if (na) goSY(na.ar); });
 
   // ---------- redigering ----------
+  const GRENSER = { start: [1, 53], slutt: [1, 53], studenter: [0, 2000], gruppe: [1, 20], ekstra: [0, 99] };  // ellers 0–20
+  // samme regel som db.antall_sett: studenter / gruppestørrelse, rundet opp, + ekstra
+  const antallSett = (studenter, gruppe, ekstra) =>
+    studenter == null ? null : Math.ceil(studenter / Math.max(gruppe || 1, 1)) + (ekstra || 0);
   $("tbody").addEventListener("input", (e) => {
     const t = e.target;
     if (t.matches("input[data-role=telt]")) { tellEdit(t); return; }
     if (!t.matches("input[type=number][data-k]")) return;
     const p = projects.find((x) => x.id === t.dataset.id); if (!p) return;
     const k = t.dataset.k;
-    if (t.value === "" && k === "sett") { p.sett = null; queueUpdate(p.id, { sett: null }); return; }
-    const v = parseInt(t.value, 10); if (!Number.isFinite(v)) return;
-    p[k] = k === "start" || k === "slutt" ? Math.min(53, Math.max(1, v)) : k === "sett" ? Math.min(999, Math.max(0, v)) : Math.min(20, Math.max(0, v));
+    if (t.value === "" && k === "studenter") p.studenter = null;
+    else {
+      const v = parseInt(t.value, 10); if (!Number.isFinite(v)) return;
+      const [lo, hi] = GRENSER[k] || [0, 20];
+      p[k] = Math.min(hi, Math.max(lo, v));
+    }
+    if (["studenter", "gruppe", "ekstra"].includes(k)) {
+      // vis det nye antallet med en gang; serveren regner det samme og er fasit
+      p.sett = antallSett(p.studenter, p.gruppe, p.ekstra);
+      const sum = t.closest("td").querySelector(".settsum");
+      if (sum) sum.textContent = p.sett != null ? `= ${p.sett} sett` : "Antall studenter?";
+    }
     queueUpdate(p.id, { [k]: p[k] });
   });
 
@@ -797,7 +897,7 @@
   // midt i en lang liste ser du ikke statuslinjen, men du ser knappen du trykket på.
   async function act(fn, okMsg, anker) {
     try { const r = await fn(); if (okMsg) setStatus(typeof okMsg === "function" ? okMsg(r) : okMsg); await load(); }
-    catch (e) { setStatus(e.message); if (anker) feilVed(anker, e.message); }
+    catch (e) { setStatus(e.message, true); if (anker) feilVed(anker, e.message); }
   }
   function feilVed(el, msg) {
     const rad = el.closest(".levact, .mottak, .bomcell, .ordercell") || el.parentElement;
@@ -828,6 +928,10 @@
           + (e.ingeniorNavn ? ` (ingeniør: ${e.ingeniorNavn}${MEG.id && e.ingeniorId !== MEG.id ? " – du ser det ikke lenger under «Mine emner»" : ""})` : "") + ".");
       return;
     }
+    if (t.matches("select[data-act=type]")) {
+      act(() => api("PATCH", P(t.dataset.id), { type: t.value }), `Typen er endret til ${TYPER[t.value] || t.value}.`);
+      return;
+    }
     if (t.matches("select[data-act=ostatus]")) {
       act(() => orderApi(t.dataset.id, { handling: "status", leverandor: t.dataset.lev, status: t.value }), "Status lagret.");
       return;
@@ -846,6 +950,7 @@
       const id = b.dataset.id, a = b.dataset.act, lev = b.dataset.lev;
       const ordrenr = () => { const i = b.closest(".levact") && b.closest(".levact").querySelector("[data-role=ordrenr]"); return i ? i.value : ""; };
       if (a === "vis") { openOrders.has(id) ? openOrders.delete(id) : openOrders.add(id); drawTable(); return; }
+      if (a === "bomsett") act(() => api("POST", P(id) + "/bom/sett"), (r) => r.skrevet ? `Antall sett i BOM-en er nå ${r.fil} (sikkerhetskopi i BOM/Sikkerhetskopi).` : "BOM-en hadde allerede riktig antall sett.");
       if (a === "bestilt") act(() => orderApi(id, { handling: "bestilt", leverandor: lev, ordrenr: ordrenr() }), "Registrert som bestilt.");
       if (a === "tillegg") act(() => orderApi(id, { handling: "tillegg", leverandor: lev }), "Tilleggsbestillingen er registrert.");
       if (a === "lliste") act(() => api("POST", P(id) + "/liste", { leverandor: lev }), (r) => `Lagret «${r.fil}» i Bestillingslister (${r.linjer} linjer).`);
@@ -915,12 +1020,13 @@
 
   // ---------- stengte perioder ----------
   function drawClosed() {
-    $("closedList").textContent = CLOSED.map((c) => `${c.navn} uke ${c.fra}${c.fra !== c.til ? "–" + c.til : ""}`).join(", ") || "ingen";
+    $("closedList").textContent = CLOSED.map((c) => c.paske ? `${c.navn} (påskeuka – flytter seg)` : `${c.navn} uke ${c.fra}${c.fra !== c.til ? "–" + c.til : ""}`).join(", ") || "ingen";
     if ($("closedEdit").contains(document.activeElement)) return;
     $("closedEdit").innerHTML = CLOSED.map((c, i) =>
       `<div class="closedrow" data-i="${i}"><input type="text" data-k="navn" value="${esc(c.navn)}" aria-label="Navn">`
-      + `<span>uke</span><input type="number" data-k="fra" min="1" max="53" value="${c.fra}" aria-label="Fra uke">`
-      + `<span>–</span><input type="number" data-k="til" min="1" max="53" value="${c.til}" aria-label="Til uke">`
+      + `<span>uke</span><input type="number" data-k="fra" min="1" max="53" value="${c.fra}" aria-label="Fra uke"${c.paske ? " disabled" : ""}>`
+      + `<span>–</span><input type="number" data-k="til" min="1" max="53" value="${c.til}" aria-label="Til uke"${c.paske ? " disabled" : ""}>`
+      + `<label class="paske" title="Uka med skjærtorsdag, langfredag og påskedag – regnes ut for hvert år"><input type="checkbox" data-k="paske"${c.paske ? " checked" : ""}> følger påsken</label>`
       + `<button type="button" class="mini quiet" data-act="fjern">Fjern</button></div>`).join("")
       + `<button type="button" class="mini" data-act="ny">+ Legg til stengt periode</button>`;
   }
@@ -929,7 +1035,8 @@
   }
   function readClosed() {
     return [...$("closedEdit").querySelectorAll(".closedrow")].map((r) => ({
-      navn: r.querySelector("[data-k=navn]").value.trim(), fra: parseInt(r.querySelector("[data-k=fra]").value, 10), til: parseInt(r.querySelector("[data-k=til]").value, 10) }));
+      navn: r.querySelector("[data-k=navn]").value.trim(), fra: parseInt(r.querySelector("[data-k=fra]").value, 10), til: parseInt(r.querySelector("[data-k=til]").value, 10),
+      paske: r.querySelector("[data-k=paske]").checked }));
   }
   $("closedToggle").addEventListener("click", () => {
     const open = $("closedEdit").hidden; $("closedEdit").hidden = !open;
@@ -955,17 +1062,43 @@
       $("f-emne").innerHTML = (ING ? `<option value="">Uten emne</option>` : valg.length ? "" : `<option value="">Du har ingen emner – lag et under «Emner» nederst</option>`)
         + valg.map((e) => `<option value="${e.id}"${ING && MEG.id && e.ingeniorId === MEG.id ? " data-mitt" : ""}>${esc(e.kode)}${e.navn ? " – " + esc(e.navn) : ""}</option>`).join("");
       const mitt = $("f-emne").querySelector("[data-mitt]"); if (mitt) mitt.selected = true;
+      fraEmne(); visDatoer();
       $("f-navn").focus();
     }
   }
   $("addToggle").addEventListener("click", () => openAdd($("addbox").hidden));
   $("f-cancel").addEventListener("click", () => openAdd(false));
   const prefill = () => {
-    const sem = $("f-semester").value;
-    if ($("f-type").value === "sett") { $("f-start").value = sem === "Vår" ? 3 : 34; $("f-slutt").value = sem === "Vår" ? 23 : 50; }
+    const typ = $("f-type").value, var_ = (parseInt($("f-start").value, 10) || 40) < 32; // semesteret startuka er i
+    if (typ === "sett") { $("f-start").value = var_ ? 3 : 34; $("f-slutt").value = var_ ? 23 : 50; }
+    else if (typ === "hack" || typ === "lab") $("f-slutt").value = $("f-start").value; // noen dager: samme uke
+    visDatoer();
   };
+  // de faktiske datoene ukene blir i skoleåret, så uke 3 ikke tolkes som januar i år
+  function visDatoer() {
+    const cur = curSY(), uke = (id) => parseInt($(id).value, 10);
+    const finn = (n) => cur && (cur.uker.find((u) => u.uke === n) || (n === 53 ? cur.uker.find((u) => u.uke === 52) : null));
+    const a = finn(uke("f-start")), b = finn(uke("f-slutt"));
+    if (!a || !b) { $("f-datoer").textContent = ""; return; }
+    const sem = uke("f-start") >= 32 ? "Høst" : "Vår", slutt = new Date(Math.max(toD(b.dato), toD(a.dato)) + 6 * 864e5);
+    $("f-datoer").textContent = `${sem} ${new Date(toD(a.dato)).getUTCFullYear()}: ${dfmtY.format(toD(a.dato))} – ${dfmtY.format(slutt)}`;
+  }
   $("f-type").addEventListener("change", prefill);
-  $("f-semester").addEventListener("change", prefill);
+  $("f-start").addEventListener("input", () => { if (["hack", "lab"].includes($("f-type").value)) $("f-slutt").value = $("f-start").value; visDatoer(); });
+  $("f-slutt").addEventListener("input", visDatoer);
+  const visFormSett = () => {
+    const s = $("f-studenter").value;
+    const n = antallSett(s === "" ? null : parseInt(s, 10) || 0, parseInt($("f-gruppe").value, 10), parseInt($("f-ekstra").value, 10));
+    $("f-settsum").textContent = n != null ? `= ${n} sett` : "";
+  };
+  ["f-studenter", "f-gruppe", "f-ekstra"].forEach((id) => $(id).addEventListener("input", visFormSett));
+  // antall studenter hentes fra emnet; kan endres for akkurat dette prosjektet
+  function fraEmne() {
+    const e = EMNER.find((x) => String(x.id) === $("f-emne").value);
+    $("f-studenter").value = e && e.studenter != null ? e.studenter : "";
+    visFormSett();
+  }
+  $("f-emne").addEventListener("change", fraEmne);
   $("addForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const navn = $("f-navn").value.trim();
@@ -976,7 +1109,9 @@
     if (used.has(color)) color = projects.length % NCOLORS;
     const body = { navn, type: $("f-type").value, skolear: SY,
       start: num("f-start", 1, 53), slutt: num("f-slutt", 1, 53), lev: num("f-lev", 0, 20), buf: num("f-buf", 0, 20),
-      notat: $("f-notat").value.trim(), color, sett: parseInt($("f-sett").value, 10) || null, emne: $("f-emne").value || null };
+      notat: $("f-notat").value.trim(), color, emne: $("f-emne").value || null,
+      studenter: $("f-studenter").value === "" ? null : num("f-studenter", 0, 2000),
+      gruppe: num("f-gruppe", 1, 20), ekstra: num("f-ekstra", 0, 99) };
     if (!ING && !body.emne) { $("f-err").textContent = "Velg hvilket emne prosjektet hører til."; return; }
     $("f-save").disabled = true;
     try { await api("POST", "/api/gjennomforinger", body); $("addForm").reset(); openAdd(false); setStatus("Lagt til: " + navn); await load(); }
@@ -991,7 +1126,15 @@
     document.querySelectorAll(".ev").forEach((x) => x.classList.toggle("on", !!ev && x === ev));
     if (ev) markEvent(id, ev.dataset.kind, ev.dataset.d, ev.dataset.w); else { const hl = document.getElementById("hl"); if (hl) hl.innerHTML = ""; }
   }
-  $("wheel").addEventListener("mouseover", (e) => { const g = e.target.closest("g.proj"); highlight(g ? g.dataset.id : null); });
+  $("wheel").addEventListener("mouseover", (e) => {
+    const g = e.target.closest("g.proj"), merke = e.target.closest("[data-ev]");
+    if (g && merke) { // fristen eller innleveringen: bare den hendelsen i «neste 8 uker»
+      highlight(null);
+      document.querySelectorAll(".ev").forEach((x) => x.classList.toggle("on", x.dataset.id === g.dataset.id && x.dataset.kind === merke.dataset.ev));
+      return;
+    }
+    highlight(g ? g.dataset.id : null);
+  });
   $("wheel").addEventListener("mouseleave", () => highlight(null));
   $("tbody").addEventListener("mouseover", (e) => { const tr = e.target.closest("tr[data-id]"); highlight(tr ? tr.dataset.id : null); });
   $("tbody").addEventListener("mouseleave", () => highlight(null));

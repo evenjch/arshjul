@@ -69,11 +69,11 @@ def test_ingenior_kan_ikke_handle_i_andres_emner(inst):
 
 def test_varsel_gar_til_emnets_ingenior(inst):
     ola = logg_inn("ola")
-    ola.patch(f"{G}/{inst['p']['EMNE-B']}", json={"sett": 25})  # Ola endrer i emne B
+    ola.patch(f"{G}/{inst['p']['EMNE-B']}", json={"notat": "endret 25"})  # Ola endrer i emne B
     assert [e["prosjekt_navn"] for e in state(logg_inn("bjorn"))["endringer"]] == ["Prosjekt B"]
     assert state(logg_inn("anne"))["endringer"] == []  # Anne har emne A og C, ikke B
 
-    ola.patch(f"{G}/{inst['p']['EMNE-A']}", json={"sett": 12})
+    ola.patch(f"{G}/{inst['p']['EMNE-A']}", json={"notat": "endret 12"})
     assert [e["prosjekt_navn"] for e in state(logg_inn("anne"))["endringer"]] == ["Prosjekt A"]
 
     # Bjørn kan ikke kvittere for Annes varsler
@@ -81,7 +81,7 @@ def test_varsel_gar_til_emnets_ingenior(inst):
 
 
 def test_ny_ingenior_overtar_varslene(inst):
-    logg_inn("ola").patch(f"{G}/{inst['p']['EMNE-B']}", json={"sett": 25})
+    logg_inn("ola").patch(f"{G}/{inst['p']['EMNE-B']}", json={"notat": "endret 25"})
     anne = logg_inn("anne")
     r = anne.patch(f"/api/emner/{inst['e']['EMNE-B']}", json={"ingenior": inst["u"]["anne"]})
     assert r.get_json()["ingeniorNavn"] == "Anne"
@@ -149,7 +149,7 @@ def test_siden_for_ingenior_med_andres_emner(inst):
 
 def test_andres_varsler_lekker_ikke(inst):
     """Varsler om prosjekter du ikke ser, skal heller ikke vises – selv om prosjektet finnes."""
-    logg_inn("kari").patch(f"{G}/{inst['p']['EMNE-D']}", json={"sett": 9})  # Ceciles emne
+    logg_inn("kari").patch(f"{G}/{inst['p']['EMNE-D']}", json={"notat": "endret 9"})  # Ceciles emne
     assert state(logg_inn("anne"))["endringer"] == []
     assert len(state(logg_inn("cecilie"))["endringer"]) == 1
 
@@ -226,3 +226,12 @@ def test_siden_for_faglarer_med_emner(inst):
     res = kjor_siden(state(logg_inn("cecilie")))
     assert res["errors"] == []
     assert "Ola valgte deg som ansvarlig ingeniør for OLA2" in res["notices"] and "kvitterid" in res["notices"]
+
+
+def test_faglarer_setter_studenter_i_emnet(inst):
+    ola = logg_inn("ola")
+    assert ola.patch(f"/api/emner/{inst['e']['EMNE-A']}", json={"studenter": 48}).get_json()["studenter"] == 48
+    p = ola.post(G, json={"navn": "Lodding", "skolear": SY, "gruppe": 4, "emne": inst["e"]["EMNE-A"]}).get_json()
+    assert (p["studenter"], p["sett"]) == (48, 12)
+    assert state(ola)["prosjekter"][0]["emneStudenter"] == 48  # faglæreren ser emnets tall også
+    assert logg_inn("kari").patch(f"/api/emner/{inst['e']['EMNE-A']}", json={"studenter": 1}).status_code == 403

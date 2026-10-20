@@ -16,7 +16,7 @@ arshjul/            the app
   frister.py        weeks, school years (week 32 → 31), deadlines – the ONLY place dates are computed
   bestilling.py     order status per supplier, frozen copies, "need more"
   telling.py        counting after a project, loss
-  bom.py            reading BOM .xlsx, diff, templates, write_stock (column H only)
+  bom.py            reading BOM .xlsx, diff, templates, write_stock (column H), write_sett (B10)
   manage.py         CLI for users (backup way in, and how the first admin is made on a server)
   static/, templates/   arshjul.js (main page), admin.js (panel)
   tests/            pytest; tests/hjelp.py has BOM helpers
@@ -40,7 +40,9 @@ cd arshjul
 - **Never touch the user's real data in tests or experiments.** Tests use a temp data folder (`tests/conftest.py` pins every path). For manual checks, copy `arshjul.db`/BOMs to the scratchpad and set `ARSHJUL_DATA`/`ARSHJUL_BOM`. Writes to BOMs only on copies.
 - **Migrations are append-only.** Add a new string at the end of `MIGRERINGER` in `db.py`; never edit an existing one (it has run on someone's database). Statements are split on `;`, so no semicolons inside a statement.
 - **Authorization is server-side.** Lecturers may only reach endpoints in `FAGLARER_TILLATT`; ownership of a run is checked centrally in `app._eierskap` via `kan_handle()`. Everything `adminpanel.*` requires the admin account. The state endpoint only sends what the user is involved in. When adding an endpoint, decide which list it belongs in.
-- **The app never silently writes to a BOM.** Only `bom.write_stock` writes, only column H ("På lager"), with a backup in `BOM/Sikkerhetskopi/`, refusing if the file is open in Excel, and with a conflict check. Receipts *add*; counts/undo *set* with the expected old value.
+- **The app never silently writes to a BOM.** Only two functions write, both with a backup in `BOM/Sikkerhetskopi/`, refusing if the file is open in Excel, and with a conflict check:
+  - `bom.write_stock`: column H ("På lager"), on the user's confirmation. Receipts *add*; counts/undo *set* with the expected old value.
+  - `bom.write_sett`: B10 ("Antall sett"), which the template's "Å bestille" formulas use. The app owns the set count, so `app.sett_til_bom` writes it automatically when the count changes – only for the run B10 follows (`app.aktive_bom_kjoringer`: the next one per BOM that hasn't started and isn't counted; several school years share a BOM), and only if B10 still has the app's previous value (a hand edit in Excel is never overwritten). Otherwise the engineer sees the mismatch with a button (`/bom/sett`). Every write is logged ("antall sett i BOM-en").
 - **Line identity is `supplier|part number`** (`bom.rad_key`); part numbers are only unique per supplier.
 - **Page JS is tested in V8** (`tests/test_side.py`, `test_adminpanel.py`) with a stub DOM. mini-racer crashes under paths with æøå, so the test copies it to an ASCII temp folder. No browser APIs the stub lacks (e.g. `URLSearchParams`, `setTimeout` in tests).
 - After any change to `app.py`/`db.py` the user must **restart** the app; JS/CSS only needs a reload.

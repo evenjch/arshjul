@@ -1,8 +1,9 @@
 """Lesing og skriving av BOM-filer (Excel) etter malen.
 
 Excel-filen er sjefen for komponentene: dette modulet leser den og lager nye maler.
-Ett unntak: etter en telling kan «På lager»-kolonnen (H) oppdateres, når brukeren har
-bekreftet det, og alltid med en sikkerhetskopi først (write_stock).
+To unntak, begge alltid med en sikkerhetskopi først:
+- «På lager»-kolonnen (H) etter telling og varemottak, når brukeren har bekreftet det (write_stock)
+- antall sett (B10), som årshjulet styrer – ellers regner Excel feil «Å bestille» (write_sett)
 """
 from __future__ import annotations
 
@@ -162,16 +163,8 @@ def write_stock(path: Path, verdier: dict[str, float], backup_dir: Path,
     Lager en sikkerhetskopi først, men bare hvis noe faktisk skal skrives.
     """
     forventet = forventet or {}
-    if (path.parent / f"~${path.name}").exists():
-        raise BomError(f"«{path.name}» er åpen i Excel. Lukk den og prøv igjen.")
-    try:
-        wb = openpyxl.load_workbook(path)  # med formler, ikke verdier
-    except PermissionError as e:
-        raise BomError(f"«{path.name}» er låst. Lukk den i Excel og prøv igjen.") from e
+    wb = _apne_for_skriving(path)
     ws = wb.worksheets[0]
-    if _txt(ws["C13"].value).lower() != "beskrivelse":
-        raise BomError(f"«{path.name}» ser ikke ut som en BOM laget fra malen.")
-
     rader: dict[str, list[int]] = {}
     for r in range(FIRST_ROW, LAST_ROW + 1):
         besk = _txt(ws[f"C{r}"].value)
@@ -197,7 +190,50 @@ def write_stock(path: Path, verdier: dict[str, float], backup_dir: Path,
         nye[key] = ny
     if not skrevet:
         return {"skrevet": [], "hoppet": hoppet, "konflikt": konflikt, "nye": {}, "backup": None}
+    backup = _lagre_med_backup(wb, path, backup_dir)
+    return {"skrevet": skrevet, "hoppet": hoppet, "konflikt": konflikt, "nye": nye, "backup": backup}
 
+
+# ---------- antall sett (B10) ----------
+
+_INGEN = object()
+
+
+def write_sett(path: Path, sett: int | None, backup_dir: Path, forventet=_INGEN) -> dict:
+    """Skriv årshjulets antall sett i B10, som «Å bestille»-formlene i BOM-en bruker.
+
+    forventet: det B10 skal inneholde nå (årshjulets forrige tall). Står det noe annet der
+               (endret for hånd i Excel), skrives det ikke, men meldes som konflikt.
+    Svar: {"skrevet": bool, "for": tallet som stod der, "fil": tallet i B10 nå, "backup": navn eller None}.
+    """
+    wb = _apne_for_skriving(path)
+    celle = wb.worksheets[0]["B10"]
+    na = int(_num(celle.value)) or None
+    if na == (sett or None):
+        return {"skrevet": False, "for": na, "fil": na, "backup": None}
+    if forventet is not _INGEN and na != (forventet or None):
+        return {"skrevet": False, "for": na, "fil": na, "backup": None, "konflikt": True}
+    celle.value = sett or None
+    return {"skrevet": True, "for": na, "fil": sett or None, "backup": _lagre_med_backup(wb, path, backup_dir)}
+
+
+# ---------- felles for skriving ----------
+
+def _apne_for_skriving(path: Path):
+    """Åpne en BOM med formlene (ikke verdiene), og nekt hvis den er åpen i Excel."""
+    if (path.parent / f"~${path.name}").exists():
+        raise BomError(f"«{path.name}» er åpen i Excel. Lukk den og prøv igjen.")
+    try:
+        wb = openpyxl.load_workbook(path)
+    except PermissionError as e:
+        raise BomError(f"«{path.name}» er låst. Lukk den i Excel og prøv igjen.") from e
+    if _txt(wb.worksheets[0]["C13"].value).lower() != "beskrivelse":
+        raise BomError(f"«{path.name}» ser ikke ut som en BOM laget fra malen.")
+    return wb
+
+
+def _lagre_med_backup(wb, path: Path, backup_dir: Path) -> str:
+    """Sikkerhetskopi av filen slik den er, så lagre. Returnerer navnet på kopien."""
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = f"{path.stem} {dt.datetime.now():%Y-%m-%d %H%M%S}"
     backup, n = backup_dir / f"{stamp}{path.suffix}", 2
@@ -209,7 +245,7 @@ def write_stock(path: Path, verdier: dict[str, float], backup_dir: Path,
         wb.save(path)
     except PermissionError as e:
         raise BomError(f"«{path.name}» er låst. Lukk den i Excel og prøv igjen.") from e
-    return {"skrevet": skrevet, "hoppet": hoppet, "konflikt": konflikt, "nye": nye, "backup": backup.name}
+    return backup.name
 
 
 # ---------- nye filer ----------

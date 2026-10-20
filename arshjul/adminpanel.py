@@ -52,7 +52,8 @@ def _rad(g: dict, bestilt: dict, tellinger: dict) -> dict:
     t = tellinger.get(g["id"])
     bom = (config.BOM_DIR / g["bom"]) if g["bom"] else None
     return {
-        **{k: g[k] for k in ("id", "prosjektId", "skolear", "navn", "type", "start", "slutt", "sett", "lev", "buf",
+        **{k: g[k] for k in ("id", "prosjektId", "skolear", "navn", "type", "start", "slutt", "sett", "studenter",
+                             "gruppe", "ekstra", "lev", "buf",
                              "notat", "bom", "emneId", "emneKode", "faglarerNavn", "ingeniorId", "ingeniorNavn",
                              "slettet", "slettetAv")},
         "bomFinnes": bool(bom and bom.exists()),
@@ -146,14 +147,10 @@ def endre(gid):
             raise A.bomlib.BomError("Ugyldig skoleår.")
         body["skolear"] = sy
     g1 = A.store.endre(gid, body)
-    endret = {}
-    for k in body:
-        kol = "emneId" if k == "emne_id" else k
-        if g0[kol] != g1[kol]:
-            endret[kol] = (g0["emneKode"], g1["emneKode"]) if kol == "emneId" else (g0[kol], g1[kol])
+    endret = A.endringer(g0, g1, body)
     if endret:
         _logg(g1, "endret", endret)
-    return jsonify(g1)
+    return jsonify({**g1, "bomSett": A.sett_til_bom(g0, g1)})
 
 
 @bp.get("/api/admin/gjennomforinger/<gid>/konsekvens")

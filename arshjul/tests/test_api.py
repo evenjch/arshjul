@@ -28,7 +28,7 @@ def test_opprett_endre_slett(client):
     assert rad["frister"]["start"] == {"dato": "2026-10-26", "uke": 44, "ar": 2026}
     assert len(rad["hendelser"]) == 4
 
-    r = client.patch(f"{G}/{p['id']}", json={"sett": 30, "notat": "IELS1001", "lev": 4})
+    r = client.patch(f"{G}/{p['id']}", json={"studenter": 30, "notat": "IELS1001", "lev": 4})
     assert (r.get_json()["sett"], r.get_json()["lev"]) == (30, 4)
 
     assert client.delete(f"{G}/{p['id']}").status_code == 200
@@ -61,7 +61,7 @@ def test_ugyldig_skolear_og_type(client):
 
 
 def test_ukjent_gjennomforing(client):
-    assert client.patch(f"{G}/999", json={"sett": 1}).status_code == 404
+    assert client.patch(f"{G}/999", json={"studenter": 1}).status_code == 404
 
 
 def test_lag_mal_og_kobles(client):
@@ -109,3 +109,46 @@ def test_innstillingsfil(tmp_path):
                  encoding="utf-8")
     assert config.les_innstillinger(f) == {"ARSHJUL_BOM": r"\\server\deling\BOM", "ARSHJUL_PORT": "6000"}
     assert config.les_innstillinger(tmp_path / "finnes-ikke.env") == {}
+
+
+def test_gruppestorrelse_styrer_antall_sett(client):
+    p = lag(client, start=44, studenter=60, gruppe=3)
+    assert p["sett"] == 20
+    r = client.patch(f"{G}/{p['id']}", json={"gruppe": 2}).get_json()
+    assert (r["studenter"], r["gruppe"], r["sett"]) == (60, 2, 30)
+    r = client.patch(f"{G}/{p['id']}", json={"ekstra": 3, "sett": 5}).get_json()  # sett kan ikke settes direkte
+    assert r["sett"] == 33
+    r = client.patch(f"{G}/{p['id']}", json={"gruppe": 0, "studenter": 9999}).get_json()  # grensene
+    assert (r["studenter"], r["gruppe"]) == (2000, 1)
+    assert client.patch(f"{G}/{p['id']}", json={"studenter": ""}).get_json()["sett"] is None
+
+
+def test_emnets_studenter_er_standard_for_nye_prosjekter(client):
+    e = client.post("/api/emner", json={"kode": "IELS1001", "studenter": "60"}).get_json()
+    assert e["studenter"] == 60
+    p = lag(client, start=44, gruppe=3, emne=e["id"])
+    assert (p["studenter"], p["sett"], p["emneStudenter"]) == (60, 20, 60)
+    spesiell = lag(client, navn="Halv klasse", start=45, studenter=30, emne=e["id"])  # avviker fra emnet
+    assert spesiell["studenter"] == 30
+    # å endre emnet endrer ikke prosjekter som finnes
+    assert client.patch(f"/api/emner/{e['id']}", json={"studenter": 70}).get_json()["studenter"] == 70
+    assert client.get("/api/state").get_json()["prosjekter"][0]["studenter"] == 60
+    assert client.patch(f"/api/emner/{e['id']}", json={"studenter": ""}).get_json()["studenter"] is None
+    assert client.patch(f"/api/emner/{e['id']}", json={"studenter": "mange"}).status_code == 400
+
+
+def test_prosjekttyper(client):
+    p = lag(client, start=40, slutt=45, type="prosjekt")
+    assert p["type"] == "prosjekt"
+    assert client.patch(f"{G}/{p['id']}", json={"type": "lab"}).get_json()["type"] == "lab"
+    assert client.patch(f"{G}/{p['id']}", json={"type": "workshop"}).status_code == 400
+    assert client.get("/api/state").get_json()["typer"] == {
+        "sett": "Semestersett", "prosjekt": "Prosjekt", "hack": "Hackathon", "lab": "Lab"}
+
+
+def test_stengt_periode_kan_folge_pasken(client):
+    r = client.put("/api/stengte", json=[{"navn": "Påske", "fra": 1, "til": 1, "paske": True}])
+    assert r.get_json()[0]["paske"] is True
+    st = client.get("/api/state").get_json()
+    stengt = {u["uke"]: u["stengt"] for s in st["skolear"] for u in s["uker"] if s["ar"] == 2027}
+    assert stengt[15] == "Påske" and stengt[1] == ""  # påsken 2028 er i uke 15, ikke uke 1

@@ -19,12 +19,12 @@
     if (!res.ok) throw new Error(data.feil || "Noe gikk galt (" + res.status + ").");
     return data;
   }
-  const setStatus = (t) => { $("status").textContent = t || ""; };
+  const setStatus = (t, feil) => { $("status").textContent = t || ""; $("status").classList.toggle("feil", !!feil); };
   // en handling: kjør, vis melding, hent på nytt. Feil vises øverst og ved knappen.
   async function gjor(fn, ok, el) {
     try { const r = await fn(); setStatus(typeof ok === "function" ? ok(r) : ok || "Lagret."); await last(); }
     catch (e) {
-      setStatus(e.message);
+      setStatus(e.message, true);
       if (el && el.isConnected) {
         let p = el.closest("td, .kort > div, section") ; p = p || el.parentElement;
         let m = p.querySelector(":scope > .inlineerr");
@@ -47,7 +47,7 @@
 
   async function last() {
     try { D = await api("GET", "/api/admin/data"); tegn(); }
-    catch (e) { setStatus(e.message); }
+    catch (e) { setStatus(e.message, true); }
   }
   function tegn() {
     if (!D) return;
@@ -102,7 +102,7 @@
     const opt = (v, t, valgt) => `<option value="${esc(v)}"${String(v) === String(valgt) ? " selected" : ""}>${esc(t)}</option>`;
     const emneValg = (r) => `<select data-f="emne" aria-label="Emne">${opt("", "uten emne", r.emneId || "")}`
       + D.emner.map((e) => opt(e.id, e.kode + (e.aktiv ? "" : " (inaktiv)"), r.emneId || "")).join("") + `</select>`;
-    const num = (r, k, min, max) => `<input type="number" data-f="${k}" min="${min}" max="${max}" value="${r[k] ?? ""}" aria-label="${k}">`;
+    const num = (r, k, min, max, lbl) => `<input type="number" data-f="${k}" min="${min}" max="${max}" value="${r[k] ?? ""}" aria-label="${lbl || k}">`;
     $("innhold").innerHTML = `<section><div class="filtre">`
       + `<label>Skoleår <select id="fSy">${opt("", "alle", filter.skolear)}${ar.map((y) => opt(y, syNavn(y), filter.skolear)).join("")}</select></label>`
       + `<label>Emne <select id="fEmne">${opt("", "alle", filter.emne)}${opt("-", "uten emne", filter.emne)}${D.emner.map((e) => opt(e.id, e.kode, filter.emne)).join("")}</select></label>`
@@ -111,12 +111,12 @@
       + `<label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="fFj"${filter.fjernede ? " checked" : ""}> vis fjernede</label>`
       + `<span class="muted">${rader.length} av ${D.gjennomforinger.length}</span></div>`
       + `<div class="tablebox"><table class="adm-tabell"><thead><tr><th>Skoleår</th><th>Prosjekt</th><th>Emne</th><th>Faglærer · ingeniør</th>`
-      + `<th>Uke fra</th><th>til</th><th>Sett</th><th>Lev.</th><th>Buffer</th><th>BOM</th><th class="num">Bestilt</th><th>Telling</th><th></th></tr></thead><tbody>`
+      + `<th>Uke fra</th><th>til</th><th title="Studenter ÷ per gruppe + ekstra sett">Sett</th><th>Lev.</th><th>Buffer</th><th>BOM</th><th class="num">Bestilt</th><th>Telling</th><th></th></tr></thead><tbody>`
       + (rader.length ? rader.map((r) => `<tr data-id="${esc(r.id)}"${r.slettet ? ' class="fjernet"' : ""}>`
         + `<td><input type="number" data-f="skolear" min="2000" max="2100" value="${r.skolear}" aria-label="Skoleår (startår)"><small>${esc(syNavn(r.skolear))}</small></td>`
         + `<td><input type="text" class="navn" data-f="navn" value="${esc(r.navn)}" aria-label="Navn">${r.slettet ? `<small>Fjernet av ${esc(r.slettetAv || "")} ${tid(r.slettet)}</small>` : ""}</td>`
         + `<td>${emneValg(r)}</td><td>${esc(r.faglarerNavn || "–")}<small>${esc(r.ingeniorNavn || "ingen ingeniør")}</small></td>`
-        + `<td>${num(r, "start", 1, 53)}</td><td>${num(r, "slutt", 1, 53)}</td><td>${num(r, "sett", 0, 999)}</td><td>${num(r, "lev", 0, 20)}</td><td>${num(r, "buf", 0, 20)}</td>`
+        + `<td>${num(r, "start", 1, 53)}</td><td>${num(r, "slutt", 1, 53)}</td><td><div class="settcalc"><span class="sf">${num(r, "studenter", 0, 2000, "Antall studenter")}<small>studenter</small></span><span class="op">÷</span><span class="sf">${num(r, "gruppe", 1, 20, "Studenter per gruppe")}<small>per gruppe</small></span><span class="op">+</span><span class="sf">${num(r, "ekstra", 0, 99, "Ekstra sett")}<small>ekstra</small></span></div><small>${r.sett != null ? `= ${r.sett} sett` : "–"}</small></td><td>${num(r, "lev", 0, 20)}</td><td>${num(r, "buf", 0, 20)}</td>`
         + `<td>${r.bom ? `${esc(r.bom)}${r.bomFinnes ? "" : `<small style="color:var(--warn)">finnes ikke</small>`}<br><button type="button" class="mini quiet" data-act="frakoble">Fjern kobling</button>` : `<span class="muted">–</span>`}</td>`
         + `<td class="num">${r.bestillinger ? `${r.bestillinger} lev.<small>${r.bestiltKr != null ? nf0.format(r.bestiltKr) + " kr" : ""}</small>` : "–"}</td>`
         + `<td>${r.telling === "skrevet" ? "skrevet til BOM" : r.telling === "lagret" ? "lagret" : "–"}</td>`
@@ -148,11 +148,12 @@
     const rad = (e) => `<tr data-emne="${e ? e.id : "ny"}"${e && !e.aktiv ? ' class="fjernet"' : ""}>`
       + `<td><input type="text" data-ef="kode" value="${esc(e ? e.kode : "")}" placeholder="IELS1001" aria-label="Kode"></td>`
       + `<td><input type="text" class="navn" data-ef="navn" value="${esc(e ? e.navn : "")}" aria-label="Navn"></td><td>${program(e ? e.program : "bachelor")}</td>`
+      + `<td><input type="number" data-ef="studenter" min="0" max="2000" value="${e && e.studenter != null ? e.studenter : ""}" aria-label="Antall studenter i emnet"></td>`
       + `<td>${velg("faglarer", "faglarer", e && e.faglarerId)}</td><td>${velg("ingenior", "ingenior", e && e.ingeniorId)}</td>`
       + (e ? `<td class="num">${e.prosjekter}</td><td><label><input type="checkbox" data-ef="aktiv"${e.aktiv ? " checked" : ""}> aktiv</label></td>`
            : `<td></td><td><button type="button" class="mini" data-act="emnelagre">Lagre</button> <button type="button" class="mini quiet" data-act="emneavbryt">Avbryt</button></td>`) + `</tr>`;
     $("innhold").innerHTML = `<section><div class="row"><h2>Alle emner</h2>${nyttEmne ? "" : `<button class="tbtn" type="button" data-act="emneny">+ Nytt emne</button>`}</div>`
-      + `<div class="tablebox"><table class="adm-tabell"><thead><tr><th>Kode</th><th>Navn</th><th>Program</th><th>Faglærer</th><th>Ingeniør</th><th class="num">Prosjekter</th><th></th></tr></thead><tbody>`
+      + `<div class="tablebox"><table class="adm-tabell"><thead><tr><th>Kode</th><th>Navn</th><th>Program</th><th title="Standard for nye prosjekter i emnet">Studenter</th><th>Faglærer</th><th>Ingeniør</th><th class="num">Prosjekter</th><th></th></tr></thead><tbody>`
       + (nyttEmne ? rad(null) : "") + D.emner.map(rad).join("") + `</tbody></table></div></section>`;
   }
   const verdier = (tr, attr) => { const v = {}; tr.querySelectorAll(`[${attr}]`).forEach((el) => { v[el.getAttribute(attr)] = el.type === "checkbox" ? el.checked : (el.value || null); }); return v; };
@@ -237,7 +238,7 @@
   async function hentLogg() {
     const q = Object.entries({ ...lf, grense: 500 }).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
     try { loggRader = await api("GET", "/api/admin/logg?" + q); tegnLogg(); }
-    catch (e) { setStatus(e.message); }
+    catch (e) { setStatus(e.message, true); }
   }
   function tegnLogg() {
     const HANDLING = { opprettet: "la til", endret: "endret", fjernet: "fjernet", slettet: "slettet", gjenopprettet: "gjenopprettet",
@@ -274,7 +275,7 @@
         const k = syKonsekvens;
         $("syKons").innerHTML = `<p style="margin:0 0 8px">${k.navn}: ${k.gjennomforinger} gjennomføringer, ${k.bestillinger} bestillinger og ${k.tellinger} tellinger blir slettet.</p>`
           + `<button type="button" class="del" data-act="slettsy" data-sy="${sy}">Slett ${esc(k.navn)} …</button>`;
-      } catch (err) { setStatus(err.message); }
+      } catch (err) { setStatus(err.message, true); }
     };
   }
 
@@ -306,7 +307,7 @@
           const deler = [k.bestillinger && `${k.bestillinger} bestilling(er)`, k.telling && "tellingen", k.sisteAvProsjektet && "selve prosjektet"].filter(Boolean);
           bekreft(b, `Slett ${k.navn} ${k.skolear}${deler.length ? " + " + deler.join(", ") : ""}`);
           if (k.lagtPaaLager || k.tellingIBom) setStatus("Merk: noe fra dette prosjektet står i en BOM («På lager»). Det blir stående i Excel-filen.");
-        }).catch((err) => setStatus(err.message));
+        }).catch((err) => setStatus(err.message, true));
         return;
       }
       gjor(() => api("DELETE", G("")), "Gjennomføringen er slettet.", b);

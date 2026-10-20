@@ -84,7 +84,7 @@ def test_write_stock_nekter_naar_filen_er_aapen_i_excel():
 # ---------- gjennom API-et ----------
 
 def oppsett(client):
-    g = client.post(G, json={"navn": "Test", "skolear": 2026, "start": 44, "sett": 10}).get_json()
+    g = client.post(G, json={"navn": "Test", "skolear": 2026, "start": 44, "studenter": 10}).get_json()
     fil = lag_bom(rader=[("Arduino", "Elfa", "A1", 1, 4, 250.0), ("Ledning", "Kjell", "L1", 2, 0, 10.0)]).name
     client.patch(f"{G}/{g['id']}", json={"bom": fil})
     return g["id"], fil

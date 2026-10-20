@@ -79,3 +79,38 @@ def test_hendelser():
 def test_semester():
     assert frister.semester(34) == "Høst"
     assert frister.semester(3) == "Vår"
+
+
+def test_hendelser_per_type():
+    def hendelser(type, start, slutt):
+        h = {x["kind"]: x for x in frister.frister(run(start=start, slutt=slutt, type=type), STENGT)["hendelser"]}
+        return h["start"]["what"], h["retur"]["what"], h["retur"]["uke"]
+    assert hendelser("sett", 34, 50) == ("Utdeling", "Innlevering og telling", 50)
+    assert hendelser("prosjekt", 40, 45) == ("Prosjektstart", "Innlevering og telling", 46)
+    assert hendelser("hack", 44, 44) == ("Hackathon", "Tell opp restlager", 45)
+    assert hendelser("lab", 44, 44) == ("Lab", "Innlevering og telling", 44)  # utstyret kommer tilbake samme dag
+    assert hendelser("ukjent", 44, 44) == ("Hackathon", "Tell opp restlager", 45)
+
+
+def test_siden_apner_pa_neste_skolear_om_sommeren():
+    assert frister.skolear_vis(dt.date(2026, 6, 21)) == 2025  # uke 25: fortsatt året som går
+    assert frister.skolear_vis(dt.date(2026, 6, 22)) == 2026  # uke 26: høstens bestillinger er gjort
+    assert frister.skolear_vis(dt.date(2026, 8, 3)) == 2026
+    assert frister.skolear_vis(dt.date(2027, 1, 10)) == 2026
+
+
+def test_paske_flytter_seg():
+    assert frister.paskedag(2026) == dt.date(2026, 4, 5)
+    assert frister.paskedag(2027) == dt.date(2027, 3, 28)
+    assert frister.paskedag(2028) == dt.date(2028, 4, 16)
+    assert [frister.paskeuke(ar) for ar in (2026, 2027, 2028)] == [14, 12, 15]
+    paske = [{"navn": "Påske", "fra": 12, "til": 12, "paske": True}]
+    assert frister.stengt(dt.date(2028, 4, 13), paske) and not frister.stengt(dt.date(2028, 3, 23), paske)
+    assert frister.uke_info(dt.date(2028, 4, 13), paske)["stengt"] == "Påske"
+
+
+def test_frist_hopper_over_riktig_paskeuke():
+    # start uke 17 i 2028, 2 uker: påsken er uke 15 i 2028 → fristen havner i uke 14
+    paske = [{"navn": "Påske", "fra": 12, "til": 12, "paske": True}]
+    f = frister.frister(run(skolear=2027, start=17, slutt=17, lev=1, buf=1), paske)
+    assert f["frist"]["uke"] == 14

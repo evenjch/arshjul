@@ -27,7 +27,7 @@ def bjorns(client):
     bjorn = bruker("bjorn")
     e = arshjul.store.nytt_emne({"kode": "E1", "ingenior_id": bjorn})["id"]
     b = som(ny_klient(), bjorn)
-    g = b.post(G, json={"navn": "Bjørns", "skolear": 2030, "start": 44, "sett": 10, "emne": e}).get_json()
+    g = b.post(G, json={"navn": "Bjørns", "skolear": 2030, "start": 44, "studenter": 10, "emne": e}).get_json()
     fil = lag_bom(rader=[("Arduino", "Elfa", "A1", 1, 4, 250.0)]).name
     b.patch(f"{G}/{g['id']}", json={"bom": fil})
     return {"bjorn": b, "g": g, "fil": fil, "emne": e}
@@ -151,8 +151,9 @@ def test_fjerne_og_angre_telling(client, bjorns):
 # ---------- logg og opprydding ----------
 
 def test_loggsok(client, bjorns):
-    client.patch(f"/api/admin/gjennomforinger/{bjorns['g']['id']}", json={"sett": 12})
-    assert client.get("/api/admin/logg?bruker=Admin").get_json()[0]["felt"] == "antall sett"
+    client.patch(f"/api/admin/gjennomforinger/{bjorns['g']['id']}", json={"studenter": 12})
+    felt = {r["felt"] for r in client.get("/api/admin/logg?bruker=Admin").get_json()}
+    assert {"studenter", "antall sett"} <= felt
     assert all(e["bruker_navn"] == "Bjorn" for e in client.get("/api/admin/logg?bruker=Bjorn").get_json())
     assert client.get("/api/admin/logg?prosjekt=finnes-ikke").get_json() == []
     assert len(client.get("/api/admin/logg?grense=1").get_json()) == 1
@@ -285,6 +286,7 @@ def test_panelet_tegner_alle_faner(client, bjorns):
     u = res["ut"]
     assert "Prosjekter uten emne: 1" in u["oversikt"] and "Uten emne" in u["oversikt"]
     assert "Bjørns" in u["prosjekter"] and 'data-f="skolear"' in u["prosjekter"] and "Slett …" in u["prosjekter"]
+    assert 'data-f="gruppe"' in u["prosjekter"] and "= 10 sett" in u["prosjekter"]
     assert "E1" in u["emner"] and "Bjorn" in u["brukere"] and "(deg)" in u["brukere"]
     assert "Angre mottak" in u["registreringer"] and "PO-1" in u["registreringer"]  # lagt på lager: angres, ikke fjernes
     assert "Kvitter alle" in u["opprydding"] and "Slett et gammelt skoleår" in u["opprydding"]

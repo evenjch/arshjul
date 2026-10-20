@@ -129,7 +129,7 @@ def test_sikkerhetshoder(client):
 # ---------- faglærer ----------
 
 def prosjekt_med_bom(c, navn="Insektsløp", **kw):
-    g = c.post(G, json={"navn": navn, "skolear": SY, "start": 44, "slutt": 44, "sett": 30, **kw}).get_json()
+    g = c.post(G, json={"navn": navn, "skolear": SY, "start": 44, "slutt": 44, "studenter": 30, **kw}).get_json()
     fil = lag_bom(f"{navn} – BOM.xlsx", rader=[("Arduino", "Elfa", "A1", 1, 0, 250.0)]).name
     c.patch(f"{G}/{g['id']}", json={"bom": fil})
     return g
@@ -159,7 +159,7 @@ def test_faglarer_lager_og_endrer_egne_prosjekter(innlogging):
     g = r.get_json()
     assert (g["faglarerId"], g["emneKode"], g["lev"], g["buf"], g["bom"], g["color"]) == (innlogging["ola"], "OLA1", 2, 2, None, 3)
 
-    assert ola.patch(f"{G}/{g['id']}", json={"start": 42, "sett": 12, "notat": "IELS1001"}).status_code == 200
+    assert ola.patch(f"{G}/{g['id']}", json={"start": 42, "studenter": 12, "notat": "IELS1001"}).status_code == 200
     r = ola.patch(f"{G}/{g['id']}", json={"lev": 1})
     assert r.status_code == 403 and "leveringstid" in r.get_json()["feil"]
     assert ola.patch(f"{G}/{g['id']}", json={"bom": "annen.xlsx"}).status_code == 403
@@ -175,7 +175,7 @@ def test_faglarer_lager_og_endrer_egne_prosjekter(innlogging):
     ("post", "/{id}/mal", None), ("post", "/{id}/apne", None), ("post", "/{id}/liste", None),
     ("post", "/{id}/bestilling", {"handling": "bestilt", "leverandor": "elfa"}), ("post", "/{id}/sett", None),
     ("post", "/{id}/telling", {"linjer": [{"key": "elfa|a1", "telt": 1}]}), ("post", "/{id}/telling/skriv", None),
-    ("post", "/{id}/telling/angre", None), ("post", "/{id}/gjenopprett", None),
+    ("post", "/{id}/telling/angre", None), ("post", "/{id}/gjenopprett", None), ("post", "/{id}/bom/sett", None),
 ])
 def test_faglarer_kan_ikke_ingeniorens_handlinger(innlogging, metode, sti, body):
     ing = logg_inn("ing")
@@ -202,17 +202,23 @@ def test_endringer_varsles_og_kvitteres(innlogging):
 
     ola = logg_inn("ola")
     ola.patch(f"{G}/{g['id']}", json={"start": 42, "slutt": 42})
-    ola.patch(f"{G}/{g['id']}", json={"sett": 32, "type": "sett"})
+    ola.patch(f"{G}/{g['id']}", json={"studenter": 60, "gruppe": 2, "type": "sett"})
     endr = state(ing)["endringer"]
+    # 60 studenter i grupper på 2 er fortsatt 30 sett – da logges ikke antall sett
     assert sorted((e["bruker_navn"], e["felt"], e["fra"], e["til"]) for e in endr) == sorted([
         ("Ola Faglærer", "uke fra", "44", "42"), ("Ola Faglærer", "uke til", "44", "42"),
-        ("Ola Faglærer", "antall sett", "30", "32"), ("Ola Faglærer", "type", "hack", "sett")])
+        ("Ola Faglærer", "studenter", "30", "60"), ("Ola Faglærer", "per gruppe", "1", "2"),
+        ("Ola Faglærer", "type", "hack", "sett")])
     assert {e["gjennomforing_id"] for e in endr} == {int(g["id"])}
 
-    ola.patch(f"{G}/{g['id']}", json={"sett": 32})  # ingen endring – ingen logg
-    assert len(state(ing)["endringer"]) == 4
+    ola.patch(f"{G}/{g['id']}", json={"studenter": 60})  # ingen endring – ingen logg
+    assert len(state(ing)["endringer"]) == 5
 
-    assert ing.post(f"/api/endringer/{g['id']}/kvitter").get_json() == {"kvittert": 4}
+    ola.patch(f"{G}/{g['id']}", json={"gruppe": 3})  # 60/3 = 20 sett: det ingeniøren bestiller etter, varsles også
+    nye = [(e["felt"], e["fra"], e["til"]) for e in state(ing)["endringer"]]
+    assert ("per gruppe", "2", "3") in nye and ("antall sett", "30", "20") in nye and len(nye) == 7
+
+    assert ing.post(f"/api/endringer/{g['id']}/kvitter").get_json() == {"kvittert": 7}
     assert state(ing)["endringer"] == []
 
 
@@ -303,7 +309,7 @@ def test_siden_for_begge_roller(innlogging):
     ing.post(G, json={"navn": "Karis prosjekt", "skolear": SY, "emne": innlogging["emne_kari"]})
 
     ola = logg_inn("ola")
-    ola.patch(f"{G}/{g['id']}", json={"start": 40, "sett": 35})
+    ola.patch(f"{G}/{g['id']}", json={"start": 40, "studenter": 35})
     assert ola.post(G, json={"navn": "Olas nye", "skolear": SY, "start": 20, "emne": innlogging["emne_ola"]}).status_code == 200
     ola.delete(f"{G}/{annen['id']}")
 

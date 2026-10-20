@@ -8,15 +8,26 @@ Et lite lokalt program (Flask) som viser årets innkjøp til undervisningsprosje
 Innkjøp undervisning/
 ├── BOM/                 Excel-filene – sjefen for komponentene
 ├── Bestillingslister/   bestillingslister som lages fra hjulet
-├── arshjul.db           sjefen for prosjekter, uker, antall sett og hvilken BOM som hører til
+├── arshjul.db           sjefen for prosjekter, uker, studenter/grupper og hvilken BOM som hører til
 └── arshjul/             selve programmet
 ```
 
 - **Årshjulet viser ett skoleår om gangen**, fra uke 32 (august) til uke 31. Bla med ‹ og › over hjulet. Uke 32–53 er høsten, uke 1–31 er våren etter.
-- **Et prosjekt** (navn, type, leveringstid, buffer, BOM) går igjen fra år til år. **Ukene og antall sett** gjelder bare det skoleåret du ser på.
+- **Skoleåret** går fra uke 32 til uke 31. Fra uke 26 om sommeren åpner årshjulet på skoleåret som kommer – det er det du jobber med da. Det som hører til året før eller etter, men skjer i dette året (f.eks. høstens bestillingsfrister i juni), vises svakt i hjulet.
+- **Et prosjekt** (navn, type, emne, farge) går igjen fra år til år. **BOM, leveringstid og buffer** hører til hvert skoleår: endrer du dem, gjelder det dette og senere år, men aldri år som er ferdige – så en ny BOM-versjon ikke endrer historikken.
+- **Typen** bestemmer hva som står i hjulet og når det telles opp etterpå. Endres i tabellen.
+
+  | Type         | Brukes til                                   | Telling                  |
+  |--------------|----------------------------------------------|--------------------------|
+  | Semestersett | hele semesteret                              | siste uke                |
+  | Prosjekt     | vanlig prosjekt over flere uker              | uka etter siste uke      |
+  | Hackathon    | lite prosjekt, vanligvis 1–3 dager           | uka etter                |
+  | Lab          | én dag, alt utstyr leveres tilbake samme dag | samme uke                | **Ukene, antall studenter og gruppestørrelsen** gjelder bare det skoleåret du ser på.
 - **Årshjulet skriver nesten aldri til en eksisterende BOM.** Det leser dem og lager nye maler. Eneste unntak: «På lager» (kolonne H), når du registrerer et varemottak eller skriver inn en telling. Det skjer bare når du bekrefter, filen må være lukket i Excel, og det lages alltid en sikkerhetskopi i `BOM/Sikkerhetskopi/` først.
-- **Antall sett** styres i årshjulet. Å bestille = per sett × antall sett − på lager.
-- **Stengte perioder** (jul, påske, fellesferie) endres nederst på siden.
+- **Antall studenter** settes på emnet (under «Emner») og fylles inn når du legger til et prosjekt i emnet. Avviker et prosjekt – f.eks. bare halve klassen – endrer du tallet på prosjektet; da står emnets tall i grått under.
+- **Antall sett** regnes ut i årshjulet: antall studenter ÷ studenter per gruppe (rundet opp) + ekstra sett. 60 studenter i grupper på 3 gir 20 sett; bytter du til grupper på 2, blir det 30. Å bestille = per sett × antall sett − på lager.
+- **Antall sett skrives også i BOM-en** (cellen «Antall sett»), så Excel viser riktig «Å bestille». Det skjer automatisk med sikkerhetskopi – men ikke hvis BOM-en er åpen i Excel, prosjektet har startet, eller du har endret tallet i Excel selv. Da står «BOM-en har 12 sett» i en rød boks i prosjektlinjen, med grunnen og knappen «Skriv 18 til BOM-en». Feilmeldinger øverst vises også i rødt.
+- **Stengte perioder** (jul, påske, fellesferie) endres nederst på siden. Påsken er merket «følger påsken» og flytter seg selv fra år til år (uka med påskedag).
 - Legg gjerne hele mappen i OneDrive, så får du backup automatisk. Ta ikke backup av `arshjul.db` mens årshjulet kjører og lagrer.
 - Før versjon med skoleår lå alt i `arshjul.json`. Den hentes inn automatisk første gang og får navnet `arshjul.json.importert`.
 
@@ -35,7 +46,7 @@ Krever Python 3.10 eller nyere. Uten startfilen: `pip install -r requirements.tx
 | Du vil …                       | Gjør slik                                                                 |
 |--------------------------------|---------------------------------------------------------------------------|
 | Legge til et prosjekt          | Bla til riktig skoleår, trykk «+ Legg til nytt prosjekt»                  |
-| Sette opp neste skoleår        | «Kopier til 2027/28 …» over tabellen, velg prosjektene. Årshjulet minner deg på det om våren |
+| Sette opp neste skoleår        | «Kopier til 2027/28 …» over tabellen: en sjekkliste der du retter uker og antall studenter (eller bruker emnets tall), og ser om BOM-en er telt etter i år. Årshjulet minner deg på det om våren |
 | Telle etter prosjektet         | Åpne «Bestilling» → «Telling etter prosjektet». Velg utstyr/forbruk, før opp det du har igjen, «Lagre telling» |
 | Oppdatere lageret i BOM-en     | Etter tellingen: «Oppdater «På lager» i BOM-en …» og bekreft. Lukk BOM-en i Excel først |
 | Rette en telling               | Endre tallene, «Lagre endringer», så «Skriv endringene til BOM-en …». Bare det som er endret skrives |
@@ -48,7 +59,7 @@ Krever Python 3.10 eller nyere. Uten startfilen: `pip install -r requirements.tx
 | Lage bestillingsliste          | «Bestillingsliste» – lagres i Bestillingslister og åpnes. For én leverandør: «Liste» under «Bestilling» |
 | Registrere at du har bestilt   | Trykk på statusen i «Bestilling»-kolonnen, skriv ordrenummer, «Registrer bestilt» for hver leverandør |
 | Registrere mottak              | «Registrer mottak …» under leverandøren: skriv hvor mange som kom. Det legges til «På lager» i BOM-en, og status blir Mottatt eller Delvis mottatt |
-| Bestille det som mangler       | Når BOM-en eller antall sett endres etter bestilling, vises det over tabellen. Bestill, og trykk «Registrer tilleggsbestilling» |
+| Bestille det som mangler       | Når BOM-en, studentene eller gruppene endres etter bestilling, vises det over tabellen. Bestill, og trykk «Registrer tilleggsbestilling» |
 
 Siden oppdateres av seg selv når du går tilbake til nettleservinduet.
 
@@ -59,7 +70,7 @@ Hvert prosjekt hører til et **emne** (f.eks. IELS1001, bachelor eller master). 
 **Du ser bare det du er involvert i.** Andres prosjekter vises ikke – hjulet, «Neste 8 uker» og tabellen gjelder dine emner.
 
 - **Ingeniøren** ser og jobber med prosjektene i sine egne emner – bestilling, varemottak, telling, BOM. I tillegg prosjekter uten emne (eller i et emne uten ingeniør), så et nytt prosjekt aldri blir usynlig for alle.
-- **Faglæreren** ser bare prosjektene i sine egne emner, og endrer navn, type, uker, antall sett og notat. Ser ikke BOM, bestillinger eller kostnader. Endringene dukker opp øverst hos **emnets ingeniør** med «OK, sett».
+- **Faglæreren** ser bare prosjektene i sine egne emner, og endrer navn, type, uker, antall studenter, gruppestørrelse, ekstra sett og notat. Ser ikke BOM, bestillinger eller kostnader. Endringene dukker opp øverst hos **emnets ingeniør** med «OK, sett».
 - **Faglæreren lager sine egne emner og velger ingeniør** under «Emner». Ingeniøren som blir valgt (og den som blir tatt av) får beskjed øverst på siden. Ingeniører og administratoren kan også endre alle emner, og bytte faglærer.
 - **Administratoren** ser alt.
 - **Emner** legges inn og endres under «Emner» nederst på siden, av hvilken som helst ingeniør. Bytter et emne ingeniør, overtar den nye varslene som ikke er kvittert. Emner deaktiveres i stedet for å slettes, så historikken står.
@@ -91,7 +102,7 @@ Hvert prosjekt hører til et **emne** (f.eks. IELS1001, bachelor eller master). 
 
 1. Under **«Brukere»**: lag en faglærer, f.eks. `ola` med et startpassord.
 2. **Logg inn som Ola i et privat/inkognito-vindu** (eller en annen nettleser), så kan du være begge samtidig.
-3. Som Ola, under **«Emner»**: «+ Nytt emne», f.eks. `TEST1001`, og velg deg selv som ingeniør. Legg så til et prosjekt i emnet, endre uker eller antall sett, eller fjern et.
+3. Som Ola, under **«Emner»**: «+ Nytt emne», f.eks. `TEST1001`, og velg deg selv som ingeniør. Legg så til et prosjekt i emnet, endre uker eller gruppestørrelse, eller fjern et.
 4. **Gå tilbake til ditt eget vindu**: «Ola valgte deg som ansvarlig ingeniør for TEST1001», endringene med «OK, sett», og fjernede prosjekter med «Gjenopprett».
 
 Rydd etterpå: fjern haken «aktiv» på testlæreren og testemnet.

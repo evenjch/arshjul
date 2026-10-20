@@ -83,9 +83,12 @@ TEST = r"""
     tabeller.push(__el("tbody").innerHTML);  // alle panelene i skoleåret er åpne nå
   }
   tryit("renderAll(true)", () => t.renderAll(true));
+  tryit("openCopy", () => t.openCopy(true));  // siste skoleår → året etter
+  tryit("visDatoer", () => { __el("f-start").value = "3"; __el("f-slutt").value = "23"; t.visDatoer(); });
   globalThis.__out = JSON.stringify({ errors: log, tbody: tabeller.join("\n"), stats: __el("stats").innerHTML,
                                       notices: __el("notices").innerHTML, wheel: __el("wheel").innerHTML,
-                                      history: __el("histTable").innerHTML });
+                                      history: __el("histTable").innerHTML, emner: __el("emneTable").innerHTML,
+                                      kopi: __el("copyList").innerHTML, datoer: __el("f-datoer").textContent });
 })().catch((e) => { globalThis.__out = JSON.stringify({ errors: ["uncaught: " + e.stack] }); });
 """
 
@@ -93,7 +96,7 @@ TEST = r"""
 def kjor_siden(state: dict, vis_alle: bool = False) -> dict:
     src = (Path(config.APP_DIR) / "static" / "arshjul.js").read_text(encoding="utf-8").rstrip()
     assert src.endswith("})();")
-    src = src[:-5] + ("globalThis.__t = { renderAll, drawTable, openOrders, tellOpen, load, goSY,"
+    src = src[:-5] + ("globalThis.__t = { renderAll, drawTable, openOrders, tellOpen, load, goSY, openCopy, visDatoer,"
                       " get years() { return SYS.map((s) => s.ar); }, get projects() { return projects; } };\n})();")
     ctx = MiniRacer()
     ctx.eval("const STATE = " + json.dumps(state) + ";")
@@ -115,18 +118,20 @@ def test_siden_tegner_alle_tilstander(client):
     rader = [("Arduino", "Elfa", "A1", 1, 4, 250.0), ("Ledning", "Kjell", "L1", 2, 0, 10.0)]
 
     def prosjekt(navn, **kw):
-        g = client.post(G, json={"navn": navn, "skolear": SY, "start": 44, "sett": 10, **kw}).get_json()
+        g = client.post(G, json={"navn": navn, "skolear": SY, "start": 44, "studenter": 10, **kw}).get_json()
         fil = lag_bom(f"{navn} – BOM.xlsx", rader=rader).name
         client.patch(f"{G}/{g['id']}", json={"bom": fil})
         return g["id"]
 
     client.post(G, json={"navn": "Uten BOM", "skolear": SY, "start": 40})
+    emne = client.post("/api/emner", json={"kode": "IELS1001", "studenter": 60}).get_json()["id"]
+    client.post(G, json={"navn": "Grupper", "skolear": SY, "start": 41, "studenter": 61, "gruppe": 3, "ekstra": 1, "emne": emne})
     prosjekt("Ikke bestilt")
     delvis = prosjekt("Delvis")
     client.post(f"{G}/{delvis}/bestilling", json={"handling": "bestilt", "leverandor": "elfa", "ordrenr": "PO-1"})
     mer = prosjekt("Mer")
     client.post(f"{G}/{mer}/bestilling", json={"handling": "bestilt", "leverandor": "elfa"})
-    client.patch(f"{G}/{mer}", json={"sett": 12})
+    client.patch(f"{G}/{mer}", json={"studenter": 12})
     telt = prosjekt("Telt", start=2, slutt=2)
     client.post(f"{G}/{telt}/telling", json={"linjer": [{"key": "elfa|a1", "telt": 8}, {"key": "kjell|l1", "type": "forbruk", "telt": 1}]})
     skrevet = prosjekt("Skrevet", start=3, slutt=3)
@@ -162,5 +167,36 @@ def test_siden_tegner_alle_tilstander(client):
     assert "endret i Excel: 30" in res["tbody"] and "Bruk tallene fra BOM-en i tellingen" in res["tbody"]
     assert "Alt er lagt på lager" in res["tbody"] and "Registrer mottak" in res["tbody"] and "Angre mottak" in res["tbody"]
     assert "Registrer tilleggsbestilling" in res["tbody"]  # «Mer»: sett økt etter bestilling
+    assert 'data-k="gruppe"' in res["tbody"] and 'data-k="ekstra"' in res["tbody"]
+    assert "= 22 sett" in res["tbody"]  # «Grupper»: 61 studenter i grupper på 3 + 1 ekstra
+    assert "Antall studenter?" in res["tbody"]  # «Uten BOM»: ingen studenter ennå
+    assert 'data-act="type"' in res["tbody"] and ">Lab</option>" in res["tbody"]  # typen kan endres i tabellen
+    d = res["datoer"]  # uke 3–23 er våren etter (januar–juni neste kalenderår), ikke januar i år
+    assert d.startswith("Vår ") and " jan" in d and " jun" in d and d.count(d[4:8]) == 3, d
+    assert "Emnet: 60 studenter" in res["tbody"]  # «Grupper» avviker fra emnet
+    assert 'data-ef="studenter"' in res["emner"] and 'value="60"' in res["emner"]
     assert "Historikk" not in res["history"]  # tabellen er tegnet (overskriften står i HTML-malen)
     assert "Sum" in res["history"]
+
+
+def test_hjulet_viser_nabo_skolearet_svakt(client):
+    """Fjorårets prosjekt som slutter i uke 31, telles i uke 32 – det vises svakt i det nye hjulet."""
+    client.post(G, json={"navn": "Sommerkurs", "skolear": SY, "start": 26, "slutt": 31, "type": "prosjekt"})
+    client.post(G, json={"navn": "Høstprosjekt", "skolear": SY + 1, "start": 44})
+    res = kjor_siden(client.get("/api/state").get_json())  # siste hjul som tegnes: SY + 1
+    assert res["errors"] == []
+    assert 'class="proj nabo"' in res["wheel"] and "Sommerkurs (" in res["wheel"] and 'data-ev="retur"' in res["wheel"]
+    assert 'class="proj"' in res["wheel"]  # årets eget prosjekt, ikke svakt
+
+
+def test_kopier_til_neste_ar_er_en_sjekkliste(client):
+    emne = client.post("/api/emner", json={"kode": "IELS1001", "studenter": 60}).get_json()["id"]
+    g = client.post(G, json={"navn": "Insektsløp", "skolear": SY, "start": 44, "studenter": 61, "gruppe": 4, "emne": emne}).get_json()
+    client.patch(f"{G}/{g['id']}", json={"bom": lag_bom().name})
+    client.post(G, json={"navn": "Uten BOM", "skolear": SY, "start": 40})
+    res = kjor_siden(client.get("/api/state").get_json())
+    assert res["errors"] == []
+    k = res["kopi"]
+    assert 'data-c="start"' in k and 'data-c="studenter"' in k and "÷ 4 + 0" in k
+    assert "Bruk emnets 60" in k  # klassen i emnet er en annen enn i fjor
+    assert "Ikke ferdig ennå" in k and "Ingen BOM koblet til" in k
