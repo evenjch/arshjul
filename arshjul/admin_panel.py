@@ -16,10 +16,10 @@ from pathlib import Path
 from flask import Blueprint, jsonify, render_template, request, send_file
 
 import auth
-import orders
 import config
-import deadlines
 import counting
+import deadlines
+import orders
 from db import BACKUP_DIR_NAME  # the same folder as the backup taken before upgrades
 
 bp = Blueprint("admin_panel", __name__)

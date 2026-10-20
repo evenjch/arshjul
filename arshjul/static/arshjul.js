@@ -732,6 +732,29 @@
     $("copyOpen").textContent = `Kopier til ${syName(SY + 1)} …`;
     if (!has) openCopy(false);
   }
+  // ---------- calendar feed: your private link for Outlook ----------
+  async function openCalendar(open, fresh) {
+    $("calbox").hidden = !open; $("calToggle").setAttribute("aria-expanded", String(open)); $("calErr").textContent = "";
+    if (!open) return;
+    try {
+      const r = await api("POST", "/api/calendar", fresh ? { new: true } : undefined);
+      $("calUrl").value = r.url; $("calDownload").href = r.url + "?download=1"; $("calLocal").hidden = !r.local;
+      if (fresh) setStatus("Ny kalenderlenke laget. Den gamle virker ikke lenger – abonner på nytt i Outlook.");
+    } catch (e) { $("calErr").textContent = e.message; }
+  }
+  $("calToggle").addEventListener("click", () => openCalendar($("calbox").hidden));
+  $("calCopy").addEventListener("click", async () => {
+    const i = $("calUrl"); i.select();
+    try { await navigator.clipboard.writeText(i.value); setStatus("Kalenderlenken er kopiert."); }
+    catch (e) { setStatus("Lenken er merket – trykk Ctrl+C for å kopiere den."); }
+  });
+  $("calNew").addEventListener("click", (e) => {
+    const b = e.currentTarget;
+    if (!b.classList.contains("confirm")) { b.classList.add("confirm"); b.textContent = "Bekreft: lag ny lenke"; return; }
+    b.classList.remove("confirm"); b.textContent = "Lag ny lenke …";
+    openCalendar(true, true);
+  });
+
   function openCopy(open) {
     $("copybox").hidden = !open; $("copyOpen").setAttribute("aria-expanded", String(open)); $("copyErr").textContent = "";
     if (!open) return;

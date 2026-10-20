@@ -125,6 +125,7 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 - [x] **Faglæreren lager sine egne emner og velger ingeniør** (migrering 10). Faglæreren kan ikke bytte faglærer eller endre andres emner. Ingeniøren som velges – og den som tas av – får et varsel med «OK, sett» (ikke når du velger deg selv). Ingen godkjenning: ingeniøren får emnet med en gang.
 - [x] «Kopier til neste skoleår» og vårpåminnelsen gjelder egne emner.
 - [x] **Antall sett regnes ut av studenter og grupper** (migrering 11): antall studenter ÷ studenter per gruppe, rundet opp, + ekstra sett (`db.set_count` – eneste stedet det regnes). Antall sett lagres fortsatt, så bestilling, telling og historikk er uendret, men kan ikke settes direkte. Eksisterende gjennomføringer fikk studenter = sett og grupper på 1. Endrer antall sett seg, logges og varsles det sammen med feltet som ble endret.
+- [x] **Kalender i Outlook** (migrering 17, `calendar_feed.py`): «Kalender» gir en personlig lenke (`/calendar/<nøkkel>.ics`) å abonnere på. Ingeniører får forberedelse, bestillingsfrist, bruksperiode og telling; faglærere bruksperioden. Hele dager, faste UID-er så endringer oppdaterer hendelsene, inneværende og neste skoleår. «Lag ny lenke» gjør den gamle ugyldig; deaktiverte brukere får 404. Lokalt kan bare Outlook på samme PC abonnere – på serveren virker det overalt.
 - [x] **Koden er på engelsk** (migrering 16): navn, kommentarer, API-felt og -adresser, databasens tabeller, kolonner og koder, nøklene i lagrede data, testnavn og commit-meldinger. Ordliste i CLAUDE.md. Tekst brukerne ser er fortsatt norsk – også mappene i datamappen, Excel-malene, `innstillinger.env` og kommandolinjen i `manage.py`. Migreringen kjører med fremmednøkler av (brukere og prosjekter bygges om) og tar sikkerhetskopi først. «BOM sist sett»-filen gjøres om én gang (`bom-last-seen.json`).
 - [x] **Sikkerhetskopi før oppgradering**: før databasen migreres, kopieres den til `Sikkerhetskopi-db/` (samme sted og navn som «Ta sikkerhetskopi nå» i administratorpanelet).
 - [x] **Fire prosjekttyper** (`deadlines.TYPES`): semestersett, prosjekt, hackathon og lab. Typen gir navnene i hjulet og telleuka (sett og lab: siste bruksuke; prosjekt og hackathon: uka etter). Gamle «Hackathon / lab» ble Hackathon – lab-ene endres i tabellen. Ingen migrering: typen er fritekst i databasen og sjekkes i API-et.
@@ -163,7 +164,6 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 
 - **Instituttoversikt**: se alle emner samtidig for å finne kollisjoner (travle uker, delte rom og utstyr) og felles lager. Bevisst tatt bort for nå – i et stort institutt blir det rot. Administratoren ser allerede alt; en egen visning kan komme senere.
 
-- Kalenderabonnement (ICS) med frister og prosjektuker i Outlook
 - Påminnelser på e-post eller Teams før frister som ikke er bestilt
 - Samle bestillinger på tvers av prosjekter hos samme leverandør
 - Leveringstid per leverandør i stedet for per prosjekt

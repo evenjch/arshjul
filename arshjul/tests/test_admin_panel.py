@@ -5,7 +5,7 @@ import app as arshjul
 import auth
 import bom
 import config
-from conftest import som
+from conftest import as_user
 from helpers import make_bom
 
 PASSWORD = "et-langt-passord"
@@ -26,7 +26,7 @@ def bjorns(client):
     """A project with a BOM in Bjørn's course – not the admin's."""
     bjorn = user("bjorn")
     e = arshjul.store.new_course({"code": "E1", "engineer_id": bjorn})["id"]
-    b = som(new_client(), bjorn)
+    b = as_user(new_client(), bjorn)
     g = b.post(G, json={"name": "Bjørns", "school_year": 2030, "start": 44, "students": 10, "course": e}).get_json()
     file = make_bom(rows=[("Arduino", "Elfa", "A1", 1, 4, 250.0)]).name
     b.patch(f"{G}/{g['id']}", json={"bom": file})
@@ -41,7 +41,7 @@ def stock(file):
 
 @pytest.mark.parametrize("role", ["engineer", "lecturer"])
 def test_admin_only(client, role):
-    c = som(new_client(), user("vanlig", role))
+    c = as_user(new_client(), user("vanlig", role))
     assert c.get("/admin").status_code == 403
     for method, file_path in (("get", "/api/admin/data"), ("get", "/api/admin/log"), ("post", "/api/admin/acknowledge-all"),
                         ("post", "/api/admin/backup"), ("delete", "/api/admin/school-years/2030"),
@@ -52,7 +52,7 @@ def test_admin_only(client, role):
 def test_main_page_links_to_the_panel(client):
     html = client.get("/").get_data(as_text=True)
     assert 'href="/admin"' in html and "adminToggle" not in html
-    assert 'href="/admin"' not in som(new_client(), user("vanlig")).get("/").get_data(as_text=True)
+    assert 'href="/admin"' not in as_user(new_client(), user("vanlig")).get("/").get_data(as_text=True)
     assert "Administrator" in client.get("/admin").get_data(as_text=True)
 
 
@@ -111,7 +111,7 @@ def test_delete_shows_consequence_first(client, bjorns):
 def test_restore_removed_project(client):
     ola = user("ola", "lecturer")
     e = arshjul.store.new_course({"code": "E2", "lecturer_id": ola})["id"]
-    o = som(new_client(), ola)
+    o = as_user(new_client(), ola)
     g = o.post(G, json={"name": "Olas", "school_year": 2030, "course": e}).get_json()
     o.delete(f"{G}/{g['id']}")
     assert [r["name"] for r in client.get("/api/admin/data").get_json()["overview"]["removed"]] == ["Olas"]
@@ -162,7 +162,7 @@ def test_log_search(client, bjorns):
 def test_acknowledge_all(client):
     ola = user("ola", "lecturer")
     e = arshjul.store.new_course({"code": "E2", "lecturer_id": ola})["id"]
-    som(new_client(), ola).post(G, json={"name": "Olas", "school_year": 2030, "course": e})
+    as_user(new_client(), ola).post(G, json={"name": "Olas", "school_year": 2030, "course": e})
     assert client.get("/api/admin/data").get_json()["overview"]["unacknowledged"] == 1
     assert client.post("/api/admin/acknowledge-all").get_json() == {"acknowledged": 1}
     assert client.get("/api/admin/data").get_json()["overview"]["unacknowledged"] == 0

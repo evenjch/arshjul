@@ -22,15 +22,16 @@ import threading
 import webbrowser
 from pathlib import Path
 
-from flask import Flask, g as req, jsonify, render_template, request
+from flask import Flask, g as req, jsonify, render_template, request, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import auth
-import orders
 import bom as bomlib
+import calendar_feed as calendar_feed_lib
 import config
-import deadlines
 import counting
+import deadlines
+import orders
 from config import BOM_DIR, DATA_FILE, LIST_DIR, SNAP_FILE, TEMPLATE_BOM, TEMPLATE_LIST
 from db import Db
 
@@ -39,7 +40,7 @@ FIELDS = {"name": str, "type": str, "start": int, "finish": int, "lead": int, "b
 # what a lecturer may change on their own projects (the engineer owns lead time, buffer, BOM, colour and course)
 LECTURER_FIELDS = {"name", "type", "start", "finish", "students", "group_size", "spare", "note"}
 # the endpoints a lecturer may use – everything else is for engineers only
-LECTURER_ALLOWED = {"index", "state", "create", "update", "delete", "create_course", "update_course",
+LECTURER_ALLOWED = {"index", "state", "create", "update", "delete", "create_course", "update_course", "calendar_link", "calendar_feed",
                     "acknowledge_mine", "auth.login", "auth.logout", "static"}
 PROGRAM = {"bachelor": "Bachelor", "master": "Master"}
 # admin only
@@ -106,16 +107,16 @@ def _role():
     return None
 
 
-def can_handle(g: dict) -> bool:
-    """May the logged-in user do something with this run?
+def can_handle(g: dict, user: dict | None = None) -> bool:
+    """May the user (default: the logged-in user) do something with this run?
 
     Engineer (also the admin – on the main page they're a regular engineer): projects in courses
     they're responsible for, and projects without a course or without an engineer (so nothing is left behind).
     Lecturer: projects in their own courses.
     The admin panel (/api/admin/…) has its own endpoints that see and fix everything.
     """
-    me = auth.me()
-    if auth.is_engineer():
+    me = user or auth.me()
+    if me["role"] == "engineer":
         return g["engineerId"] in (None, me["id"])
     return g["lecturerId"] is not None and g["lecturerId"] == me["id"]
 
@@ -777,6 +778,34 @@ def sets_to_bom(g0: dict, g1: dict) -> dict | None:
     if res["written"]:
         log(g1, "changed", {"bomSets": (res["for"], res["file"])})
     return res
+
+
+# ---------- calendar feed ----------
+
+@app.get("/calendar/<token>.ics")
+def calendar_feed(token):
+    """The user's calendar (see calendar_feed.py). Open without login – the secret link is the key, and
+    unknown or old links give 404. ?download=1 saves it as a file for a one-off import."""
+    user = store.user_by_calendar_token(token) if token else None
+    if not user:
+        return "Ukjent kalenderlenke", 404
+    runs = [g for g in store.runs() if can_handle(g, user)]
+    body = calendar_feed_lib.build(runs, store.closed_periods(), user)
+    resp = app.response_class(body, mimetype="text/calendar")
+    resp.headers["Content-Disposition"] = ("attachment" if request.args.get("download") else "inline") + '; filename="arshjul.ics"'
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.post("/api/calendar")
+def calendar_link():
+    """Your private calendar link. {"new": true} makes a new one – the old link stops working."""
+    me = store.user(id=auth.me()["id"])
+    token = me["calendar_token"]
+    if not token or (request.get_json(silent=True) or {}).get("new"):
+        token = secrets.token_urlsafe(24)
+        store.update_user(me["id"], calendar_token=token)
+    return jsonify({"url": url_for("calendar_feed", token=token, _external=True), "local": config.LOCAL})
 
 
 @app.post("/api/runs/<gid>/ordered")

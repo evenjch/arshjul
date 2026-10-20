@@ -44,7 +44,7 @@ IP_MAX = 20  # feil per IP-adresse per kvarter
 MIN_PASSWORD = 10
 HASH_METHOD = "scrypt"  # the tests use a faster method
 _SAFE = ("GET", "HEAD", "OPTIONS")
-_OPEN = {"auth.login", "auth.setup", "static"}
+_OPEN = {"auth.login", "auth.setup", "static", "calendar_feed"}  # the calendar link is its own key
 # a hash to check against when the user doesn't exist, so the response time doesn't reveal which usernames exist
 _DUMMY = generate_password_hash(secrets.token_hex(8))
 

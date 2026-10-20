@@ -222,6 +222,11 @@
   .notice > div { max-width: 90ch; }
   .boxtitle { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
   .copylist { display: grid; gap: 6px; margin: 12px 0; }
+  /* the calendar link: the field takes the room, the buttons follow */
+  .calrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }
+  .calrow input { flex: 1 1 320px; min-width: 0; font: 400 12.5px var(--mono); padding: 6px 8px; border: 1px solid var(--line);
+                  border-radius: 7px; background: var(--bg); color: var(--ink); }
+  .calrow a.mini { text-decoration: none; }
   /* checklist: name on the left, weeks and students in the middle, whether the BOM has been counted on the right */
   .copyrow { display: grid; grid-template-columns: minmax(180px, 1.2fr) 2fr minmax(160px, 1fr); gap: 6px 14px; align-items: center;
              padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }

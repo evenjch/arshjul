@@ -10,8 +10,8 @@ For each BOM line:
 """
 from __future__ import annotations
 
-from orders import supplier_key
 from bom import row_key
+from orders import supplier_key
 
 TYPES = ("equipment", "consumable")
 

@@ -369,6 +369,11 @@ MIGRATIONS = [
     DROP TABLE projects;
     ALTER TABLE projects_new RENAME TO projects
     """,
+    # 17: a secret calendar link per user (the calendar feed can't log in, so the link is the key)
+    """
+    ALTER TABLE users ADD COLUMN calendar_token TEXT;
+    CREATE UNIQUE INDEX users_calendar_token ON users(calendar_token)
+    """,
 ]
 _JSON_ORDER = ("lines", "stocked", "stock_log")
 BACKUP_DIR_NAME = "Sikkerhetskopi-db"  # database backups, in the data folder (users see this folder)
@@ -620,6 +625,11 @@ class Db:
         with self.tx() as con:
             return [dict(r) for r in con.execute(
                 "SELECT id, username, name, role, admin, active, last_login, locked_until FROM users ORDER BY role, name")]
+
+    def user_by_calendar_token(self, token: str) -> dict | None:
+        with self.tx() as con:
+            r = con.execute("SELECT * FROM users WHERE calendar_token = ? AND active = 1", (token,)).fetchone()
+        return dict(r) if r else None
 
     def update_user(self, id: int, **fields) -> None:
         with self.tx() as con:

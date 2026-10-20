@@ -61,8 +61,22 @@
         <button class="tbtn eng" id="openBomDir" type="button" title="Åpner BOM-mappen i Utforsker">BOM-mappen</button>
         <button class="tbtn eng" id="openListDir" type="button" title="Åpner mappen med bestillingslister">Bestillingslister</button>
         <button class="tbtn eng" id="copyOpen" type="button" aria-expanded="false" aria-controls="copybox" hidden></button>
+        <button class="tbtn" id="calToggle" type="button" aria-expanded="false" aria-controls="calbox" title="Fristene og prosjektukene dine i Outlook">Kalender</button>
         <button class="tbtn" id="addToggle" type="button" aria-expanded="false" aria-controls="addbox">+ Legg til nytt prosjekt</button>
       </div>
+    </div>
+
+    <div class="addbox" id="calbox" hidden>
+      <h3 class="boxtitle">Kalenderen din i Outlook</h3>
+      <p class="formnote">Abonner på lenken i Outlook («Legg til kalender» → «Fra Internett»). Da kommer prosjektukene dine dit<span class="eng">, med bestillingsfrister og telling</span>, og de holdes oppdatert når noe endres. Lenken er personlig: den som har den, ser kalenderen din.</p>
+      <div class="calrow">
+        <input type="text" id="calUrl" readonly aria-label="Kalenderlenke">
+        <button class="mini" id="calCopy" type="button">Kopier</button>
+        <a class="mini" id="calDownload" href="#" download="arshjul.ics">Last ned .ics</a>
+        <button class="mini quiet" id="calNew" type="button" title="Den gamle lenken slutter å virke">Lag ny lenke …</button>
+      </div>
+      <p class="formnote" id="calLocal" hidden>Årshjulet kjører på din PC. Outlook på denne PC-en kan abonnere, men Outlook på nett og mobil når ikke lenken før årshjulet kjører på serveren – bruk «Last ned .ics» for å legge det inn én gang.</p>
+      <span class="err" id="calErr" role="alert"></span>
     </div>
 
     <div class="addbox" id="addbox" hidden>

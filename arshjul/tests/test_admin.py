@@ -4,7 +4,7 @@ import pytest
 import app as arshjul
 import auth
 import config
-from conftest import ADMIN_PASSWORD, som
+from conftest import ADMIN_PASSWORD, as_user
 
 PASSWORD = "et-langt-passord"
 
@@ -77,7 +77,7 @@ def test_admin_is_a_regular_engineer_on_the_main_page(client):
     """On the main page the admin has exactly a regular engineer's rights – the panel is the place for everything."""
     bjorn = user("bjorn")
     e = arshjul.store.new_course({"code": "E1", "engineer_id": bjorn})["id"]
-    g = som(new_client(), bjorn).post("/api/runs", json={"name": "Bjørns", "school_year": 2030, "course": e}).get_json()
+    g = as_user(new_client(), bjorn).post("/api/runs", json={"name": "Bjørns", "school_year": 2030, "course": e}).get_json()
     assert client.get("/api/state").get_json()["projects"] == []  # not the admin's course
     assert client.patch(f"/api/runs/{g['id']}", json={"start": 40}).status_code == 403
     # but in the panel the admin sees and fixes everything
@@ -107,11 +107,11 @@ def test_admin_creates_and_changes_users(client):
 
 def test_new_password_and_deactivation_end_the_session(client):
     uid = user("anne")
-    a = som(new_client(), uid)
+    a = as_user(new_client(), uid)
     assert a.get("/api/state").status_code == 200
     client.patch(f"/api/users/{uid}", json={"password": "et-helt-nytt-passord"})
     assert a.get("/api/state").status_code == 401
-    a = som(new_client(), uid)
+    a = as_user(new_client(), uid)
     client.patch(f"/api/users/{uid}", json={"active": False})
     assert a.get("/api/state").status_code == 401
 
@@ -142,7 +142,7 @@ def test_role_cant_change_while_the_user_is_on_courses(client):
 
 @pytest.mark.parametrize("role", ["engineer", "lecturer"])
 def test_only_the_admin_manages_users(client, role):
-    c = som(new_client(), user("vanlig", role))
+    c = as_user(new_client(), user("vanlig", role))
     assert c.post("/api/users", json={"username": "x", "name": "X", "role": "lecturer", "password": PASSWORD}).status_code == 403
     assert c.patch("/api/users/1", json={"admin": True}).status_code == 403
     assert c.get("/api/admin/data").status_code == 403

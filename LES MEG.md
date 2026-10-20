@@ -46,6 +46,7 @@ Krever Python 3.10 eller nyere. Uten startfilen: `pip install -r requirements.tx
 | Du vil …                       | Gjør slik                                                                 |
 |--------------------------------|---------------------------------------------------------------------------|
 | Legge til et prosjekt          | Bla til riktig skoleår, trykk «+ Legg til nytt prosjekt»                  |
+| Frister og prosjektuker i Outlook | «Kalender» over tabellen: kopier lenken og abonner på den i Outlook («Legg til kalender» → «Fra Internett»). Lenken er personlig; «Lag ny lenke» gjør den gamle ugyldig |
 | Endre navn eller notat         | «Endre» ved navnet i tabellen. Enter lagrer, Escape avbryter |
 | Prosjekt uten BOM er bestilt   | «Marker som bestilt» i bestillingskolonnen, så fristen ikke står som passert |
 | Sette opp neste skoleår        | «Kopier til 2027/28 …» over tabellen: en sjekkliste der du retter uker og antall studenter (eller bruker emnets tall), og ser om BOM-en er telt etter i år. Årshjulet minner deg på det om våren |
