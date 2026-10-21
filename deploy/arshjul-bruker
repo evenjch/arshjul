@@ -1,0 +1,18 @@
+#!/bin/sh
+# Brukere i årshjulet på serveren. Kjører manage.py slik tjenesten kjører appen (som brukeren arshjul,
+# med innstillingene i /etc/arshjul.env), så endringene havner i den samme databasen.
+#
+#   arshjul-bruker ny-bruker <brukernavn> "<Fullt navn>" ingenior|faglarer [--admin]
+#   arshjul-bruker passord <brukernavn>
+#   arshjul-bruker aktiver <brukernavn>        (også: opphever sperre etter feil passord)
+#   arshjul-bruker deaktiver <brukernavn>
+#   arshjul-bruker admin <brukernavn> [--fjern]
+#   arshjul-bruker liste
+#
+# Installeres med: install -m 755 /opt/arshjul/deploy/arshjul-bruker /usr/local/sbin/
+set -eu
+APP=/opt/arshjul/arshjul
+[ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
+exec systemd-run --quiet --pty --wait --collect --uid=arshjul \
+    -p EnvironmentFile=/etc/arshjul.env -p WorkingDirectory="$APP" \
+    "$APP/.venv/bin/python" manage.py "$@"
