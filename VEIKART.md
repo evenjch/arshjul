@@ -146,9 +146,11 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 - [x] Sikkerhetshoder: Content-Security-Policy, X-Frame-Options, nosniff, ingen mellomlagring av API-svar.
 - [x] `ARSHJUL_SECRET_KEY` må være minst 32 tegn i servermodus.
 - [x] Bak Caddy/nginx: riktig klientadresse og https via `X-Forwarded-*` (`ARSHJUL_BAK_PROXY`, på som standard i servermodus).
-- [ ] HTTPS og tilgang bare fra universitetsnettet/VPN – settes opp på VPS-en.
+- [x] HTTPS og tilgang bare fra universitetsnettet/VPN – Caddy med NTNUs sertifikat; VPS-en har bare en intern adresse (`deploy/VPS-oppsett.md`).
 
 ## Flytte til VPS – sjekkliste
+
+Gjort i oktober 2026 – slik det faktisk ble satt opp (Caddy, sertifikat, brannmur, brukere) står i `deploy/VPS-oppsett.md`.
 
 1. Installer Python 3.10 eller nyere på VPS-en.
 2. Hent koden (`git clone`), og lag et Python-miljø: `python -m venv .venv` og `pip install -r requirements.txt`.

@@ -9,7 +9,7 @@
 #   arshjul-bruker admin <brukernavn> [--fjern]
 #   arshjul-bruker liste
 #
-# Installeres med: install -m 755 /opt/arshjul/deploy/arshjul-bruker /usr/local/sbin/
+# Installeres med: install -m 755 /opt/arshjul/deploy/arshjul-bruker /usr/local/bin/
 set -eu
 APP=/opt/arshjul/arshjul
 [ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
