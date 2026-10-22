@@ -1273,7 +1273,7 @@
   const showFormSets = () => {
     const s = $("f-students").value;
     const n = setCount(s === "" ? null : parseInt(s, 10) || 0, parseInt($("f-group").value, 10), parseInt($("f-spare").value, 10));
-    $("f-setsum").textContent = n != null ? `= ${n} sett` : "";
+    $("f-setsum").textContent = n != null ? `${n} sett` : "Antall studenter?";
   };
   ["f-students", "f-group", "f-spare"].forEach((id) => $(id).addEventListener("input", showFormSets));
   // the number of students comes from the course; it can be changed for this project only

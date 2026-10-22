@@ -107,32 +107,53 @@
     </div>
 
     <div class="addbox" id="addbox" hidden>
-      <form id="addForm" novalidate>
-        <p class="wide formnote">Legges inn i skoleåret <b id="f-sy"></b>.</p>
-        <label class="wide">Emne
-          <select id="f-course"></select>
-        </label>
-        <label class="wide">Navn på prosjekt
-          <input type="text" id="f-name" placeholder="F.eks. Lodde-workshop" autocomplete="off">
-        </label>
-        <label>Type
-          <select id="f-type">
-            <option value="semester_kit" title="Brukes hele semesteret">Semestersett</option>
-            <option value="project" title="Vanlig prosjekt over flere uker">Prosjekt</option>
-            <option value="hackathon" selected title="Lite prosjekt, vanligvis 1–3 dager">Hackathon</option>
-            <option value="lab" title="Én dag – alt utstyr leveres tilbake samme dag">Lab</option>
-          </select>
-        </label>
-        <label>I bruk fra uke <input type="number" id="f-start" min="1" max="53" value="40"></label>
-        <label>til uke <input type="number" id="f-finish" min="1" max="53" value="40"></label>
-        <p class="wide formnote">Uke 32–53 er høsten, uke 1–31 våren etter. <b id="f-dates"></b></p>
-        <label class="eng">Leveringstid (uker) <input type="number" id="f-lead" min="0" max="20" value="2"></label>
-        <label class="eng">Buffer (uker) <input type="number" id="f-buf" min="0" max="20" value="2"></label>
-        <label>Antall studenter <input type="number" id="f-students" min="0" max="2000" placeholder="F.eks. 60" title="Hentes fra emnet – endre hvis dette prosjektet avviker"></label>
-        <label>Studenter per gruppe <input type="number" id="f-group" min="1" max="20" value="1"></label>
-        <label>Ekstra sett <input type="number" id="f-spare" min="0" max="99" value="0"></label>
-        <p class="wide formnote">Antall studenter hentes fra emnet, men kan endres for dette prosjektet. Antall sett = studenter ÷ gruppestørrelse (rundet opp) + ekstra. <b id="f-setsum"></b></p>
-        <label class="wide">Notat <input type="text" id="f-note" placeholder="Valgfritt, f.eks. emnekode" autocomplete="off"></label>
+      <form id="addForm" class="newproj" novalidate>
+        <h3 class="boxtitle">Nytt prosjekt i skoleåret <span id="f-sy"></span></h3>
+        <!-- what -->
+        <div class="frow">
+          <label class="grow">Navn på prosjekt
+            <input type="text" id="f-name" placeholder="F.eks. Lodde-workshop" autocomplete="off">
+          </label>
+          <label>Emne
+            <select id="f-course"></select>
+          </label>
+          <label>Type
+            <select id="f-type">
+              <option value="semester_kit" title="Brukes hele semesteret">Semestersett</option>
+              <option value="project" title="Vanlig prosjekt over flere uker">Prosjekt</option>
+              <option value="hackathon" selected title="Lite prosjekt, vanligvis 1–3 dager">Hackathon</option>
+              <option value="lab" title="Én dag – alt utstyr leveres tilbake samme dag">Lab</option>
+            </select>
+          </label>
+        </div>
+        <!-- when -->
+        <div class="frow">
+          <div class="fgroup">
+            <span class="flabel">I bruk</span>
+            <div class="pair">uke <input type="number" id="f-start" min="1" max="53" value="40" aria-label="I bruk fra uke"><span class="op">–</span><input type="number" id="f-finish" min="1" max="53" value="40" aria-label="Til uke"></div>
+            <small><span id="f-dates"></span><br>Uke 32–53 er høsten, uke 1–31 våren etter.</small>
+          </div>
+          <div class="fgroup eng">
+            <span class="flabel">Levering + buffer</span>
+            <div class="pair"><input type="number" id="f-lead" min="0" max="20" value="2" aria-label="Leveringstid i uker"><span class="op">+</span><input type="number" id="f-buf" min="0" max="20" value="2" aria-label="Buffer i uker"> uker</div>
+            <small>Bestillingsfristen regnes bakover fra første bruksuke.</small>
+          </div>
+        </div>
+        <!-- how many -->
+        <div class="fgroup">
+          <span class="flabel">Antall sett</span>
+          <div class="sets-edit">
+            <label class="sf"><span>Studenter</span><input type="number" id="f-students" min="0" max="2000" placeholder="F.eks. 60" title="Hentes fra emnet – endre hvis dette prosjektet avviker"></label>
+            <span class="op">÷</span>
+            <label class="sf"><span>Per gruppe</span><input type="number" id="f-group" min="1" max="20" value="1"></label>
+            <span class="op">+</span>
+            <label class="sf"><span>Ekstra sett</span><input type="number" id="f-spare" min="0" max="99" value="0"></label>
+            <span class="op">=</span>
+            <b class="sets-sum" id="f-setsum"></b>
+          </div>
+          <small>Antall studenter hentes fra emnet, men kan endres for dette prosjektet. Gruppene rundes opp.</small>
+        </div>
+        <label>Notat <input type="text" id="f-note" placeholder="Valgfritt" autocomplete="off"></label>
         <div class="actions">
           <button class="pbtn" type="submit" id="f-save">Legg til</button>
           <button class="tbtn" type="button" id="f-cancel">Avbryt</button>

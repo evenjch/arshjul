@@ -163,8 +163,23 @@
   .addbox { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
   .addbox form { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px 14px; align-items: end; }
   .addbox label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); min-width: 0; }
-  .addbox label.wide { grid-column: span 2; }
-  @media (max-width: 520px) { .addbox label.wide { grid-column: auto; } }
+  /* «Nytt prosjekt»: one row per question – what, when, how many – instead of a free grid */
+  .addbox form.newproj { display: flex; flex-direction: column; gap: 16px; align-items: stretch; }
+  .newproj > .fgroup, .newproj > label { align-self: flex-start; }
+  .newproj > label { width: min(100%, 560px); }
+  .newproj .boxtitle { margin: 0; }
+  .newproj .frow { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: flex-start; }
+  .newproj .frow > label { flex: 1 1 180px; }
+  .newproj .frow > label.grow { flex: 2 1 260px; }
+  .newproj .fgroup { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .newproj .flabel { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .newproj .fgroup > small { color: var(--muted); font-size: 12px; max-width: 46ch; }
+  .newproj .fgroup > small #f-dates { color: var(--ink); font-weight: 600; }
+  .newproj .pair { font-size: 13px; color: var(--muted); gap: 6px; }
+  .addbox .newproj .pair input[type=number] { width: 72px; }
+  .newproj .sets-edit .sf { font-size: 12px; }
+  .addbox .newproj .sets-edit input[type=number] { width: 96px; }
+  .newproj .actions { margin-top: 2px; }
   .addbox input[type=text], .addbox select, .addbox input[type=number] {
     font: 400 14px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line);
     border-radius: 8px; padding: 7px 9px; width: 100%; min-width: 0; }
