@@ -27,6 +27,8 @@
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
+  /* always room for the scrollbar, so the page doesn't jump sideways when it comes and goes (e.g. switching admin tabs) */
+  html { scrollbar-gutter: stable; }
   body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); }
   .wrap { max-width: 1280px; margin: 0 auto; padding-block: 32px 72px; padding-inline: 16px; }
   header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 20px; align-items: flex-end;
