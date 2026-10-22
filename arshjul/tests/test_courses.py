@@ -308,3 +308,20 @@ def test_page_shows_proposals_and_answers(inst, admin):
     res = run_page(state(ola))
     assert res["errors"] == []
     assert "Emnet OLA3 er godkjent" in res["notices"] and "ackid" in res["notices"]
+
+
+def test_admin_approves_from_the_main_page(inst, admin):
+    from test_page import run_page
+    sjef = arshjul.store.user(username="sjef")["id"]
+    ola = log_in("ola")
+    mine = ola.post("/api/courses", json={"code": "OLA3", "engineer": sjef}).get_json()  # the admin is chosen as engineer
+    ola.post("/api/courses", json={"code": "OLA4", "engineer": inst["u"]["cecilie"]})  # the admin isn't told about this one
+    res = run_page(state(admin))
+    assert res["errors"] == []
+    n = res["notices"]
+    assert 'data-act="ackapprove"' in n and f'data-course="{mine["id"]}"' in n and "Sett og godkjent" in n
+    assert "Ola foreslo emnet OLA4" in n and 'data-act="approve"' in n and 'href="/admin#courses"' in n
+    assert "foreslo emnet OLA3" not in n  # not twice
+    # the others don't get the buttons
+    res = run_page(state(log_in("cecilie")))
+    assert "Sett og godkjent" not in res["notices"] and "foreslo emnet" not in res["notices"]

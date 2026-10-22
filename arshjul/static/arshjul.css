@@ -236,6 +236,7 @@
   .notice ul.endr .from { color: var(--muted); }
   .notice p { margin: 6px 0 0; font-size: 13px; font-weight: 600; }
   .noticeact { display: flex; gap: 6px; flex-wrap: wrap; }
+  .noticeact a.mini { text-decoration: none; }
   .notice > div { max-width: 90ch; }
   .boxtitle { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
   .copylist { display: grid; gap: 6px; margin: 12px 0; }

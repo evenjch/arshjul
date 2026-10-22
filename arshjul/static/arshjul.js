@@ -686,10 +686,23 @@
   function changeNotices() {
     let h = "";
     // notifications to you: a course you proposed was approved/rejected, you were chosen as (or taken off as) engineer
+    // the admin approves proposed courses right here: on the notification about the course, or on a notice of its own
+    const waiting = ME.admin ? COURSES.filter((c) => !c.approved) : [];
+    const shown = new Set();
     CHANGES.filter((e) => e.recipient_id).forEach((e) => {
       const text = (RECIPIENT_TEXT[e.action] || ((x) => esc(x.action)))(e);
-      h += `<div class="notice info"><div>${text} <span class="muted">· ${timeFmt(e.time)}</span></div>`
-        + `<button type="button" class="mini" data-act="ackid" data-id="${e.id}">OK, sett</button></div>`;
+      const c = e.action === "engineer_assigned" && waiting.find((x) => x.id === e.course_id);
+      if (c) shown.add(c.id);
+      h += `<div class="notice info"><div>${text}${c ? " Emnet venter på godkjenning." : ""} <span class="muted">· ${timeFmt(e.time)}</span></div>`
+        + `<span class="noticeact"><button type="button" class="mini" data-act="ackid" data-id="${e.id}">OK, sett</button>`
+        + (c ? `<button type="button" class="mini" data-act="ackapprove" data-id="${e.id}" data-course="${c.id}">Sett og godkjent</button>` : "")
+        + `</span></div>`;
+    });
+    waiting.filter((c) => !shown.has(c.id)).forEach((c) => {
+      h += `<div class="notice info"><div><b>${esc(c.proposedByName || "Noen")} foreslo emnet ${esc(c.code)}</b>${c.name ? ` (${esc(c.name)})` : ""}. `
+        + `Det venter på godkjenning.</div><span class="noticeact">`
+        + `<button type="button" class="mini" data-act="approve" data-course="${c.id}">Godkjenn</button>`
+        + `<a class="mini quiet" href="/admin#courses">Rett eller avvis i adminpanelet</a></span></div>`;
     });
     if (!ENG) return h;
     DELETED.forEach((s) => {
@@ -743,6 +756,10 @@
       const id = b.dataset.id, a = b.dataset.act;
       if (a === "acknowledge") act(() => api("POST", `/api/changes/${encodeURIComponent(id)}/acknowledge`), null, b);
       if (a === "ackid") act(() => api("POST", "/api/changes/acknowledge", { ids: [+id] }), null, b);
+      const approve = () => api("POST", `/api/admin/courses/${b.dataset.course}/approve`);
+      if (a === "approve") act(approve, (r) => `${r.code} er godkjent og kan brukes av alle.`, b);
+      if (a === "ackapprove") act(async () => { const r = await approve(); await api("POST", "/api/changes/acknowledge", { ids: [+id] }); return r; },
+        (r) => `${r.code} er godkjent og kan brukes av alle.`, b);
       if (a === "restore") act(() => api("POST", P(id) + "/restore"), "Prosjektet er gjenopprettet.", b);
       if (a === "deleteconfirm") {
         if (!b.classList.contains("confirm")) { b.classList.add("confirm"); b.textContent = "Bekreft: slett for godt"; return; }
