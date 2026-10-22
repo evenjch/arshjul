@@ -30,6 +30,7 @@ Databasen oppgraderes selv ved oppstart, med sikkerhetskopi i `/srv/arshjul-data
 ```bash
 arshjul-bruker liste
 arshjul-bruker ny-bruker <brukernavn> "<Fullt navn>" ingenior --admin
+arshjul-bruker admin <brukernavn>          # gjør en ingeniør til administrator (--fjern for å ta det bort)
 arshjul-bruker passord <brukernavn>
 arshjul-bruker aktiver <brukernavn>        # opphever sperre etter feil passord
 ```
