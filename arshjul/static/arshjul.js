@@ -12,6 +12,8 @@
   // the logged-in user; ENG = engineer (everything), otherwise lecturer (own projects, no BOM/orders)
   let ME = { role: document.body.dataset.userrole || "engineer" }, ENG = ME.role === "engineer";
   let CHANGES = [], DELETED = [], LECTURERS = [], ENGINEERS = [], COURSES = [], PROGRAM = {}, TYPES = {};
+  // /hjul and /uker show one panel on its own; SHARE: the wheel shared with students (no login – the link is the key)
+  const VIEW = document.body.dataset.view || "", SHARE = document.body.dataset.share || "";
   // ALL = everything the server sent, which is only what you're involved in (the server filters).
   let ALL = [];
   const visible = () => ALL;
@@ -40,7 +42,7 @@
   }
   async function doLoad() {
     let st;
-    try { st = await api("GET", "/api/state"); }
+    try { st = await api("GET", SHARE ? `/hjul/${encodeURIComponent(SHARE)}/data` : "/api/state"); }
     catch (e) {
       setStatus(e instanceof TypeError ? "Får ikke kontakt med årshjulet. Kjører «Start årshjul»-vinduet fortsatt?" : e.message);
       return;
@@ -778,6 +780,34 @@
     $("copyOpen").textContent = `Kopier til ${syName(SY + 1)} …`;
     if (!has) openCopy(false);
   }
+  // ---------- sharing the wheel with students (only on /hjul) ----------
+  function showShare(url) {
+    $("shareUrl").value = url || "";
+    $("shareMake").hidden = !!url;
+    ["shareCopy", "shareOpen", "shareNew", "shareStop"].forEach((k) => { $(k).hidden = !url; });
+    if (url) $("shareOpen").href = url;
+  }
+  if (VIEW === "wheel" && !SHARE && $("sharebox")) {
+    const share = (body) => api(body ? "POST" : "GET", "/api/share", body).then((r) => { $("shareErr").textContent = ""; showShare(r.url); return r; })
+      .catch((e) => { $("shareErr").textContent = e.message; });
+    share();
+    $("shareMake").addEventListener("click", () => share({}));
+    $("shareCopy").addEventListener("click", async () => {
+      const i = $("shareUrl"); i.select();
+      try { await navigator.clipboard.writeText(i.value); $("shareErr").textContent = "Lenken er kopiert."; }
+      catch (e) { $("shareErr").textContent = "Lenken er merket – trykk Ctrl+C for å kopiere den."; }
+    });
+    // dangerous buttons: the first press asks, the second press does it
+    [["shareNew", { new: true }, "Bekreft: lag ny lenke"], ["shareStop", { stop: true }, "Bekreft: slutt å dele"]].forEach(([id, body, ask]) => {
+      $(id).addEventListener("click", (e) => {
+        const b = e.currentTarget;
+        if (!b.classList.contains("confirm")) { b.dataset.text = b.textContent; b.classList.add("confirm"); b.textContent = ask; return; }
+        b.classList.remove("confirm"); b.textContent = b.dataset.text;
+        share(body);
+      });
+    });
+  }
+
   // ---------- calendar feed: your private link for Outlook ----------
   async function openCalendar(open, fresh) {
     $("calbox").hidden = !open; $("calToggle").setAttribute("aria-expanded", String(open)); $("calErr").textContent = "";
@@ -946,6 +976,8 @@
   });
 
   function renderAll(keepTable) {
+    if (VIEW === "wheel") { drawWheel(); return; }
+    if (VIEW === "weeks") { drawWeeks(); return; }
     drawCourses();
     drawWheel(); drawWeeks(); drawStats(); drawDiffs(); drawNotices(); drawCopyButton(); drawHistory();
     if (!keepTable) drawTable();

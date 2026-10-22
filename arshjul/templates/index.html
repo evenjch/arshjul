@@ -3,19 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Årshjul for innkjøp</title>
+<title>{% if share %}Årshjul – prosjekter{% elif view == "weeks" %}Neste 8 uker – årshjul{% else %}Årshjul for innkjøp{% endif %}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <meta name="csrf" content="{{ csrf_token }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='arshjul.css') }}">
 </head>
-<body data-userrole="{{ me.role }}">
+<body data-userrole="{{ me.role if me else 'lecturer' }}"{% if view %} data-view="{{ view }}"{% endif %}{% if share %} data-share="{{ share }}"{% endif %}>
 <div class="wrap">
   <header>
     <div>
+      {% if share %}
+      <div class="eyebrow">Elektronikk · prosjekter i undervisningen</div>
+      <h1>Årshjul</h1>
+      <div class="meta" id="today"></div>
+      <div class="me">Delt av <b>{{ shared_by }}</b></div>
+      {% else %}
       <div class="eyebrow">Elektronikk · innkjøp til undervisning</div>
       <h1>Årshjul for innkjøp</h1>
       <div class="meta" id="today"></div>
+      {% endif %}
       {% if me %}<div class="me">Innlogget som <b>{{ me.name }}</b> ({{ roleName[me.role] | lower }})
+        {% if view %}<a class="mini admin-link" href="/">← Til årshjulet</a>{% endif %}
         {% if me.admin %}<a class="mini admin-link" href="/admin">Administrator →</a>{% endif %}
         <form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token }}"><button class="mini quiet" type="submit">Logg ut</button></form></div>{% endif %}
     </div>
@@ -27,7 +35,7 @@
   <div class="grid">
     <div class="panel">
       <div class="row">
-        <h2>Skoleåret <span id="syName"></span></h2>
+        <h2>Skoleåret <span id="syName"></span> <a class="mini quiet viewlink" href="/hjul" title="Bare hjulet – kan deles med studenter">Vis alene</a></h2>
         <div class="synav">
           <button class="mini" id="syPrev" type="button" aria-label="Forrige skoleår">‹</button>
           <button class="mini" id="syNow" type="button">I år</button>
@@ -48,10 +56,26 @@
       </div>
     </div>
     <div class="panel">
-      <h2>Neste 8 uker</h2>
+      <h2>Neste 8 uker <a class="mini quiet viewlink" href="/uker" title="Bare de neste 8 ukene – f.eks. som startside">Vis alene</a></h2>
       <div class="weeks" id="weeks"></div>
     </div>
   </div>
+
+  {% if view == "wheel" and not share %}
+  <div class="addbox sharebox" id="sharebox">
+    <h3 class="boxtitle">Del hjulet med studenter</h3>
+    <p class="formnote">Lenken viser prosjektene i hjulet ditt uten innlogging, men bare navnet og ukene de er i bruk – ikke bestillingsfrister, BOM-er eller hvem som har ansvaret. Den virker fra NTNU-nettet og VPN. Kommer den på avveie, lager du en ny; da slutter den gamle å virke.</p>
+    <div class="calrow">
+      <input type="text" id="shareUrl" readonly aria-label="Delbar lenke" placeholder="Ingen delbar lenke ennå">
+      <button class="mini" id="shareMake" type="button">Lag delbar lenke</button>
+      <button class="mini" id="shareCopy" type="button" hidden>Kopier</button>
+      <a class="mini" id="shareOpen" href="#" target="_blank" rel="noopener" hidden>Åpne</a>
+      <button class="mini quiet" id="shareNew" type="button" hidden title="Den gamle lenken slutter å virke">Lag ny lenke …</button>
+      <button class="mini quiet" id="shareStop" type="button" hidden title="Lenken slutter å virke">Slutt å dele …</button>
+    </div>
+    <span class="err" id="shareErr" role="alert"></span>
+  </div>
+  {% endif %}
 
   <section class="projects">
     <div class="row">

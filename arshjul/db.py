@@ -379,6 +379,11 @@ MIGRATIONS = [
     ALTER TABLE courses ADD COLUMN approved INTEGER NOT NULL DEFAULT 1;
     ALTER TABLE courses ADD COLUMN proposed_by INTEGER
     """,
+    # 19: a secret link per user to their wheel, for sharing with students (open without login, like the calendar)
+    """
+    ALTER TABLE users ADD COLUMN share_token TEXT;
+    CREATE UNIQUE INDEX users_share_token ON users(share_token)
+    """,
 ]
 _JSON_ORDER = ("lines", "stocked", "stock_log")
 BACKUP_DIR_NAME = "Sikkerhetskopi-db"  # database backups, in the data folder (users see this folder)
@@ -634,6 +639,11 @@ class Db:
     def user_by_calendar_token(self, token: str) -> dict | None:
         with self.tx() as con:
             r = con.execute("SELECT * FROM users WHERE calendar_token = ? AND active = 1", (token,)).fetchone()
+        return dict(r) if r else None
+
+    def user_by_share_token(self, token: str) -> dict | None:
+        with self.tx() as con:
+            r = con.execute("SELECT * FROM users WHERE share_token = ? AND active = 1", (token,)).fetchone()
         return dict(r) if r else None
 
     def update_user(self, id: int, **fields) -> None:

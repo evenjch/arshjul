@@ -23,6 +23,7 @@ import webbrowser
 from pathlib import Path
 
 from flask import Flask, g as req, jsonify, render_template, request, url_for
+from werkzeug.exceptions import NotFound
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import auth
@@ -41,6 +42,7 @@ FIELDS = {"name": str, "type": str, "start": int, "finish": int, "lead": int, "b
 LECTURER_FIELDS = {"name", "type", "start", "finish", "students", "group_size", "spare", "note"}
 # the endpoints a lecturer may use – everything else is for engineers only
 LECTURER_ALLOWED = {"index", "state", "create", "update", "delete", "create_course", "update_course", "calendar_link", "calendar_feed",
+                    "wheel_view", "weeks_view", "share_link", "shared_wheel", "shared_wheel_data",
                     "acknowledge_mine", "auth.login", "auth.logout", "static"}
 PROGRAM = {"bachelor": "Bachelor", "master": "Master"}
 # admin only
@@ -311,6 +313,17 @@ _PUBLIC = ("id", "projectId", "school_year", "start", "finish", "sets", "student
               "lecturerId", "lecturerName", "engineerId", "engineerName")
 
 
+def _school_years(rows: list[dict], closed: list[dict], today: dt.date) -> dict:
+    """The school years the wheel can show (this one, the next and any with runs), today and the next 8 weeks."""
+    current = deadlines.school_year_for(today)
+    year = {current, current + 1} | {g["school_year"] for g in rows}
+    monday = today - dt.timedelta(days=today.weekday())
+    return {"today": deadlines.week_info(today), "schoolYearNow": current, "schoolYearShown": deadlines.school_year_shown(today),
+            "school_year": [{"year": y, "name": deadlines.school_year_name(y), "start": deadlines.school_year_start(y).isoformat(),
+                             "weeks": deadlines.school_year_weeks(y, closed)} for y in range(min(year), max(year) + 1)],
+            "next8": [deadlines.week_info(monday + i * deadlines.WEEK, closed) for i in range(8)]}
+
+
 @app.get("/api/state")
 def state():
     closed = store.closed_periods()
@@ -351,16 +364,7 @@ def state():
                         "events": f.pop("events"), "deadlines": f, "own": can_handle(g)})
 
     today = dt.date.today()
-    current = deadlines.school_year_for(today)
-    year = {current, current + 1} | {g["school_year"] for g in rows}
-    school_year = [{"year": y, "name": deadlines.school_year_name(y), "start": deadlines.school_year_start(y).isoformat(),
-                "weeks": deadlines.school_year_weeks(y, closed)} for y in range(min(year), max(year) + 1)]
-    monday = today - dt.timedelta(days=today.weekday())
-    next8 = [deadlines.week_info(monday + i * deadlines.WEEK, closed) for i in range(8)]
-
-    reply = {"projects": out, "closed_periods": closed, "mode": config.MODE,
-            "today": deadlines.week_info(today), "schoolYearNow": current, "schoolYearShown": deadlines.school_year_shown(today),
-            "school_year": school_year, "next8": next8,
+    reply = {"projects": out, "closed_periods": closed, "mode": config.MODE, **_school_years(rows, closed, today),
             "me": {"id": me["id"], "name": me["name"], "role": me["role"], "admin": me["admin"]},
             "users": [],
             "freeBoms": [], "setup": None, "folders": {}, "changes": [], "deletedRuns": [],
@@ -797,6 +801,74 @@ def sets_to_bom(g0: dict, g1: dict) -> dict | None:
     if res["written"]:
         log(g1, "changed", {"bomSets": (res["for"], res["file"])})
     return res
+
+
+# ---------- the wheel and «neste 8 uker» on their own, and the wheel shared with students ----------
+# The page is index.html with data-view: the JS draws only that part, and the CSS hides the rest.
+
+@app.get("/hjul")
+def wheel_view():
+    return render_template("index.html", view="wheel")
+
+
+@app.get("/uker")
+def weeks_view():
+    return render_template("index.html", view="weeks")
+
+
+def _shared_user(token: str) -> dict:
+    user = store.user_by_share_token(token) if token else None
+    if not user:
+        raise NotFound()
+    return user
+
+
+@app.get("/hjul/<token>")
+def shared_wheel(token):
+    """Someone's wheel, for students: open without login – the secret link is the key (like the calendar)."""
+    try:
+        user = _shared_user(token)
+    except NotFound:
+        return "Lenken virker ikke lenger. Be om en ny.", 404
+    return render_template("index.html", view="wheel", share=token, shared_by=user["name"])
+
+
+@app.get("/hjul/<token>/data")
+def shared_wheel_data(token):
+    """Only what the shared wheel draws: project names and the weeks they're in use – as on a lecturer's wheel.
+    No deadlines, orders, BOMs, courses or people are sent."""
+    user = _shared_user(token)
+    closed = store.closed_periods()
+    rows = [g for g in store.runs() if not g["deleted"] and can_handle(g, user)]
+    out = []
+    for g in rows:
+        d = deadlines.deadlines(g, closed)
+        out.append({"id": g["id"], "school_year": g["school_year"], "name": g["name"], "type": g["type"], "color": g["color"],
+                    "start": g["start"], "finish": g["finish"], "semester": deadlines.semester(g["start"]),
+                    "deadlines": {"start": d["start"], "finish": d["finish"]}, "events": []})
+    resp = jsonify({"projects": out, "closed_periods": [], "mode": config.MODE, **_school_years(rows, closed, dt.date.today()),
+                    "me": {"id": None, "name": "", "role": "lecturer", "admin": False},
+                    "users": [], "freeBoms": [], "setup": None, "folders": {}, "changes": [], "deletedRuns": [],
+                    "courses": [], "lecturers": [], "engineers": [], "program": PROGRAM,
+                    "types": {k: t["name"] for k, t in deadlines.TYPES.items()}})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.route("/api/share", methods=["GET", "POST"])
+def share_link():
+    """Your link for sharing the wheel. GET: the link, or null. POST: make one; {"new": true} makes a new one
+    (the old one stops working); {"stop": true} stops sharing."""
+    me = store.user(id=auth.me()["id"])
+    token = me["share_token"]
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        if body.get("stop"):
+            token = None
+        elif not token or body.get("new"):
+            token = secrets.token_urlsafe(24)
+        store.update_user(me["id"], share_token=token)
+    return jsonify({"url": url_for("shared_wheel", token=token, _external=True) if token else None})
 
 
 # ---------- calendar feed ----------

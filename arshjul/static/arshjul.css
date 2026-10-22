@@ -46,6 +46,15 @@
 
   .grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px; align-items: start; }
   @media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  /* /hjul, /uker and the shared wheel: just that panel, full width (data-view on <body>) */
+  h2 .viewlink { font-size: 11px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; text-decoration: none; }
+  body[data-view] .viewlink, body[data-view] #stats, body[data-view] #notices { display: none; }
+  body[data-view] .wrap > :not(header):not(.grid):not(#sharebox):not(#notices) { display: none; }
+  body[data-view] .grid { grid-template-columns: minmax(0, 1fr); }
+  body[data-view="wheel"] .grid > .panel:last-child, body[data-view="weeks"] .grid > .panel:first-child { display: none; }
+  body[data-view="wheel"] svg#wheel { max-width: 760px; }
+  body[data-view="weeks"] .grid { max-width: 900px; }
+  .sharebox { margin-top: 20px; }
   .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; min-width: 0; }
 
   svg#wheel { width: 100%; height: auto; display: block; max-width: 640px; margin: 0 auto; }
