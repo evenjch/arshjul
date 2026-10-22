@@ -221,6 +221,14 @@
       s += `<path d="${sector(r0, r1, 0, N - 0.001)}" fill="none" stroke="var(--line)" stroke-dasharray="2 3"/>`;
     }
     const mr = Math.max(3, Math.min(6, band * 0.2));
+    // /hjul: a number on each use arc, the same as in the list beside the wheel – colours alone don't tell projects apart
+    const numberOf = VIEW === "wheel" ? projectNumbers() : new Map();
+    const numberMark = (p, use, lo, hi) => {
+      if (!numberOf.has(p.id) || use[1] <= use[0]) return "";
+      const [x, y] = pt((lo + hi) / 2, ang((use[0] + use[1]) / 2)), r = Math.max(7, Math.min(10, (hi - lo) / 2));
+      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="var(--card)" stroke="${col(p)}" stroke-width="2"/>`
+        + `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="${(r * 1.1).toFixed(1)}" font-weight="700" style="fill:var(--ink)">${numberOf.get(p.id)}</text>`;
+    };
     list.forEach(({ p, neighbour, use, lead, deadline, returns }) => {
       const d = p.deadlines, [r0, r1, rl, ru] = laneR(laneOf.get(p.id)), c = col(p);
       const name = neighbour ? `${esc(p.name)} (${esc(syName(p.school_year))})` : esc(p.name);
@@ -229,13 +237,14 @@
       if (!ENG) {
         // lecturer: only the use period, across the whole lane
         if (use[1] > use[0]) s += `<path class="ring-hit" data-kind="use" d="${sector(r0, r1, use[0], use[1])}" fill="${c}"><title>${useTitle}</title></path>`;
-        s += `</g>`;
+        s += numberMark(p, use, r0, r1) + `</g>`;
         return;
       }
       if (lead[1] > lead[0]) {
         s += `<path class="ring-hit" data-kind="lead" d="${sector(r0, rl, lead[0], lead[1])}" fill="${c}" opacity=".45"><title>${name}: bestilling og levering fra uke ${d.deadline.week}${d.deadline.year !== d.start.year ? " " + d.deadline.year : ""}</title></path>`;
       }
       if (use[1] > use[0]) s += `<path class="ring-hit" data-kind="use" d="${sector(ru, r1, use[0], use[1])}" fill="${c}"><title>${useTitle}</title></path>`;
+      s += numberMark(p, use, ru, r1);
       if (deadline) {
         const [fx, fy] = pt((r0 + rl) / 2, ang(pos(d.deadline.date) + .5));
         const ring = STATE_COLOR[orderState(p)]; // order status – also for next year's deadlines in June
@@ -268,6 +277,19 @@
     $("wheel").innerHTML = s;
   }
   const short = (n) => (String(n).length > 22 ? String(n).slice(0, 20) + "…" : n);
+
+  // /hjul (and the shared wheel): every project in the school year beside the wheel – name, type, weeks and dates
+  const projectNumbers = () => new Map(sorted().map((p, i) => [p.id, i + 1]));
+  function drawWheelList() {
+    if (mode === "loading") { $("wheelList").innerHTML = `<li><span class="empty">Henter prosjekter …</span></li>`; return; }
+    const list = sorted();
+    $("wheelList").innerHTML = list.length ? list.map((p) => {
+      const d = p.deadlines, weeks = `uke ${d.start.week}${d.start.week !== d.finish.week ? "–" + d.finish.week : ""}`;
+      const dates = `${dfmt.format(toD(d.start.date))}–${dfmtY.format(toD(d.finish.date) + 4 * 864e5)}`; // Monday of the first week – Friday of the last
+      return `<li data-id="${esc(p.id)}"><span class="nr" style="border-color:${col(p)}">${list.indexOf(p) + 1}</span><b>${esc(p.name)}</b>`
+        + `<small>${esc(TYPES[p.type] || p.type)} · ${weeks} · ${dates}</small></li>`;
+    }).join("") : `<li><span class="empty">Ingen prosjekter dette skoleåret.</span></li>`;
+  }
 
   // highlight one event (week) on one project's lane
   function markEvent(id, kind, date, week) {
@@ -976,7 +998,7 @@
   });
 
   function renderAll(keepTable) {
-    if (VIEW === "wheel") { drawWheel(); return; }
+    if (VIEW === "wheel") { drawWheel(); drawWheelList(); return; }
     if (VIEW === "weeks") { drawWeeks(); return; }
     drawCourses();
     drawWheel(); drawWeeks(); drawStats(); drawDiffs(); drawNotices(); drawCopyButton(); drawHistory();
@@ -1284,7 +1306,7 @@
   // ---------- markering ----------
   function highlight(id, ev) {
     document.querySelectorAll("g.proj").forEach((g) => g.classList.toggle("dim", !!id && g.dataset.id !== id));
-    document.querySelectorAll("#tbody tr").forEach((tr) => tr.classList.toggle("hl", !!id && tr.dataset.id === id));
+    document.querySelectorAll("#tbody tr, #wheelList li").forEach((tr) => tr.classList.toggle("hl", !!id && tr.dataset.id === id));
     document.querySelectorAll(".ev").forEach((x) => x.classList.toggle("on", !!ev && x === ev));
     if (ev) markEvent(id, ev.dataset.kind, ev.dataset.d, ev.dataset.w); else { const hl = document.getElementById("hl"); if (hl) hl.innerHTML = ""; }
   }
@@ -1300,6 +1322,8 @@
   $("wheel").addEventListener("mouseleave", () => highlight(null));
   $("tbody").addEventListener("mouseover", (e) => { const tr = e.target.closest("tr[data-id]"); highlight(tr ? tr.dataset.id : null); });
   $("tbody").addEventListener("mouseleave", () => highlight(null));
+  $("wheelList").addEventListener("mouseover", (e) => { const li = e.target.closest("li[data-id]"); highlight(li ? li.dataset.id : null); });
+  $("wheelList").addEventListener("mouseleave", () => highlight(null));
   $("weeks").addEventListener("mouseover", (e) => { const ev = e.target.closest(".ev"); highlight(ev ? ev.dataset.id : null, ev); });
   $("weeks").addEventListener("mouseleave", () => highlight(null));
   $("weeks").addEventListener("click", (e) => { const ev = e.target.closest(".ev"); if (ev) highlight(ev.dataset.id, ev); });

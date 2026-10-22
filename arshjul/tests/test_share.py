@@ -86,7 +86,7 @@ def run_view(state, dataset):
              "globalThis.__urls = []; const __f = globalThis.fetch; globalThis.fetch = async (u, o) => { __urls.push(u); return __f(u, o); };")
     ctx.eval(src)
     ctx.eval("""setTimeout = (f) => 0; (async () => { for (let i = 0; i < 50; i++) await Promise.resolve();
-      globalThis.__out = JSON.stringify({ wheel: __el("wheel").innerHTML, weeks: __el("weeks").innerHTML, tbody: __el("tbody").innerHTML,
+      globalThis.__out = JSON.stringify({ wheel: __el("wheel").innerHTML, list: __el("wheelList").innerHTML, weeks: __el("weeks").innerHTML, tbody: __el("tbody").innerHTML,
                                           status: __el("status").textContent, urls: __urls, errors: globalThis.__consoleErrors || [] }); })();""")
     for _ in range(100):
         out = ctx.eval("globalThis.__out")
@@ -104,6 +104,9 @@ def test_shared_wheel_draws_from_the_shared_data(inst):
     assert res["errors"] == [] and res["status"] == ""
     assert res["urls"] and all(u.startswith("/hjul/") and u.endswith("/data") for u in res["urls"])  # never /api/state
     assert "Prosjekt A" in res["wheel"] and "bestillingsfrist" not in res["wheel"]
+    # what each arc is: the projects beside the wheel, with type and weeks
+    assert "<b>Prosjekt A</b>" in res["list"] and "Hackathon · uke 44" in res["list"] and 'class="nr"' in res["list"]
+    assert 'font-weight="700" style="fill:var(--ink)">1</text>' in res["wheel"]  # the same numbers on the arcs
     assert res["tbody"] == "" and res["weeks"] == ""  # only the wheel is drawn
 
 
