@@ -25,7 +25,7 @@ Innkjøp undervisning/
   | Lab          | én dag, alt utstyr leveres tilbake samme dag | samme uke                | **Ukene, antall studenter og gruppestørrelsen** gjelder bare det skoleåret du ser på.
 - **Årshjulet skriver nesten aldri til en eksisterende BOM.** Det leser dem og lager nye maler. Eneste unntak: «På lager» (kolonne H), når du registrerer et varemottak eller skriver inn en telling. Det skjer bare når du bekrefter, filen må være lukket i Excel, og det lages alltid en sikkerhetskopi i `BOM/Sikkerhetskopi/` først.
 - **Antall studenter** settes på emnet (under «Emner») og fylles inn når du legger til et prosjekt i emnet. Avviker et prosjekt – f.eks. bare halve klassen – endrer du tallet på prosjektet; da står emnets tall i grått under.
-- **Antall sett** regnes ut i årshjulet: antall studenter ÷ studenter per gruppe (rundet opp) + ekstra sett. 60 studenter i grupper på 3 gir 20 sett; bytter du til grupper på 2, blir det 30. Å bestille = per sett × antall sett − på lager.
+- **Antall sett** regnes ut i årshjulet: antall studenter ÷ studenter per gruppe (rundet opp) + ekstra sett. 60 studenter i grupper på 3 gir 20 sett; bytter du til grupper på 2, blir det 30. I tabellen står bare antall sett, med regnestykket under – trykk på det (f.eks. «60 ÷ 3 + 0») for å endre studenter, gruppestørrelse og ekstra sett på en egen linje under prosjektet. Å bestille = per sett × antall sett − på lager.
 - **Antall sett skrives også i BOM-en** (cellen «Antall sett»), så Excel viser riktig «Å bestille». Det skjer automatisk med sikkerhetskopi – men ikke hvis BOM-en er åpen i Excel, prosjektet har startet, eller du har endret tallet i Excel selv. Da står «BOM-en har 12 sett» i en rød boks i prosjektlinjen, med grunnen og knappen «Skriv 18 til BOM-en». Feilmeldinger øverst vises også i rødt.
 - **Stengte perioder** (jul, påske, fellesferie) endres nederst på siden. Påsken er merket «følger påsken» og flytter seg selv fra år til år (uka med påskedag).
 - Legg gjerne hele mappen i OneDrive, så får du backup automatisk. Ta ikke backup av `arshjul.db` mens årshjulet kjører og lagrer.
@@ -74,16 +74,18 @@ Hvert prosjekt hører til et **emne** (f.eks. IELS1001, bachelor eller master). 
 
 - **Ingeniøren** ser og jobber med prosjektene i sine egne emner – bestilling, varemottak, telling, BOM. I tillegg prosjekter uten emne (eller i et emne uten ingeniør), så et nytt prosjekt aldri blir usynlig for alle.
 - **Faglæreren** ser bare prosjektene i sine egne emner, og endrer navn, type, uker, antall studenter, gruppestørrelse, ekstra sett og notat. Ser ikke BOM, bestillinger eller kostnader. Endringene dukker opp øverst hos **emnets ingeniør** med «OK, sett».
-- **Faglæreren lager sine egne emner og velger ingeniør** under «Emner». Ingeniøren som blir valgt (og den som blir tatt av) får beskjed øverst på siden. Ingeniører og administratoren kan også endre alle emner, og bytte faglærer.
+- **Faglæreren foreslår sine egne emner og velger ingeniør** under «Emner» («+ Foreslå emne»). Ingeniøren som blir valgt (og den som blir tatt av) får beskjed øverst på siden. Ingeniører og administratoren kan også endre alle emner, og bytte faglærer.
 - **Administratoren** ser alt.
-- **Emner** legges inn og endres under «Emner» nederst på siden, av hvilken som helst ingeniør. Bytter et emne ingeniør, overtar den nye varslene som ikke er kvittert. Emner deaktiveres i stedet for å slettes, så historikken står.
+- **Nye emner er forslag til administratoren godkjenner dem.** Alle andre enn administratoren får «+ Foreslå emne» i stedet for «+ Nytt emne». Et forslag kan brukes med en gang av den som foreslo det og av faglæreren og ingeniøren på emnet; det står «venter på godkjenning» ved det, og ingen andre ser det. Administratoren godkjenner eller avviser under «Emner» i administratorpanelet, og den som foreslo får beskjed. Avvises et forslag, slettes emnet, og prosjektene i det står uten emne.
+- **Emner** endres under «Emner» nederst på siden, av hvilken som helst ingeniør. Bytter et emne ingeniør, overtar den nye varslene som ikke er kvittert. Emner deaktiveres i stedet for å slettes, så historikken står.
 
 **Alle logger inn**, også lokalt: administrator, ingeniør eller faglærer. Det finnes ingen bruker uten navn, så loggen viser alltid hvem som gjorde hva.
 
 - **Administrator** (deg) er en vanlig ingeniør på hovedsiden – med dine egne emner. Ved navnet ditt øverst er lenken **«Administrator →»** til **administratorpanelet** (`/admin`), som ser og retter alt:
-  - **Oversikt**: det som bør ryddes – prosjekter uten emne, fjernede prosjekter som venter, BOM-er som mangler, emner uten ingeniør, brukere som aldri har logget inn.
+  - **Oversikt**: det som bør ryddes – emner som venter på godkjenning, prosjekter uten emne, fjernede prosjekter som venter, BOM-er som mangler, emner uten ingeniør, brukere som aldri har logget inn.
   - **Prosjekter**: alle gjennomføringer i alle emner og skoleår, med filtre. Rett hva som helst (også skoleår og emne), gjenopprett eller slett – du ser først hva som blir borte.
-  - **Emner** og **Brukere**: alle. Lag brukere, gi nytt passord, gjør andre til administrator, deaktiver. Brukere som aldri har logget inn kan slettes. Det må alltid finnes minst én aktiv administrator.
+  - **Emner**: forslag som venter på godkjenning øverst («Godkjenn» / «Avvis …»), deretter alle emner.
+  - **Brukere**: alle. Lag brukere, gi nytt passord, gjør andre til administrator, deaktiver. Brukere som aldri har logget inn kan slettes. Det må alltid finnes minst én aktiv administrator.
   - **Bestillinger og tellinger**: alle, på tvers av emner. Fjern feilregistreringer; det som er skrevet til en BOM angres først.
   - **Endringslogg**: hele loggen, med søk på person, prosjekt, rolle og dato.
   - **Opprydding**: kvitter alle varsler, slett et gammelt skoleår.
@@ -105,7 +107,7 @@ Hvert prosjekt hører til et **emne** (f.eks. IELS1001, bachelor eller master). 
 
 1. Under **«Brukere»**: lag en faglærer, f.eks. `ola` med et startpassord.
 2. **Logg inn som Ola i et privat/inkognito-vindu** (eller en annen nettleser), så kan du være begge samtidig.
-3. Som Ola, under **«Emner»**: «+ Nytt emne», f.eks. `TEST1001`, og velg deg selv som ingeniør. Legg så til et prosjekt i emnet, endre uker eller gruppestørrelse, eller fjern et.
+3. Som Ola, under **«Emner»**: «+ Foreslå emne», f.eks. `TEST1001`, og velg deg selv som ingeniør (forslaget kan brukes med en gang; godkjenn det i administratorpanelet). Legg så til et prosjekt i emnet, endre uker eller gruppestørrelse, eller fjern et.
 4. **Gå tilbake til ditt eget vindu**: «Ola valgte deg som ansvarlig ingeniør for TEST1001», endringene med «OK, sett», og fjernede prosjekter med «Gjenopprett».
 
 Rydd etterpå: fjern haken «aktiv» på testlæreren og testemnet.

@@ -121,6 +121,13 @@ def can_handle(g: dict, user: dict | None = None) -> bool:
     return g["lecturerId"] is not None and g["lecturerId"] == me["id"]
 
 
+def course_visible(e: dict, user: dict | None = None) -> bool:
+    """A course waiting for the admin's approval is only seen (and used) by those on it: whoever proposed it,
+    its lecturer and its engineer. The admin sees everything."""
+    me = user or auth.me()
+    return bool(e["approved"]) or bool(me["admin"]) or me["id"] in (e["proposedBy"], e["lecturerId"], e["engineerId"])
+
+
 @app.before_request
 def _ownership():
     """Anything that changes a particular run requires it to be yours (see can_handle)."""
@@ -359,7 +366,7 @@ def state():
             "freeBoms": [], "setup": None, "folders": {}, "changes": [], "deletedRuns": [],
             "courses": [], "lecturers": [], "engineers": [], "program": PROGRAM,
             "types": {k: t["name"] for k, t in deadlines.TYPES.items()}}
-    courses = store.courses()
+    courses = [e for e in store.courses() if course_visible(e, me)]
     if eng:
         mine = [g for g in all_runs if can_handle(g)]  # notifications and reminders are about your own courses
         mine_ids = {int(g["id"]) for g in mine}
@@ -384,6 +391,7 @@ def state():
     else:
         # lecturers manage their own courses and choose the engineer for them
         reply["courses"] = [e for e in courses if e["lecturerId"] == me["id"]]
+        reply["changes"] = [e for e in store.changes() if e["recipient_id"] == me["id"]]  # e.g. "your course was approved"
         reply["engineers"] = [{"id": u["id"], "name": u["name"]} for u in store.users()
                               if u["active"] and u["role"] == "engineer"]
     return jsonify(reply)
@@ -475,9 +483,12 @@ def _course(cid) -> dict | None:
     if cid in (None, "", 0):
         return None
     try:
-        return store.course(int(cid))
+        e = store.course(int(cid))
     except (KeyError, TypeError, ValueError):
         raise bomlib.BomError("Fant ikke emnet.")
+    if not course_visible(e):
+        raise bomlib.BomError("Fant ikke emnet.")  # someone else's proposal
+    return e
 
 
 def _active(gid: str) -> dict:
@@ -580,16 +591,22 @@ def _notify_engineer(from_: dict | None, to: dict) -> None:
 
 @app.post("/api/courses")
 def create_course():
-    """Engineers add any course; a lecturer creates their own (and becomes its lecturer)."""
+    """The admin adds courses. Everyone else proposes one, which waits for the admin's approval
+    (but those on it can use it straight away). A lecturer proposes their own (and becomes its lecturer)."""
     body = request.get_json(force=True) or {}
+    me = auth.me()
     if not auth.is_engineer():
-        if "lecturer" in body and body["lecturer"] not in (None, "", auth.me()["id"]):
-            raise Forbidden("Du kan bare lage emner der du selv er faglærer.")
-        body = {**body, "lecturer": auth.me()["id"]}
+        if "lecturer" in body and body["lecturer"] not in (None, "", me["id"]):
+            raise Forbidden("Du kan bare foreslå emner der du selv er faglærer.")
+        body = {**body, "lecturer": me["id"]}
+    fields = _course_fields(body, is_new=True)
+    fields.pop("active", None)
+    if not auth.is_admin():
+        fields.update(approved=0, proposed_by=me["id"])
     try:
-        e = store.new_course(_course_fields(body, is_new=True))
+        e = store.new_course(fields)
     except sqlite3.IntegrityError:
-        raise bomlib.BomError("Det finnes allerede et emne med den koden.")
+        raise bomlib.BomError("Det finnes allerede et emne med den koden (kanskje venter det på godkjenning).")
     _notify_engineer(None, e)
     return jsonify(e)
 
@@ -598,6 +615,8 @@ def create_course():
 def update_course(cid):
     """Engineers change every course; a lecturer their own – but not who the lecturer is."""
     e0 = store.course(cid)  # 404 if it doesn't exist
+    if not course_visible(e0):
+        raise KeyError(cid)
     body = request.get_json(force=True) or {}
     if not auth.is_engineer():
         if e0["lecturerId"] != auth.me()["id"]:

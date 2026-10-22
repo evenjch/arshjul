@@ -77,7 +77,7 @@ TEST = r"""
   for (const ar of t.years) {
     t.goSY(ar);
     for (const p of t.projects) {
-      t.openOrders.add(p.id); t.countOpen.set(p.id, true);
+      t.openOrders.add(p.id); t.countOpen.set(p.id, true); t.setsEditing.add(p.id);
       tryit(`panel ${p.school_year} ${p.name}`, () => t.drawTable());
     }
     tables.push(__el("tbody").innerHTML);  // every panel in the school year is open now
@@ -96,7 +96,7 @@ TEST = r"""
 def run_page(state: dict, show_all: bool = False) -> dict:
     src = (Path(config.APP_DIR) / "static" / "arshjul.js").read_text(encoding="utf-8").rstrip()
     assert src.endswith("})();")
-    src = src[:-5] + ("globalThis.__t = { renderAll, drawTable, openOrders, countOpen, load, goSY, openCopy, showDates,"
+    src = src[:-5] + ("globalThis.__t = { renderAll, drawTable, openOrders, countOpen, setsEditing, load, goSY, openCopy, showDates,"
                       " get years() { return SYS.map((s) => s.year); }, get projects() { return projects; } };\n})();")
     ctx = MiniRacer()
     ctx.eval("const STATE = " + json.dumps(state) + ";")
@@ -167,8 +167,9 @@ def test_page_draws_every_state(client):
     assert "endret i Excel: 30" in res["tbody"] and "Bruk tallene fra BOM-en i tellingen" in res["tbody"]
     assert "Alt er lagt på lager" in res["tbody"] and "Registrer mottak" in res["tbody"] and "Angre mottak" in res["tbody"]
     assert "Registrer tilleggsbestilling" in res["tbody"]  # «Mer»: sets increased after ordering
-    assert 'data-k="group_size"' in res["tbody"] and 'data-k="spare"' in res["tbody"]
-    assert "= 22 sett" in res["tbody"]  # «Grupper»: 61 students in groups of 3 + 1 spare
+    assert 'data-k="group_size"' in res["tbody"] and 'data-k="spare"' in res["tbody"]  # in the open sets row
+    assert "<b>22</b> sett" in res["tbody"] and "61 ÷ 3 + 1" in res["tbody"]  # «Grupper»: 61 students in groups of 3 + 1 spare
+    assert 'class="sets-sum" data-id=' in res["tbody"] and 'data-act="setsdone"' in res["tbody"]
     assert "Antall studenter?" in res["tbody"]  # «Uten BOM»: no students yet
     assert "Marker som bestilt" in res["tbody"] and 'data-act="nameedit"' in res["tbody"]  # «Uten BOM»
     assert 'data-act="type"' in res["tbody"] and ">Lab</option>" in res["tbody"]  # the type can be changed in the table

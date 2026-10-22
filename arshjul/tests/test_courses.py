@@ -235,3 +235,76 @@ def test_lecturer_sets_students_in_the_course(inst):
     assert (p["students"], p["sets"]) == (48, 12)
     assert state(ola)["projects"][0]["courseStudents"] == 48  # the lecturer sees the course's number too
     assert log_in("kari").patch(f"/api/courses/{inst['e']['EMNE-A']}", json={"students": 1}).status_code == 403
+
+
+# ---------- proposed courses: the admin approves them ----------
+
+@pytest.fixture
+def admin(inst):
+    arshjul.store.new_user("sjef", "Sjefen", "engineer", auth.hash_password(PASSWORD), admin=True)
+    return log_in("sjef")
+
+
+def codes(c):
+    return {e["code"]: e["approved"] for e in state(c)["courses"]}
+
+
+def test_proposed_course_waits_for_the_admin(inst, admin):
+    ola = log_in("ola")
+    e = ola.post("/api/courses", json={"code": "OLA3", "engineer": inst["u"]["cecilie"]}).get_json()
+    assert (e["approved"], e["proposedByName"]) == (0, "Ola")
+    # the proposer can use it straight away, and so can the course's engineer
+    g = ola.post(G, json={"name": "Robot", "school_year": SY, "course": e["id"]})
+    assert g.status_code == 200 and "Robot" in own_runs(log_in("cecilie"))
+    assert codes(log_in("cecilie"))["OLA3"] == 0
+    # nobody else sees it, uses it or changes it
+    bjorn = log_in("bjorn")
+    assert "OLA3" not in codes(bjorn)
+    r = bjorn.patch(f"{G}/{inst['p']['EMNE-B']}", json={"course": e["id"]})
+    assert r.status_code == 400 and r.get_json()["error"] == "Fant ikke emnet."
+    assert bjorn.patch(f"/api/courses/{e['id']}", json={"name": "x"}).status_code == 404
+    # the admin sees it in the overview, and approves it
+    assert [x["code"] for x in admin.get("/api/admin/data").get_json()["overview"]["coursesPending"]] == ["OLA3"]
+    assert bjorn.post(f"/api/admin/courses/{e['id']}/approve").status_code == 403
+    assert admin.post(f"/api/admin/courses/{e['id']}/approve").get_json()["approved"] == 1
+    assert codes(bjorn)["OLA3"] == 1
+    assert admin.post(f"/api/admin/courses/{e['id']}/approve").status_code == 400  # already approved
+    # Ola is told – a lecturer gets notifications addressed to them too
+    v = state(ola)["changes"]
+    assert [(x["action"], x["project_name"], x["user_name"]) for x in v] == [("course_approved", "OLA3", "Sjefen")]
+    assert ola.post("/api/changes/acknowledge", json={"ids": [v[0]["id"]]}).get_json() == {"acknowledged": 1}
+
+
+def test_rejected_course_is_deleted(inst, admin):
+    anne = log_in("anne")
+    e = anne.post("/api/courses", json={"code": "ANNE9", "engineer": inst["u"]["anne"]}).get_json()
+    anne.patch(f"{G}/{inst['p']['uten']}", json={"course": e["id"]})
+    assert admin.delete(f"/api/admin/courses/{e['id']}").get_json() == {"ok": True, "projects": 1}
+    assert "ANNE9" not in codes(anne)
+    assert arshjul.store.run(inst["p"]["uten"])["courseId"] is None  # the project is left without a course
+    assert [(x["action"], x["to_value"]) for x in state(anne)["changes"]] == [("course_rejected", "1")]
+    # an approved course is made inactive, not rejected
+    assert admin.delete(f"/api/admin/courses/{inst['e']['EMNE-A']}").status_code == 400
+
+
+def test_the_admins_courses_need_no_approval(inst, admin):
+    e = admin.post("/api/courses", json={"code": "SJEF1"}).get_json()
+    assert (e["approved"], e["proposedBy"]) == (1, None)
+    assert codes(log_in("bjorn"))["SJEF1"] == 1
+    # «approved» can't be set by anyone through the normal API
+    p = log_in("anne").post("/api/courses", json={"code": "LURT", "approved": 1}).get_json()
+    assert p["approved"] == 0
+    assert admin.patch(f"/api/courses/{p['id']}", json={"approved": 1}).get_json()["approved"] == 0
+
+
+def test_page_shows_proposals_and_answers(inst, admin):
+    from test_page import run_page
+    ola = log_in("ola")
+    e = ola.post("/api/courses", json={"code": "OLA3"}).get_json()
+    res = run_page(state(ola))
+    assert res["errors"] == []
+    assert "venter på godkjenning" in res["courses"]
+    admin.post(f"/api/admin/courses/{e['id']}/approve")
+    res = run_page(state(ola))
+    assert res["errors"] == []
+    assert "Emnet OLA3 er godkjent" in res["notices"] and "ackid" in res["notices"]

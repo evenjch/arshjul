@@ -374,6 +374,11 @@ MIGRATIONS = [
     ALTER TABLE users ADD COLUMN calendar_token TEXT;
     CREATE UNIQUE INDEX users_calendar_token ON users(calendar_token)
     """,
+    # 18: a course added by anyone but the admin is a proposal until the admin approves it (existing courses are approved)
+    """
+    ALTER TABLE courses ADD COLUMN approved INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE courses ADD COLUMN proposed_by INTEGER
+    """,
 ]
 _JSON_ORDER = ("lines", "stocked", "stock_log")
 BACKUP_DIR_NAME = "Sikkerhetskopi-db"  # database backups, in the data folder (users see this folder)
@@ -637,11 +642,13 @@ class Db:
 
     # ---------- courses ----------
 
-    _COURSE = """SELECT e.id, e.code, e.name, e.program, e.students, e.active,
+    _COURSE = """SELECT e.id, e.code, e.name, e.program, e.students, e.active, e.approved,
                       e.lecturer_id AS lecturerId, f.name AS lecturerName,
                       e.engineer_id AS engineerId, i.name AS engineerName,
+                      e.proposed_by AS proposedBy, b.name AS proposedByName,
                       (SELECT COUNT(*) FROM projects p WHERE p.course_id = e.id) AS projects
-               FROM courses e LEFT JOIN users f ON f.id = e.lecturer_id LEFT JOIN users i ON i.id = e.engineer_id"""
+               FROM courses e LEFT JOIN users f ON f.id = e.lecturer_id LEFT JOIN users i ON i.id = e.engineer_id
+                    LEFT JOIN users b ON b.id = e.proposed_by"""
 
     def courses(self) -> list[dict]:
         with self.tx() as con:
@@ -656,10 +663,11 @@ class Db:
 
     def new_course(self, fields: dict) -> dict:
         with self.tx() as con:
-            cur = con.execute("""INSERT INTO courses (code, name, program, students, lecturer_id, engineer_id)
-                                 VALUES (?,?,?,?,?,?)""",
+            cur = con.execute("""INSERT INTO courses (code, name, program, students, lecturer_id, engineer_id, approved, proposed_by)
+                                 VALUES (?,?,?,?,?,?,?,?)""",
                               (fields["code"], fields.get("name", ""), fields.get("program", "bachelor"), fields.get("students"),
-                               fields.get("lecturer_id"), fields.get("engineer_id")))
+                               fields.get("lecturer_id"), fields.get("engineer_id"), int(fields.get("approved", 1)),
+                               fields.get("proposed_by")))
             cid = cur.lastrowid
         return self.course(cid)
 
@@ -669,6 +677,16 @@ class Db:
             with self.tx() as con:
                 con.execute(f"UPDATE courses SET {', '.join(k + ' = ?' for k in fields)} WHERE id = ?", (*fields.values(), cid))
         return self.course(cid)
+
+    def approve_course(self, cid: int) -> dict:
+        with self.tx() as con:
+            con.execute("UPDATE courses SET approved = 1 WHERE id = ?", (cid,))
+        return self.course(cid)
+
+    def delete_course(self, cid: int) -> None:
+        """The projects in the course lose it (ON DELETE SET NULL)."""
+        with self.tx() as con:
+            con.execute("DELETE FROM courses WHERE id = ?", (cid,))
 
     # ---------- change log ----------
 

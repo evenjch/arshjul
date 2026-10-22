@@ -281,6 +281,7 @@ def test_panel_draws_every_tab(client, bjorns):
     b.post(f"{G}/{gid}/count", json={"lines": [{"key": "elfa|a1", "counted": 9}]})
     client.post(G, json={"name": "Uten emne", "school_year": 2031})
     client.post("/api/admin/backup")
+    b.post("/api/courses", json={"code": "FORSLAG"})  # a proposal from Bjørn, waiting for the admin
     res = run_admin(client.get("/api/admin/data").get_json(), client.get("/api/admin/log").get_json())
     assert res["errors"] == []
     u = res["out"]
@@ -288,6 +289,8 @@ def test_panel_draws_every_tab(client, bjorns):
     assert "Bjørns" in u["projects"] and 'data-f="school_year"' in u["projects"] and "Slett …" in u["projects"]
     assert 'data-f="group_size"' in u["projects"] and "= 10 sett" in u["projects"]
     assert "E1" in u["courses"] and "Bjorn" in u["users"] and "(deg)" in u["users"]
+    assert "Forslag som venter på godkjenning (1)" in u["courses"] and 'data-act="courseapprove"' in u["courses"]
+    assert "Emner som venter på godkjenning: 1" in u["overview"] and "FORSLAG" in u["overview"]
     assert "Angre mottak" in u["registrations"] and "PO-1" in u["registrations"]  # put in stock: undone, not removed
     assert "Kvitter alle" in u["cleanup"] and "Slett et gammelt skoleår" in u["cleanup"]
     assert "Ta sikkerhetskopi nå" in u["system"] and "arshjul " in u["system"]

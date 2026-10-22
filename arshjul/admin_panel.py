@@ -69,6 +69,7 @@ def _overview(rows: list[dict], courses: list[dict], users: list[dict], changes:
         "withoutCourse": [r for r in rows if not r["deleted"] and not r["courseId"]],
         "removed": [r for r in rows if r["deleted"]],
         "bomMissing": [r for r in rows if not r["deleted"] and r["bom"] and not r["bomExists"]],
+        "coursesPending": [e for e in courses if not e["approved"]],
         "courseWithoutEngineer": [e for e in courses if e["active"] and not e["engineerId"]],
         "courseWithoutLecturer": [e for e in courses if e["active"] and not e["lecturerId"]],
         # courses with a deactivated engineer or lecturer: nobody gets the notifications / can make changes
@@ -279,6 +280,36 @@ def delete_school_year(sy):
                        "project_name": f"Skoleår {deadlines.school_year_name(sy)}", "action": "school_year_deleted",
                        "field": "gjennomføringer", "from_value": len(rows), "to_value": 0}])
     return jsonify({"deleted": len(rows)})
+
+
+# ---------- proposed courses ----------
+
+def _tell_proposer(e: dict, action: str, to_value=None) -> None:
+    me = auth.me()
+    if e["proposedBy"] and e["proposedBy"] != me["id"]:
+        A.store.log([{"user_id": me["id"], "user_name": me["name"], "role": "admin", "course_id": e["id"],
+                      "project_name": e["code"], "action": action, "recipient_id": e["proposedBy"], "to_value": to_value}])
+
+
+@bp.post("/api/admin/courses/<int:cid>/approve")
+def approve_course(cid):
+    e = A.store.course(cid)
+    if e["approved"]:
+        raise A.bomlib.BomError("Emnet er allerede godkjent.")
+    e = A.store.approve_course(cid)
+    _tell_proposer(e, "course_approved")
+    return jsonify(e)
+
+
+@bp.delete("/api/admin/courses/<int:cid>")
+def reject_course(cid):
+    """Reject a proposed course: it's deleted, and its projects end up without a course."""
+    e = A.store.course(cid)
+    if e["approved"]:
+        raise A.bomlib.BomError("Bare emner som venter på godkjenning kan avvises. Et godkjent emne gjøres inaktivt.")
+    A.store.delete_course(cid)
+    _tell_proposer(e, "course_rejected", e["projects"] or None)
+    return jsonify({"ok": True, "projects": e["projects"]})
 
 
 @bp.delete("/api/admin/users/<int:uid>")

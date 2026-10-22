@@ -383,7 +383,7 @@
   }
   // ---------- ordering per supplier ----------
   const openOrders = new Set();
-  const COLS = 11;
+  const COLS = 9;
   function orderCell(p) {
     const b = p.orders, t = p.count, L = t && t.saved;
     if (!p.bom) { // no BOM to register per supplier: just «bestilt» or not
@@ -548,6 +548,9 @@
     return `<tr class="detail" data-for="${id}"><td colspan="${COLS}">${rows ? `<div class="suppliers">${rows}</div>` : ""}${countSection(p)}</td></tr>`;
   }
 
+  // a proposed course can be used by those on it straight away, but it's marked until the admin approves it
+  const courseLabel = (e) => `${esc(e.code)}${e.name ? " – " + esc(e.name) : ""}${e.approved ? "" : " (venter på godkjenning)"}`;
+
   // «Emne: IELS1001 · Faglærer · Ingeniør» under the project name; the engineer chooses the course on their own projects
   function courseLine(p) {
     const people = [p.lecturerName && `faglærer ${esc(p.lecturerName)}${!ENG && p.own ? " (deg)" : ""}`,
@@ -557,7 +560,7 @@
       const choices = COURSES.filter((e) => e.active || e.id === p.courseId);
       return `<label class="owner${p.courseId ? "" : " missing"}">Emne: <select data-act="course" data-id="${esc(p.id)}" aria-label="Emne for ${esc(p.name)}">`
         + `<option value="">${p.courseId ? "uten emne" : "Velg emne …"}</option>`
-        + choices.map((e) => `<option value="${e.id}"${e.id === p.courseId ? " selected" : ""}>${esc(e.code)}${e.name ? " – " + esc(e.name) : ""}</option>`).join("")
+        + choices.map((e) => `<option value="${e.id}"${e.id === p.courseId ? " selected" : ""}>${courseLabel(e)}</option>`).join("")
         + `</select>${people ? ` · ${people}` : ""}</label>`;
     }
     if (!p.courseCode) return ENG ? `<span class="owner missing">Uten emne</span>` : "";
@@ -581,6 +584,23 @@
       + `</b>${p.note ? `<small>${esc(p.note)}</small>` : ""}`;
   }
 
+  // students ÷ group size + spare: edited on a line of its own under the project, so the table stays narrow
+  const setsEditing = new Set(); // project ids
+  const setsFormula = (p) => (p.students != null ? `${p.students} ÷ ${p.group_size} + ${p.spare}` : "Antall studenter?");
+  const setsText = (p) => (p.sets != null ? `${p.sets} sett` : "Antall studenter?");
+  function setsRow(p) {
+    const id = esc(p.id);
+    const field = (k, min, max, lbl, text) => `<label class="sf"><span>${text}</span>`
+      + `<input type="number" id="in-${id}-${k}" data-id="${id}" data-k="${k}" min="${min}" max="${max}" value="${p[k] ?? ""}" aria-label="${lbl}"></label>`;
+    return `<tr class="sets-row" data-for="${id}"><td colspan="${COLS}"><div class="sets-edit">`
+      + field("students", 0, 2000, "Antall studenter", "Studenter") + `<span class="op">÷</span>`
+      + field("group_size", 1, 20, "Studenter per gruppe", "Per gruppe") + `<span class="op">+</span>`
+      + field("spare", 0, 99, "Ekstra sett", "Ekstra sett") + `<span class="op">=</span>`
+      + `<b class="sets-sum" data-id="${id}">${setsText(p)}</b>`
+      + `<button type="button" class="mini" data-act="setsdone" data-id="${id}">Ferdig</button>`
+      + `<span class="muted">Lagres med en gang.</span></div></td></tr>`;
+  }
+
   function drawTable() {
     if (mode === "loading") { $("tbody").innerHTML = `<tr><td colspan="${COLS}" class="blank">Henter prosjekter …</td></tr>`; return; }
     const list = sorted();
@@ -601,6 +621,11 @@
           + (p.own ? ` <button type="button" class="mini" data-act="bomsets" data-id="${esc(p.id)}">Skriv ${p.sets} til BOM-en</button>` : "") + `</div>` : "")
         + (p.courseStudents != null && p.students !== p.courseStudents
           ? `<div class="muted" style="font-size:11.5px" title="Dette prosjektet avviker fra antallet i emnet">Emnet: ${p.courseStudents} studenter</div>` : "");
+      // just the number of sets; the calculation opens on its own line underneath (setsRow)
+      const sets = `<div class="sets-n"><b>${p.sets ?? "–"}</b> sett</div>`
+        + (can("students")
+          ? `<button type="button" class="mini quiet sets-formula" data-act="setsedit" data-id="${esc(p.id)}" aria-expanded="${setsEditing.has(p.id)}" title="Studenter ÷ per gruppe + ekstra sett. Trykk for å endre.">${setsFormula(p)}</button>`
+          : `<div class="muted sets-formula" title="Studenter ÷ per gruppe + ekstra sett">${setsFormula(p)}</div>`);
       const owner = courseLine(p);
       const remove = !p.own ? "" : ENG ? `<button type="button" class="del" data-id="${esc(p.id)}">Slett</button>`
         : `<button type="button" class="del" data-id="${esc(p.id)}" title="Ingeniøren får beskjed og kan gjenopprette">Fjern</button>`;
@@ -609,15 +634,14 @@
       return `<tr data-id="${esc(p.id)}">
         <td class="name">${nameCell(p)}${owner}</td>
         <td>${p.own ? typeSelect(p) : esc(TYPES[p.type] || p.type)}<div class="muted" style="font-size:12px">${esc(p.semester)} ${p.deadlines.start.year}</div></td>
-        <td>${num("start", 1, 53, "I bruk fra uke")}</td><td>${num("finish", 1, 53, "Til uke")}</td><td>${num("lead", 0, 20, "Leveringstid i uker")}</td><td>${num("buf", 0, 20, "Buffer i uker")}</td>
-        <td><div class="sets-calc"><span class="sf">${num("students", 0, 2000, "Antall studenter")}<small>studenter</small></span><span class="op">÷</span>`
-          + `<span class="sf">${num("group_size", 1, 20, "Studenter per gruppe")}<small>per gruppe</small></span><span class="op">+</span>`
-          + `<span class="sf">${num("spare", 0, 99, "Ekstra sett")}<small>ekstra</small></span></div>`
-          + `<div class="muted sets-sum" style="font-size:11.5px">${p.sets != null ? `= ${p.sets} sett` : "Antall studenter?"}</div>${warn}</td>
+        <td><div class="pair">${num("start", 1, 53, "I bruk fra uke")}<span class="op">–</span>${num("finish", 1, 53, "Til uke")}</div></td>
+        <td><div class="pair">${num("lead", 0, 20, "Leveringstid i uker")}<span class="op">+</span>${num("buf", 0, 20, "Buffer i uker")}</div></td>
+        <td class="sets-cell">${sets}${warn}</td>
         <td class="deadline-cell">${deadlineHtml(p)}</td>
         <td class="ordercell eng">${ENG && p.own ? orderCell(p) : others}</td>
         <td class="eng">${ENG && p.own ? bomCell(p) : ""}</td>
         <td>${remove}</td></tr>`
+        + (can("students") && setsEditing.has(p.id) ? setsRow(p) : "")
         + (ENG && p.own && openOrders.has(p.id) && (p.orders || p.count) ? orderDetail(p) : "");
     }).join("");
   }
@@ -652,22 +676,27 @@
   const timeFmt = (s) => { const d = new Date(s); return isNaN(d) ? esc(s) : d.toLocaleString("nb-NO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
   const valueText = (fields, v) => (v === null || v === undefined || v === "" ? "tom" : fields === "type" ? (TYPES[v] || v) : String(v));
   const ACTIONS = { created: "La til prosjektet", restored: "Gjenopprettet", removed: "Fjernet prosjektet" };
+  const RECIPIENT_TEXT = {
+    engineer_assigned: (e) => `<b>${esc(e.user_name)} valgte deg som ansvarlig ingeniør for ${esc(e.project_name)}.</b> Prosjektene i emnet vises nå hos deg, og du får varslene om dem.`,
+    engineer_removed: (e) => `<b>${esc(e.user_name)} tok deg av ${esc(e.project_name)}</b>${e.to_value ? ` – ${esc(e.to_value)} har det nå` : ""}. Prosjektene i emnet vises ikke lenger hos deg.`,
+    course_approved: (e) => `<b>Emnet ${esc(e.project_name)} er godkjent</b> av ${esc(e.user_name)}.`,
+    course_rejected: (e) => `<b>${esc(e.user_name)} avviste emnet ${esc(e.project_name)}</b>, som du foreslo.`
+      + (e.to_value ? ` ${esc(e.to_value)} ${e.to_value === "1" ? "prosjekt står" : "prosjekter står"} nå uten emne – snakk med administratoren.` : ""),
+  };
   function changeNotices() {
-    if (!ENG) return "";
     let h = "";
+    // notifications to you: a course you proposed was approved/rejected, you were chosen as (or taken off as) engineer
+    CHANGES.filter((e) => e.recipient_id).forEach((e) => {
+      const text = (RECIPIENT_TEXT[e.action] || ((x) => esc(x.action)))(e);
+      h += `<div class="notice info"><div>${text} <span class="muted">· ${timeFmt(e.time)}</span></div>`
+        + `<button type="button" class="mini" data-act="ackid" data-id="${e.id}">OK, sett</button></div>`;
+    });
+    if (!ENG) return h;
     DELETED.forEach((s) => {
       h += `<div class="notice warn"><div><b>${esc(s.deletedBy || "En faglærer")} fjernet «${esc(s.name)}» (${esc(syName(s.school_year))})</b> ${timeFmt(s.deleted)}. `
         + `Det vises ikke i hjulet før du gjenoppretter det.</div><span class="noticeact">`
         + `<button type="button" class="mini" data-act="restore" data-id="${esc(s.id)}">Gjenopprett</button>`
         + `<button type="button" class="mini quiet" data-act="deleteconfirm" data-id="${esc(s.id)}">Bekreft sletting …</button></span></div>`;
-    });
-    // notifications to you about courses: you've been chosen as (or taken off as) responsible engineer
-    CHANGES.filter((e) => e.recipient_id).forEach((e) => {
-      const text = e.action === "engineer_assigned"
-        ? `<b>${esc(e.user_name)} valgte deg som ansvarlig ingeniør for ${esc(e.project_name)}.</b> Prosjektene i emnet vises nå hos deg, og du får varslene om dem.`
-        : `<b>${esc(e.user_name)} tok deg av ${esc(e.project_name)}</b>${e.to_value ? ` – ${esc(e.to_value)} har det nå` : ""}. Prosjektene i emnet vises ikke lenger hos deg.`;
-      h += `<div class="notice info"><div>${text} <span class="muted">· ${timeFmt(e.time)}</span></div>`
-        + `<button type="button" class="mini" data-act="ackid" data-id="${e.id}">OK, sett</button></div>`;
     });
     const fjernet = new Set(DELETED.map((s) => String(s.id)));
     const per = new Map();
@@ -866,14 +895,18 @@
       // the lecturer is always yourself on your own courses; engineers choose the lecturer
       + `<td>${ENG ? pick("lecturer", LECTURERS, e && e.lecturerId, "Faglærer") : "deg"}</td>`
       + `<td>${pick("engineer", ENGINEERS, e ? e.engineerId : (ENG ? ME.id : null), "Ansvarlig ingeniør")}</td>`
-      + (e ? `<td class="num">${e.projects}</td><td><label class="active"><input type="checkbox" data-cf="active"${e.active ? " checked" : ""}> aktiv</label></td>`
-           : `<td></td><td><button type="button" class="mini" data-act="coursesave">Lagre</button> <button type="button" class="mini quiet" data-act="coursecancel">Avbryt</button></td>`)
+      + (e && !e.approved ? `<td class="num">${e.projects}</td><td><span class="tag soon" title="Foreslått av ${esc(e.proposedByName || "")}. Administratoren godkjenner nye emner; til da kan bare de som står på emnet bruke det.">venter på godkjenning</span></td>`
+         : e ? `<td class="num">${e.projects}</td><td><label class="active"><input type="checkbox" data-cf="active"${e.active ? " checked" : ""}> aktiv</label></td>`
+           : `<td></td><td><button type="button" class="mini" data-act="coursesave">${ME.admin ? "Lagre" : "Send forslag"}</button> <button type="button" class="mini quiet" data-act="coursecancel">Avbryt</button></td>`)
       + `</tr>`;
     $("courseTable").innerHTML = `<thead><tr><th>Kode</th><th>Navn</th><th>Program</th><th title="Standard for nye prosjekter i emnet">Studenter</th><th>Faglærer</th><th>Ansvarlig ingeniør</th><th class="num">Prosjekter</th><th></th></tr></thead><tbody>`
       + (newCourse ? row(null) : "") + COURSES.map(row).join("")
-      + (!COURSES.length && !newCourse ? `<tr><td colspan="8" class="blank">Ingen emner ennå. Trykk «+ Nytt emne»${ENG ? "" : " for å lage ditt første"}.</td></tr>` : "") + `</tbody>`;
+      + (!COURSES.length && !newCourse ? `<tr><td colspan="8" class="blank">Ingen emner ennå. Trykk «${newCourseText()}»${ENG ? "" : " for å foreslå ditt første"}.</td></tr>` : "") + `</tbody>`;
     $("courseNew").hidden = newCourse;
+    $("courseNew").textContent = newCourseText();
   }
+  // only the admin adds courses directly – everyone else proposes one
+  const newCourseText = () => (ME.admin ? "+ Nytt emne" : "+ Foreslå emne");
   const courseValues = (tr) => {
     const v = {};
     tr.querySelectorAll("[data-cf]").forEach((el) => { v[el.dataset.cf] = el.type === "checkbox" ? el.checked : (el.value || null); });
@@ -885,7 +918,8 @@
     if (b.dataset.act === "coursecancel") { newCourse = false; b.blur(); drawCourses(); return; }
     const v = courseValues(b.closest("tr"));
     act(async () => { const r = await api("POST", "/api/courses", v); newCourse = false; b.blur(); return r; },
-      (r) => `Emnet ${r.code} er lagt til. Velg det under navnet på prosjektene som hører til.`, $("courseTable"));
+      (r) => r.approved ? `Emnet ${r.code} er lagt til. Velg det under navnet på prosjektene som hører til.`
+        : `Forslaget ${r.code} er sendt til administratoren. Du kan bruke emnet på dine prosjekter med en gang.`, $("courseTable"));
   });
   $("courseTable").addEventListener("change", (e) => {
     const tr = e.target.closest("tr[data-course]"); if (!tr || tr.dataset.course === "new") return;
@@ -931,8 +965,13 @@
     if (["students", "group_size", "spare"].includes(k)) {
       // show the new number straight away; the server computes the same and is the authority
       p.sets = setCount(p.students, p.group_size, p.spare);
-      const sum = t.closest("td").querySelector(".sets-sum");
-      if (sum) sum.textContent = p.sets != null ? `= ${p.sets} sett` : "Antall studenter?";
+      const sum = document.querySelector(`.sets-sum[data-id="${CSS.escape(p.id)}"]`);
+      if (sum) sum.textContent = setsText(p);
+      const row = document.querySelector(`tr[data-id="${CSS.escape(p.id)}"]`);
+      if (row) {
+        const n = row.querySelector(".sets-n b"); if (n) n.textContent = p.sets ?? "–";
+        const f = row.querySelector(".sets-formula"); if (f) f.textContent = setsFormula(p);
+      }
     }
     queueUpdate(p.id, { [k]: p[k] });
   });
@@ -989,6 +1028,9 @@
   });
   // Enter saves, Escape cancels while you're editing name and note
   $("tbody").addEventListener("keydown", (e) => {
+    if (e.target.closest(".sets-edit") && ["Enter", "Escape"].includes(e.key)) {
+      e.preventDefault(); e.target.closest(".sets-edit").querySelector("[data-act=setsdone]").click(); return;
+    }
     if (!e.target.matches("input[data-name]") || !["Enter", "Escape"].includes(e.key)) return;
     e.preventDefault();
     const b = e.target.closest(".name-edit").querySelector(`[data-act=${e.key === "Enter" ? "namesave" : "namecancel"}]`);
@@ -1008,6 +1050,12 @@
         return;
       }
       if (a === "namecancel") { nameEditing.delete(id); drawTable(); return; }
+      if (a === "setsedit" || a === "setsdone") {
+        if (a === "setsdone" || setsEditing.has(id)) setsEditing.delete(id); else setsEditing.add(id);
+        drawTable();
+        const i = setsEditing.has(id) && document.getElementById(`in-${id}-students`); if (i) i.focus();
+        return;
+      }
       if (a === "namesave") {
         const u = nameEditing.get(id); if (!u) return;
         if (!u.name.trim()) { errorAt(b, "Gi prosjektet et navn."); return; }
@@ -1124,8 +1172,8 @@
       $("f-sy").textContent = curSY() ? curSY().name : "";
       // lecturer: choose among their own courses (required); engineer: every active course, or none
       const choices = COURSES.filter((e) => e.active);
-      $("f-course").innerHTML = (ENG ? `<option value="">Uten emne</option>` : choices.length ? "" : `<option value="">Du har ingen emner – lag et under «Emner» nederst</option>`)
-        + choices.map((e) => `<option value="${e.id}"${ENG && ME.id && e.engineerId === ME.id ? " data-mitt" : ""}>${esc(e.code)}${e.name ? " – " + esc(e.name) : ""}</option>`).join("");
+      $("f-course").innerHTML = (ENG ? `<option value="">Uten emne</option>` : choices.length ? "" : `<option value="">Du har ingen emner – foreslå et under «Emner» nederst</option>`)
+        + choices.map((e) => `<option value="${e.id}"${ENG && ME.id && e.engineerId === ME.id ? " data-mine" : ""}>${courseLabel(e)}</option>`).join("");
       const is_mine = $("f-course").querySelector("[data-mine]"); if (is_mine) is_mine.selected = true;
       fromCourse(); showDates();
       $("f-name").focus();
