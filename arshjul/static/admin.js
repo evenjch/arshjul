@@ -153,7 +153,8 @@
       + `<td>${pick("lecturer", "lecturer", e && e.lecturerId)}</td><td>${pick("engineer", "engineer", e && e.engineerId)}</td>`
       + (e && !e.approved ? `<td class="num">${e.projects}</td><td><small>Foreslått av ${esc(e.proposedByName || "–")}</small>`
            + `<button type="button" class="mini" data-act="courseapprove">Godkjenn</button> <button type="button" class="del" data-act="coursereject">Avvis …</button></td>`
-         : e ? `<td class="num">${e.projects}</td><td><label><input type="checkbox" data-cf="active"${e.active ? " checked" : ""}> aktiv</label></td>`
+         : e ? `<td class="num">${e.projects}</td><td><label><input type="checkbox" data-cf="active"${e.active ? " checked" : ""}> aktiv</label>`
+           + ` <button type="button" class="del" data-act="coursedelete" data-projects="${e.projects}">Slett …</button></td>`
            : `<td></td><td><button type="button" class="mini" data-act="coursesave">Lagre</button> <button type="button" class="mini quiet" data-act="coursecancel">Avbryt</button></td>`) + `</tr>`;
     const head = `<thead><tr><th>Kode</th><th>Navn</th><th>Program</th><th title="Standard for nye prosjekter i emnet">Studenter</th><th>Faglærer</th><th>Ingeniør</th><th class="num">Prosjekter</th><th></th></tr></thead>`;
     const pending = D.courses.filter((e) => !e.approved);
@@ -251,7 +252,7 @@
   function drawLog() {
     const ACTIONS = { created: "la til", changed: "endret", removed: "fjernet", deleted: "slettet", restored: "gjenopprettet",
       engineer_assigned: "valgte ingeniør", engineer_removed: "tok av ingeniør",
-      course_approved: "godkjente emnet", course_rejected: "avviste emnet" };
+      course_approved: "godkjente emnet", course_rejected: "avviste emnet", course_deleted: "slettet emnet" };
     if (!$("logTable")) return;
     $("logTable").innerHTML = `<p class="muted" style="font-size:12.5px">${logRows.length}${logRows.length === 500 ? "+ (de nyeste 500)" : ""} oppføringer</p>`
       + `<div class="tablebox"><table class="adm-tabell"><thead><tr><th>Når</th><th>Hvem</th><th>Rolle</th><th>Prosjekt/emne</th><th>Hva</th><th>Fra → til</th><th>Kvittert</th></tr></thead><tbody>`
@@ -330,6 +331,12 @@
     if (a === "courseapprove") perform(() => api("POST", `/api/admin/courses/${tr.dataset.course}/approve`), (r) => `${r.code} er godkjent og kan brukes av alle.`, b);
     if (a === "coursereject" && confirmFirst(b, "Bekreft: avvis og slett")) perform(() => api("DELETE", `/api/admin/courses/${tr.dataset.course}`),
       (r) => "Forslaget er avvist" + (r.projects ? ` – ${r.projects} ${r.projects === 1 ? "prosjekt står" : "prosjekter står"} nå uten emne.` : "."), b);
+    if (a === "coursedelete") {
+      const n = +b.dataset.projects;
+      if (confirmFirst(b, `Bekreft: slett emnet${n ? ` – ${n} ${n === 1 ? "prosjekt mister" : "prosjekter mister"} emnet` : ""}`))
+        perform(() => api("DELETE", `/api/admin/courses/${tr.dataset.course}`),
+          (r) => "Emnet er slettet" + (r.projects ? ` – ${r.projects} ${r.projects === 1 ? "prosjekt står" : "prosjekter står"} nå uten emne (se «Prosjekter»).` : "."), b);
+    }
     if (a === "coursesave") perform(async () => { const r = await api("POST", "/api/courses", values(tr, "data-cf")); newCourse = false; return r; }, (r) => `Emnet ${r.code} er lagt til.`, b);
     if (a === "usernew") { newUser = true; users(); }
     if (a === "usercancel") { newUser = false; users(); }

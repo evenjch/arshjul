@@ -302,13 +302,17 @@ def approve_course(cid):
 
 
 @bp.delete("/api/admin/courses/<int:cid>")
-def reject_course(cid):
-    """Reject a proposed course: it's deleted, and its projects end up without a course."""
+def delete_course(cid):
+    """Delete a course (e.g. one made for testing), or reject a proposal. Its projects end up without a course –
+    they aren't deleted. Courses that are really used are made inactive instead, so the history stays."""
     e = A.store.course(cid)
-    if e["approved"]:
-        raise A.bomlib.BomError("Bare emner som venter på godkjenning kan avvises. Et godkjent emne gjøres inaktivt.")
     A.store.delete_course(cid)
-    _tell_proposer(e, "course_rejected", e["projects"] or None)
+    if e["approved"]:
+        me = auth.me()
+        A.store.log([{"user_id": me["id"], "user_name": me["name"], "role": "admin", "course_id": e["id"],
+                      "project_name": e["code"], "action": "course_deleted", "from_value": e["projects"] or None}])
+    else:
+        _tell_proposer(e, "course_rejected", e["projects"] or None)
     return jsonify({"ok": True, "projects": e["projects"]})
 
 

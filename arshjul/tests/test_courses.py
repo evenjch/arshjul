@@ -283,8 +283,14 @@ def test_rejected_course_is_deleted(inst, admin):
     assert "ANNE9" not in codes(anne)
     assert arshjul.store.run(inst["p"]["uten"])["courseId"] is None  # the project is left without a course
     assert [(x["action"], x["to_value"]) for x in state(anne)["changes"]] == [("course_rejected", "1")]
-    # an approved course is made inactive, not rejected
-    assert admin.delete(f"/api/admin/courses/{inst['e']['EMNE-A']}").status_code == 400
+    # an approved course can be deleted too (e.g. a test course): logged, nobody is notified
+    assert admin.delete(f"/api/admin/courses/{inst['e']['EMNE-A']}").get_json() == {"ok": True, "projects": 1}
+    assert arshjul.store.run(inst["p"]["EMNE-A"])["courseId"] is None
+    assert [(x["action"], x["project_name"], x["from_value"]) for x in admin.get("/api/admin/log").get_json()
+            if x["action"] == "course_deleted"] == [("course_deleted", "EMNE-A", "1")]
+    assert state(log_in("ola"))["changes"] == []
+    assert log_in("anne").delete(f"/api/admin/courses/{inst['e']['EMNE-B']}").status_code == 403
+    assert admin.delete("/api/admin/courses/9999").status_code == 404
 
 
 def test_the_admins_courses_need_no_approval(inst, admin):

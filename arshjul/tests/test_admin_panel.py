@@ -289,6 +289,7 @@ def test_panel_draws_every_tab(client, bjorns):
     assert "Bjørns" in u["projects"] and 'data-f="school_year"' in u["projects"] and "Slett …" in u["projects"]
     assert 'data-f="group_size"' in u["projects"] and "= 10 sett" in u["projects"]
     assert "E1" in u["courses"] and "Bjorn" in u["users"] and "(deg)" in u["users"]
+    assert 'data-act="coursedelete"' in u["courses"]
     assert "Forslag som venter på godkjenning (1)" in u["courses"] and 'data-act="courseapprove"' in u["courses"]
     assert "Emner som venter på godkjenning: 1" in u["overview"] and "FORSLAG" in u["overview"]
     assert "Angre mottak" in u["registrations"] and "PO-1" in u["registrations"]  # put in stock: undone, not removed

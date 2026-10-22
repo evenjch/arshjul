@@ -84,7 +84,7 @@ Hvert prosjekt hører til et **emne** (f.eks. IELS1001, bachelor eller master). 
 - **Administrator** (deg) er en vanlig ingeniør på hovedsiden – med dine egne emner. Ved navnet ditt øverst er lenken **«Administrator →»** til **administratorpanelet** (`/admin`), som ser og retter alt:
   - **Oversikt**: det som bør ryddes – emner som venter på godkjenning, prosjekter uten emne, fjernede prosjekter som venter, BOM-er som mangler, emner uten ingeniør, brukere som aldri har logget inn.
   - **Prosjekter**: alle gjennomføringer i alle emner og skoleår, med filtre. Rett hva som helst (også skoleår og emne), gjenopprett eller slett – du ser først hva som blir borte.
-  - **Emner**: forslag som venter på godkjenning øverst («Godkjenn» / «Avvis …»), deretter alle emner.
+  - **Emner**: forslag som venter på godkjenning øverst («Godkjenn» / «Avvis …»), deretter alle emner. «Slett …» fjerner et emne for godt (f.eks. et testemne) – prosjektene i det blir stående uten emne. Emner som er i bruk, gjør du heller inaktive, så historikken står.
   - **Brukere**: alle. Lag brukere, gi nytt passord, gjør andre til administrator, deaktiver. Brukere som aldri har logget inn kan slettes. Det må alltid finnes minst én aktiv administrator.
   - **Bestillinger og tellinger**: alle, på tvers av emner. Fjern feilregistreringer; det som er skrevet til en BOM angres først.
   - **Endringslogg**: hele loggen, med søk på person, prosjekt, rolle og dato.
