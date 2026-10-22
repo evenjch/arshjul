@@ -287,7 +287,7 @@ def test_panel_draws_every_tab(client, bjorns):
     u = res["out"]
     assert "Prosjekter uten emne: 1" in u["overview"] and "Uten emne" in u["overview"]
     assert "Bjørns" in u["projects"] and 'data-f="school_year"' in u["projects"] and "Slett …" in u["projects"]
-    assert 'data-f="group_size"' in u["projects"] and "= 10 sett" in u["projects"]
+    assert "<b>10</b> sett" in u["projects"] and "10 ÷ 1 + 0" in u["projects"] and 'data-act="setsedit"' in u["projects"]
     assert "E1" in u["courses"] and "Bjorn" in u["users"] and "(deg)" in u["users"]
     assert 'data-act="coursedelete"' in u["courses"]
     assert "Forslag som venter på godkjenning (1)" in u["courses"] and 'data-act="courseapprove"' in u["courses"]

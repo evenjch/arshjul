@@ -334,7 +334,10 @@
   .adm-tabell td { padding: 6px 8px; font-size: 13px; vertical-align: middle; }
   .adm-tabell th { padding: 8px; }
   .adm-tabell input[type=number] { width: 64px; font-family: var(--mono); }
-  .adm-tabell input.navn { width: 100%; min-width: 140px; }
+  .adm-tabell input.name { width: 100%; min-width: 140px; }
+  .adm-tabell .pair input[type=number] { width: 48px; }
+  .adm-tabell .sets-edit input[type=number] { width: 72px; }
+  .adm-tabell tr.sets-row td { background: var(--bg); }
   .adm-tabell tr.fjernet td { background: var(--warn-soft); }
   .adm-tabell .num { text-align: right; font-variant-numeric: tabular-nums; }
   .adm-tabell small { display: block; color: var(--muted); font-size: 11.5px; }

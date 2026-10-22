@@ -90,6 +90,19 @@
   }
 
   // ---------- prosjekter ----------
+  // students ÷ group size + spare: on a row of its own under the project (like the main page), so the table stays narrow
+  const setsOpen = new Set(); // run ids
+  const setsFormula = (r) => (r.students != null ? `${r.students} ÷ ${r.group_size} + ${r.spare}` : "Antall studenter?");
+  function setsRow(r) {
+    const field = (k, min, max, lbl, text) => `<label class="sf"><span>${text}</span>`
+      + `<input type="number" data-f="${k}" min="${min}" max="${max}" value="${r[k] ?? ""}" aria-label="${lbl}"></label>`;
+    return `<tr class="sets-row" data-id="${esc(r.id)}"><td colspan="9"><div class="sets-edit">`
+      + field("students", 0, 2000, "Antall studenter", "Studenter") + `<span class="op">÷</span>`
+      + field("group_size", 1, 20, "Studenter per gruppe", "Per gruppe") + `<span class="op">+</span>`
+      + field("spare", 0, 99, "Ekstra sett", "Ekstra sett") + `<span class="op">=</span>`
+      + `<b class="sets-sum">${r.sets != null ? `${r.sets} sett` : "Antall studenter?"}</b>`
+      + `<button type="button" class="mini" data-act="setsdone">Ferdig</button><span class="muted">Lagres og logges med en gang.</span></div></td></tr>`;
+  }
   const filter = { school_year: "", course: "", engineer: "", search: "", removedOnes: true };
   function projects() {
     const year = [...new Set(D.runs.map((r) => r.school_year))].sort();
@@ -111,19 +124,22 @@
       + `<label>Søk <input type="search" id="fSearch" value="${esc(filter.search)}" placeholder="prosjektnavn"></label>`
       + `<label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="fRemoved"${filter.removedOnes ? " checked" : ""}> vis fjernede</label>`
       + `<span class="muted">${rows.length} av ${D.runs.length}</span></div>`
-      + `<div class="tablebox"><table class="adm-tabell"><thead><tr><th>Skoleår</th><th>Prosjekt</th><th>Emne</th><th>Faglærer · ingeniør</th>`
-      + `<th>Uke fra</th><th>til</th><th title="Studenter ÷ per gruppe + ekstra sett">Sett</th><th>Lev.</th><th>Buffer</th><th>BOM</th><th class="num">Bestilt</th><th>Telling</th><th></th></tr></thead><tbody>`
+      + `<div class="tablebox"><table class="adm-tabell"><thead><tr><th>Skoleår</th><th>Prosjekt</th><th>Emne</th>`
+      + `<th title="I bruk fra uke – til uke">Uker</th><th title="Leveringstid + buffer, i uker">Lev. + buffer</th><th title="Studenter ÷ per gruppe + ekstra sett">Sett</th><th>BOM</th><th title="Bestillinger og telling">Registrert</th><th></th></tr></thead><tbody>`
       + (rows.length ? rows.map((r) => `<tr data-id="${esc(r.id)}"${r.deleted ? ' class="fjernet"' : ""}>`
         + `<td><input type="number" data-f="school_year" min="2000" max="2100" value="${r.school_year}" aria-label="Skoleår (startår)"><small>${esc(syLabel(r.school_year))}</small></td>`
         + `<td><input type="text" class="name" data-f="name" value="${esc(r.name)}" aria-label="Navn">${r.deleted ? `<small>Fjernet av ${esc(r.deletedBy || "")} ${fmtWhen(r.deleted)}</small>` : ""}</td>`
-        + `<td>${courseSelect(r)}</td><td>${esc(r.lecturerName || "–")}<small>${esc(r.engineerName || "ingen ingeniør")}</small></td>`
-        + `<td>${num(r, "start", 1, 53)}</td><td>${num(r, "finish", 1, 53)}</td><td><div class="sets-calc"><span class="sf">${num(r, "students", 0, 2000, "Antall studenter")}<small>studenter</small></span><span class="op">÷</span><span class="sf">${num(r, "group_size", 1, 20, "Studenter per gruppe")}<small>per gruppe</small></span><span class="op">+</span><span class="sf">${num(r, "spare", 0, 99, "Ekstra sett")}<small>ekstra</small></span></div><small>${r.sets != null ? `= ${r.sets} sett` : "–"}</small></td><td>${num(r, "lead", 0, 20)}</td><td>${num(r, "buf", 0, 20)}</td>`
+        + `<td>${courseSelect(r)}<small>${esc(r.lecturerName || "–")} · ${esc(r.engineerName || "ingen ingeniør")}</small></td>`
+        + `<td><div class="pair">${num(r, "start", 1, 53, "I bruk fra uke")}<span class="op">–</span>${num(r, "finish", 1, 53, "Til uke")}</div></td>`
+        + `<td><div class="pair">${num(r, "lead", 0, 20, "Leveringstid i uker")}<span class="op">+</span>${num(r, "buf", 0, 20, "Buffer i uker")}</div></td>`
+        + `<td><div class="sets-n"><b>${r.sets ?? "–"}</b> sett</div><button type="button" class="mini quiet sets-formula" data-act="setsedit" aria-expanded="${setsOpen.has(r.id)}" title="Studenter ÷ per gruppe + ekstra sett. Trykk for å endre.">${setsFormula(r)}</button></td>`
         + `<td>${r.bom ? `${esc(r.bom)}${r.bomExists ? "" : `<small style="color:var(--warn)">finnes ikke</small>`}<br><button type="button" class="mini quiet" data-act="unlink">Fjern kobling</button>` : `<span class="muted">–</span>`}</td>`
-        + `<td class="num">${r.orders ? `${r.orders} lev.<small>${r.orderedCost != null ? nf0.format(r.orderedCost) + " kr" : ""}</small>` : "–"}</td>`
-        + `<td>${r.count === "written" ? "skrevet til BOM" : r.count === "saved" ? "lagret" : "–"}</td>`
+        + `<td>${r.orders ? `${r.orders} lev.${r.orderedCost != null ? ` · ${nf0.format(r.orderedCost)} kr` : ""}` : "Ikke bestilt"}`
+        + `<small>${r.count === "written" ? "Telt, skrevet til BOM" : r.count === "saved" ? "Telt, lagret" : "Ikke telt"}</small></td>`
         + `<td>${r.deleted ? `<button type="button" class="mini" data-act="restore">Gjenopprett</button>` : ""}`
-        + `<button type="button" class="del" data-act="delete">Slett …</button></td></tr>`).join("")
-        : `<tr><td colspan="13" class="blank">Ingen gjennomføringer med dette filteret.</td></tr>`)
+        + `<button type="button" class="del" data-act="delete">Slett …</button></td></tr>`
+        + (setsOpen.has(r.id) ? setsRow(r) : "")).join("")
+        : `<tr><td colspan="9" class="blank">Ingen gjennomføringer med dette filteret.</td></tr>`)
       + `</tbody></table></div></section>`;
     $("fSy").onchange = (e) => { filter.school_year = e.target.value; projects(); };
     $("fCourse").onchange = (e) => { filter.course = e.target.value; projects(); };
@@ -309,6 +325,7 @@
     const b = e.target.closest("button[data-act]"); if (!b || !$("content").contains(b) && !b.closest("#content")) return;
     const a = b.dataset.act, tr = b.closest("tr"), gid = tr && (tr.dataset.id || tr.dataset.gid);
     const G = (file_path) => `/api/admin/runs/${encodeURIComponent(gid)}${file_path}`;
+    if (a === "setsedit" || a === "setsdone") { a === "setsdone" || setsOpen.has(gid) ? setsOpen.delete(gid) : setsOpen.add(gid); projects(); return; }
     if (a === "unlink") perform(() => api("PATCH", G(""), { bom: null }), "BOM-koblingen er fjernet (filen er ikke slettet).", b);
     if (a === "restore") perform(() => api("POST", G("/restore")), "Prosjektet er gjenopprettet.", b);
     if (a === "delete") {
