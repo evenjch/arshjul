@@ -44,12 +44,12 @@
   .stat.warn b { color: var(--warn); }
   .note { background: var(--accent-soft); color: var(--ink); border-radius: 10px; padding: 10px 14px; margin: 0 0 20px; max-width: 80ch; }
 
-  .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: stretch; }  /* both panels as tall as the taller one */
+  .grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; align-items: stretch; }  /* both panels as tall as the taller one */
   @media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
   .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; min-width: 0; }
 
   /* the whole wheel fits on screen under the header: smaller on low screens, never tiny */
-  svg#wheel { width: 100%; height: auto; display: block; max-width: clamp(360px, calc(100vh - 340px), 540px); margin: 0 auto; }
+  svg#wheel { width: 100%; height: auto; display: block; max-width: clamp(400px, calc(100vh - 300px), 580px); margin: 0 auto; }
   svg text { font-family: var(--sans); fill: var(--muted); }
   .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; color: var(--muted); font-size: 12.5px; justify-content: center; }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
