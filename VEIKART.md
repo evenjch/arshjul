@@ -191,9 +191,16 @@ Testet 6. oktober 2026 fra Windows mot `\\felles.ansatt.ntnu.no\...\evenjc\claud
 
 **Testet av ingeniøren 6. oktober 2026:** to nye BOM-er laget med «Lag BOM-mal», åpnet og endret i Excel – alt havnet på nettverksmappen og ble lest riktig av årshjulet.
 
+**Skrive «På lager» mens BOM-en er åpen i Excel på nettverksmappen – testet 23. oktober 2026** (kopi på hjemmeområdet, `bom.write_stock`):
+
+| Hva | Resultat |
+|---|---|
+| Åpnet vanlig i Excel | nekter: «… er åpen i Excel» (Excel lager `~$`-filen med en gang) |
+| Samme, men uten å se etter `~$`-filen | nettverksmappen nekter å lagre: «… er låst». Sikkerhetskopien er allerede tatt – ufarlig |
+| Åpnet i **beskyttet visning** (slik `ms-excel:`-lenken åpner den) | ingen `~$`-fil, så årshjulet **skriver**. Ufarlig: «Aktiver redigering» leser filen på nytt (viste det nye tallet), og deretter nekter årshjulet |
+
 **Gjenstår å teste:**
-- «Oppdater På lager» mens BOM-en er åpen i Excel på nettverksmappen (skal nekte).
-- Linux-VPS-en sin tilkobling til mappen (CIFS-montering). Kan bare testes når VPS-en finnes.
+- Linux-VPS-en sin tilkobling til fellesmappen (CIFS-montering), og at låsen fra Excel på en PC stopper skriving fra VPS-en. Venter på fellesmappen fra IT.
 
 **«Åpne i Excel» fra serveren – testet 23. oktober 2026** (nettleser og Excel på Windows, kopi av en BOM på hjemmeområdet):
 
