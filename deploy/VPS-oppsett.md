@@ -10,7 +10,7 @@ Oppsettet slik det ble gjort i oktober 2026. Kommandoene kjøres som root på VP
 | Data | `/srv/arshjul-data` (`arshjul.db`, `Bestillingslister/`, `.cache/`, `Sikkerhetskopi-db/`), eid av `arshjul` |
 | BOM-mappe | `/mnt/arshjul-bom` – foreløpig en tom lokal mappe, skal bli fellesmappen (se «Gjenstår») |
 | Innstillinger | `/etc/arshjul.env` |
-| Tjenester | `arshjul` (appen, waitress på `127.0.0.1:5057`), `caddy` (HTTPS foran), `arshjul-sertifikat.timer` |
+| Tjenester | `arshjul` (appen, waitress på `127.0.0.1:5057`), `caddy` (HTTPS foran), `arshjul-sertifikat.timer`, `arshjul-sikkerhetskopi.timer` |
 
 ```
 nettleser ──https──▶ Caddy :443 (NTNU-sertifikatet) ──▶ waitress 127.0.0.1:5057 (brukeren arshjul)
@@ -184,6 +184,43 @@ Etter NTNUs guide: to filer i `/etc/local/firewall.d/`, `ipv4-arshjul-webserver.
 ```
 Filene leses **ikke** av seg selv – kjør NTNUs skript for å oppdatere brannmuren (se guiden). Sjekk at reglene er aktive: `iptables -S INPUT | grep -E 'dport (80|443)'`. Port 5057 skal ikke åpnes.
 
+### 8. Sikkerhetskopi av databasen
+Hver natt tar en timer en kopi av `arshjul.db` til `/srv/arshjul-data/Sikkerhetskopi-db/arshjul <dato> daglig.db` (SQLite sin egen kopiering – trygt mens appen er i bruk). De 30 nyeste daglige kopiene beholdes. Kopiene fra før oppgraderinger og fra «Ta sikkerhetskopi nå» ryddes aldri. Alle kan lastes ned i administratorpanelet under «System».
+
+`/etc/systemd/system/arshjul-sikkerhetskopi.service`:
+```ini
+[Unit]
+Description=Daglig sikkerhetskopi av årshjulets database
+
+[Service]
+Type=oneshot
+User=arshjul
+WorkingDirectory=/opt/arshjul/arshjul
+EnvironmentFile=/etc/arshjul.env
+ExecStart=/opt/arshjul/arshjul/.venv/bin/python manage.py sikkerhetskopi --behold 30
+```
+`/etc/systemd/system/arshjul-sikkerhetskopi.timer`:
+```ini
+[Unit]
+Description=Sikkerhetskopi av årshjulet hver natt
+
+[Timer]
+OnCalendar=*-*-* 02:30
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+```bash
+systemctl daemon-reload && systemctl enable --now arshjul-sikkerhetskopi.timer
+systemctl start arshjul-sikkerhetskopi && journalctl -u arshjul-sikkerhetskopi -n 5 --no-pager   # første gang, og sjekk
+```
+Sjekk: `systemctl list-timers arshjul-sikkerhetskopi` og `ls -l /srv/arshjul-data/Sikkerhetskopi-db/`.
+Kopien bruker ikke `init`, så den oppgraderer aldri databasen – det gjør bare appen når den starter.
+
+Kopiene ligger på **samme maskin** som databasen: de hjelper mot feil i årshjulet og feilregistreringer, ikke mot at VPS-en forsvinner. En kopi et annet sted venter på svar fra IT (se «Gjenstår»).
+
 ## Gjenstår
 
 - **BOM-fellesmappen** – venter på IT (egen fellesmappe, tjenestekonto, TCP 445 fra VPS-en). Plan: `cifs-utils` i pakkelista, innlogging i `/etc/arshjul-bom.cred` (chmod 600), og i `/etc/fstab`:
@@ -192,4 +229,4 @@ Filene leses **ikke** av seg selv – kjør NTNUs skript for å oppdatere brannm
   ```
   Sjekk at `/mnt/arshjul-bom` er tom før montering (filer der blir skjult). NTNU bruker Heimdal Kerberos – velger IT Kerberos, følg deres oppskrift. Testene som gjenstår står i `VEIKART.md`.
 - **Kalenderen i Outlook** – Outlook på nett/mobil henter feeden fra Microsofts servere, som ikke når VPS-en. Spurt IT om `/calendar/` kan åpnes utenfra.
-- **Backup** av `/srv/arshjul-data`.
+- **Backup til et annet sted** – de daglige kopiene (punkt 8) ligger på VPS-en selv. Spør IT om de tar backup av maskinen, eller om `Sikkerhetskopi-db/` kan kopieres til fellesmappen når den er på plass. `Bestillingslister/` lages på nytt fra databasen; `/etc/arshjul.env` (nøkkelen) må tas vare på for seg.

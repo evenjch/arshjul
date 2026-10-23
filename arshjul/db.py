@@ -387,6 +387,7 @@ MIGRATIONS = [
 ]
 _JSON_ORDER = ("lines", "stocked", "stock_log")
 BACKUP_DIR_NAME = "Sikkerhetskopi-db"  # database backups, in the data folder (users see this folder)
+DAILY_BACKUP_SUFFIX = "daglig"  # «arshjul 2026-10-23 daglig.db» – the only copies that are cleaned up
 
 PROJECT_FIELDS = ("name", "type", "note", "color", "course_id")  # apply to every school year
 COURSE_FIELDS = ("code", "name", "program", "students", "lecturer_id", "engineer_id", "active")
@@ -757,6 +758,23 @@ class Db:
         target.parent.mkdir(parents=True, exist_ok=True)
         with closing(sqlite3.connect(self.path)) as source, closing(sqlite3.connect(target)) as copy:
             source.backup(copy)
+
+    def daily_backup(self, keep: int) -> tuple[Path, list[str]]:
+        """Today's copy in Sikkerhetskopi-db/ (replaces one taken earlier today), and only the newest `keep`
+        daily copies are kept. Other copies – before upgrades, from the admin panel – are never removed.
+        Returns the copy and the names of the ones removed."""
+        folder = self.path.parent / BACKUP_DIR_NAME
+        target = folder / f"arshjul {dt.date.today():%Y-%m-%d} {DAILY_BACKUP_SUFFIX}.db"
+        tmp = target.with_suffix(".tmp")
+        tmp.unlink(missing_ok=True)
+        self.backup(tmp)
+        tmp.replace(target)  # a half-written copy never has the real name
+        daily = sorted(folder.glob(f"arshjul *-*-* {DAILY_BACKUP_SUFFIX}.db"), reverse=True)
+        removed = []
+        for f in daily[max(keep, 1):]:
+            f.unlink()
+            removed.append(f.name)
+        return target, removed
 
     def version(self) -> int:
         with self.tx() as con:

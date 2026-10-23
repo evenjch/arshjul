@@ -6,6 +6,7 @@
     python manage.py deaktiver <brukernavn>      (can't log in, but the history stays)
     python manage.py aktiver <brukernavn>        (also: lifts a lock-out after wrong passwords)
     python manage.py liste
+    python manage.py sikkerhetskopi [--behold 30]  (today's copy of the database; run daily by a timer)
 
 The password is asked for in the terminal (not shown). For scripts on the server it can be given in
 the environment variable ARSHJUL_NYTT_PASSORD instead. Uses the same settings as the app
@@ -48,7 +49,7 @@ def _find(store: Db, username: str) -> dict:
 
 
 CLI_COMMANDS = {"ny-bruker": "new-user", "passord": "password", "deaktiver": "deactivate", "aktiver": "activate",
-                "liste": "list"}
+                "liste": "list", "sikkerhetskopi": "backup"}
 CLI_ROLES = {"ingenior": "engineer", "faglarer": "lecturer"}
 
 
@@ -67,12 +68,23 @@ def main(argv: list[str] | None = None) -> None:
     adm.add_argument("username", metavar="brukernavn")
     adm.add_argument("--fjern", dest="remove", action="store_true", help="ta bort administratorrollen")
     sub.add_parser("liste")
+    bak = sub.add_parser("sikkerhetskopi", help="ta dagens kopi av databasen og rydd i de gamle")
+    bak.add_argument("--behold", dest="keep", type=int, default=30, metavar="N",
+                     help="antall daglige kopier som beholdes (standard 30)")
     a = p.parse_args(argv)
     a.command = CLI_COMMANDS.get(a.command, a.command)
     if a.command == "new-user":
         a.role = CLI_ROLES[a.role]
 
     store = Db(config.DB_FILE)
+    if a.command == "backup":
+        # no init: a timer must never be the one that upgrades the database (that happens when the app starts)
+        if not config.DB_FILE.exists():
+            sys.exit(f"Fant ingen database i {config.DB_FILE}.")
+        target, removed = store.daily_backup(a.keep)
+        print(f"Sikkerhetskopi: {target} ({target.stat().st_size // 1024} kB)."
+              + (f" Fjernet {len(removed)} gamle." if removed else ""))
+        return
     store.init(config.DATA_FILE)
 
     if a.command == "new-user":

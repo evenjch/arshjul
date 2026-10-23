@@ -18,7 +18,7 @@ arshjul/            the app
   counting.py       counting after a project, loss
   bom.py            reading BOM .xlsx, diff, templates, write_stock (column H), write_sets (B10)
   calendar_feed.py  the iCalendar feed (/calendar/<token>.ics) – open without login, the per-user token is the key
-  manage.py         CLI for users (backup way in, and how the first admin is made on a server)
+  manage.py         CLI for users (backup way in, and how the first admin is made on a server) and the nightly DB backup
   static/, templates/   arshjul.js (main page), admin.js (panel)
   tests/            pytest; tests/helpers.py has BOM helpers
 ```

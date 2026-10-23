@@ -1,5 +1,7 @@
 """Login, roles and the change log – as it's meant to work on the server."""
 import datetime as dt
+import sqlite3
+from contextlib import closing
 
 import pytest
 
@@ -295,6 +297,27 @@ def test_manage(monkeypatch, capsys):
     assert arshjul.store.user(username="per")["password"] != old_count
     manage.main(["liste"])
     assert "Per Hansen" in capsys.readouterr().out
+
+
+def test_manage_daily_backup(client, capsys):
+    folder = config.DATA_DIR / "Sikkerhetskopi-db"
+    folder.mkdir(exist_ok=True)
+    for day in ("2026-09-01", "2026-09-02", "2026-09-03"):
+        (folder / f"arshjul {day} daglig.db").write_bytes(b"old")
+    (folder / "arshjul 2026-08-01 120000.db").write_bytes(b"before an upgrade")  # never cleaned up
+    manage.main(["sikkerhetskopi", "--behold", "2"])
+    assert "Fjernet 2 gamle" in capsys.readouterr().out
+    names = sorted(f.name for f in folder.iterdir())
+    today = f"arshjul {dt.date.today():%Y-%m-%d} daglig.db"
+    assert names == ["arshjul 2026-08-01 120000.db", "arshjul 2026-09-03 daglig.db", today]
+    with closing(sqlite3.connect(folder / today)) as con:  # a real database, not a half-written file
+        assert con.execute("SELECT COUNT(*) FROM users").fetchone()[0] >= 1
+    manage.main(["sikkerhetskopi", "--behold", "2"])  # twice the same day: replaced, not a third copy
+    assert len(list(folder.glob("*daglig.db"))) == 2
+    # the admin panel can download it
+    r = client.get(f"/api/admin/backup/{today}")
+    assert r.status_code == 200
+    r.close()  # Windows: the file can't be removed by the next test while it's open
 
 
 # ---------- the page, as lecturer and as engineer with notifications ----------

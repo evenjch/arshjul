@@ -20,7 +20,7 @@ import config
 import counting
 import deadlines
 import orders
-from db import BACKUP_DIR_NAME  # the same folder as the backup taken before upgrades
+from db import BACKUP_DIR_NAME, DAILY_BACKUP_SUFFIX  # the same folder as the backup taken before upgrades
 
 bp = Blueprint("admin_panel", __name__)
 A = None  # the app module (set in init – avoids importing app.py twice when it's run as a script)
@@ -97,7 +97,7 @@ def _system() -> dict:
         "dbSize": A.store.path.stat().st_size if A.store.path.exists() else 0,
         "dataFolder": str(config.DATA_DIR), "bomFolder": str(config.BOM_DIR), "bomReachable": bom_ok,
         "bomCount": bom_count, "mode": config.MODE,
-        "backups": [{"name": f.name, "size": f.stat().st_size} for f in backups[:20]],
+        "backups": [{"name": f.name, "size": f.stat().st_size} for f in backups[:40]],
         "backupFolder": str(_backup_dir()),
     }
 
@@ -346,7 +346,7 @@ def take_backup():
 @bp.get("/api/admin/backup/<name>")
 def download_backup(name):
     # only file names we created ourselves – never a path out of the folder
-    if not re.fullmatch(r"arshjul [0-9-]+ [0-9]+\.db", name):
+    if not re.fullmatch(rf"arshjul [0-9-]+ ([0-9]+|{DAILY_BACKUP_SUFFIX})\.db", name):
         raise KeyError(name)
     file = _backup_dir() / name
     if not file.exists():

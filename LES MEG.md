@@ -91,7 +91,7 @@ Hvert prosjekt hører til et **emne** (f.eks. IELS1001, bachelor eller master). 
   - **Bestillinger og tellinger**: alle, på tvers av emner. Fjern feilregistreringer; det som er skrevet til en BOM angres først.
   - **Endringslogg**: hele loggen, med søk på person, prosjekt, rolle og dato.
   - **Opprydding**: kvitter alle varsler, slett et gammelt skoleår.
-  - **System**: database, BOM-mappe, og **«Ta sikkerhetskopi nå»** av databasen (kan lastes ned).
+  - **System**: database, BOM-mappe, og **«Ta sikkerhetskopi nå»** av databasen (kan lastes ned). På serveren tas det i tillegg en kopi hver natt («arshjul <dato> daglig.db»); de 30 nyeste beholdes.
 - Alt du endrer i panelet, logges med navnet ditt som «admin».
 - Deaktiverte brukere kan ikke logge inn, men navnet står fortsatt i loggene.
 

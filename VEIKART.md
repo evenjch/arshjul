@@ -161,7 +161,7 @@ Gjort i oktober 2026 – slik det faktisk ble satt opp (Caddy, sertifikat, brann
 5. Sett `ARSHJUL_MODUS=server`, `ARSHJUL_DATA`, `ARSHJUL_BOM=/mnt/arshjul-bom` og `ARSHJUL_SECRET_KEY` (lag med `python -c "import secrets; print(secrets.token_hex(32))"`) – i `innstillinger.env` (lesbar bare for tjenestebrukeren) eller i systemd-tjenesten. La `ARSHJUL_HOST=127.0.0.1`, så bare Caddy/nginx når appen.
 6. Lag administratoren: `python manage.py ny-bruker <brukernavn> "<Navn>" ingenior --admin`. Resten av brukerne lages på nettsiden under «Brukere». (Tar du med `arshjul.db` fra PC-en, følger brukerne med.)
 7. Kjør `python app.py` som en systemd-tjeneste, med Caddy foran for HTTPS, f.eks. `arshjul.ntnu.no { reverse_proxy 127.0.0.1:5057 }`.
-8. Sett opp backup av datamappen.
+8. Sett opp backup av datamappen. **Gjort:** en timer kjører `manage.py sikkerhetskopi` hver natt og beholder de 30 nyeste daglige kopiene i `Sikkerhetskopi-db/` (`deploy/VPS-oppsett.md`, punkt 8). En kopi utenfor VPS-en venter på IT.
 
 ## Parkert / senere
 
