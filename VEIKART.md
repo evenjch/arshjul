@@ -212,6 +212,18 @@ Testet 6. oktober 2026 fra Windows mot `\\felles.ansatt.ntnu.no\...\evenjc\claud
 
 Derfor, på serveren med `ARSHJUL_BOM_WINDOWS` satt: **«Kopier sti»** ved hver BOM (lim inn i Excel under Fil → Åpne, eller i Utforsker), og **«Åpne i Excel»** bare når hele stien er uten æøå og spesialtegn. «BOM-mappen» kopierer stien til mappen. Filene åpnes i beskyttet visning; legg fellesmappen inn som klarert plassering i Excel (Fil → Alternativer → Klareringssenter) for å slippe det. BOM-er fra «Lag BOM-mal» heter «… – BOM.xlsx» med tankestrek, så de får bare «Kopier sti».
 
+I tillegg viser Office en advarsel **hver gang** filen åpnes fra `ms-excel:`-lenken («This content presents a potential security issue. Do you trust this content?», med `file:///\\…`-adressen). Lokalt kommer den ikke, for der åpner appen filen direkte. Kanskje forsvinner den hvis fellesmappen legges under «Lokalt intranett» i Internett-alternativer – ikke testet. Å slå av advarselen i registeret anbefales ikke.
+
+**Hvorfor det ikke kan være som lokalt, selv med nettverksdisk:** Nettverksdisken gjør at serveren og PC-en ser *de samme filene*. Den avgjør ikke *hvem som starter Excel*. Lokalt kjører appen på PC-en og ber Windows åpne filen. På serveren går trykket til VPS-en, som ikke kan starte noe på PC-en – den kan bare sende en nettside tilbake. Og nettlesere nekter med vilje å åpne filer og programmer på PC-en (ellers kunne enhver nettside gjøre det), så en vanlig lenke til `\\felles…\BOM\fil.xlsx` blokkeres. Unntakene er lenker Office har godkjent (`ms-excel:`, med advarslene over) og et eget lite program på PC-en. SharePoint/Teams har en «Åpne i Excel» som virker rett, fordi filene ligger der – men vi valgte fellesmappen (se «Beslutninger»).
+
+**Ikke bestemt ennå – hvordan åpne en BOM fra serveren:**
+
+1. **Bare «Kopier sti»** (fjern `ms-excel:`-lenken). «Kopier sti», så Windows+R, Ctrl+V, Enter – åpner rett i Excel, uten advarsel og uten beskyttet visning. Enklest; ingenting å installere.
+2. **`ms-excel:`-lenken, og BOM-filnavn uten æøå og tankestrek** (endre «Lag BOM-mal», gi nytt navn til de som finnes). Ett klikk, men advarselen og beskyttet visning hver gang.
+3. **En liten hjelper på hver ingeniør-PC**: en egen lenketype (`arshjul-bom:`) som åpner filen direkte i Excel, som lokalt. Æøå går fint, ingen Office-advarsel (nettleseren spør første gang – «tillat alltid»). Installeres én gang per PC med et skript, uten administrator. Åpner bare `.xlsx` i BOM-mappen, så andre nettsider ikke kan misbruke den. Faglærerne trenger den ikke. «Kopier sti» blir stående som reserve.
+
+Anbefaling: 3 hvis ett klikk er viktig (få ingeniører, samme opplevelse som før), ellers 1. Inntil videre: «Kopier sti» på alle, `ms-excel:`-lenken når stien er uten æøå.
+
 **Bestillingslister på serveren:** «Bestillingsliste» lagrer HTML-filen i `Bestillingslister/` på VPS-en, der ingeniøren ikke kommer til. Bør lastes ned i nettleseren i stedet (eller lagres på fellesmappen).
 
 ## Åpne spørsmål (til IT)
