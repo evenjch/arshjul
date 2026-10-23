@@ -8,6 +8,7 @@
   // projects = all runs in all school years; the wheel and the table show the chosen school year (SY)
   let mode = "loading", projects = [], ledigeBom = [];
   let LOCAL = true; // false when the app runs on a server: then we can't open Excel or folders
+  let BOM_WIN = null; // on the server: the BOM folder as the engineer's PC sees it (ARSHJUL_BOM_WINDOWS)
   let SYS = [], SY = null, TODAY = null, NEXT8 = [], SETUP = null;
   // the logged-in user; ENG = engineer (everything), otherwise lecturer (own projects, no BOM/orders)
   let ME = { role: document.body.dataset.userrole || "engineer" }, ENG = ME.role === "engineer";
@@ -55,9 +56,10 @@
       ENGINEERS = st.engineers; COURSES = st.courses; PROGRAM = st.program; TYPES = st.types || {};
       // in the summer the page opens on the coming school year (see deadlines.school_year_shown)
       if (SY === null || !SYS.some((s) => s.year === SY)) SY = st.schoolYearShown ?? st.schoolYearNow;
-      LOCAL = st.mode !== "server";
-      $("openBomDir").hidden = $("openListDir").hidden = !LOCAL;
-      $("bomDir").textContent = st.folders.bom || ""; $("openBomDir").title = "Åpner " + (st.folders.bom || "BOM-mappen");
+      LOCAL = st.mode !== "server"; BOM_WIN = LOCAL ? null : st.folders.bomWindows || null;
+      $("openListDir").hidden = !LOCAL; $("openBomDir").hidden = !LOCAL && !BOM_WIN;
+      $("bomDir").textContent = BOM_WIN || st.folders.bom || "";
+      $("openBomDir").title = BOM_WIN ? "Kopierer stien til BOM-mappen" : "Åpner " + (st.folders.bom || "BOM-mappen");
       // keep values that are waiting to be saved
       st.projects.forEach((p) => { const pend = pending[p.id]; if (pend) Object.assign(p, pend.patch); });
       ALL = st.projects;
@@ -387,10 +389,29 @@
     return "";
   }
   const deadlineHtml = (p) => `uke ${p.deadlines.deadline.week}<small>${dfmtY.format(toD(p.deadlines.deadline.date))}</small>${deadlineWarning(p)}`;
+  const winPath = (file) => BOM_WIN + "\\" + file.replace(/\//g, "\\");
+  // Excel only finds the file from an ms-excel: link when the path is plain ASCII: the browser
+  // percent-encodes æøå, and Excel doesn't decode them (tested October 2026, see VEIKART.md)
+  function excelHref(path) {
+    if (!/^[ -~]+$/.test(path) || /[#%?]/.test(path)) return null;
+    const url = path.startsWith("\\\\") ? "file:" + path.replace(/\\/g, "/") : "file:///" + path.replace(/\\/g, "/");
+    return "ms-excel:ofe|u|" + url.replace(/ /g, "%20");
+  }
+  function openButtons(p) {
+    if (LOCAL) return `<button type="button" class="mini" data-act="open" data-id="${esc(p.id)}">Åpne i Excel</button>`;
+    if (!BOM_WIN || !p.bom) return "";
+    const path = winPath(p.bom), href = excelHref(path);
+    return (href ? `<a class="mini" href="${esc(href)}">Åpne i Excel</a>` : "")
+      + `<button type="button" class="mini" data-act="copypath" data-path="${esc(path)}" title="${esc(path)}">Kopier sti</button>`;
+  }
+  async function copyPath(path, okMsg) {
+    try { await navigator.clipboard.writeText(path); setStatus(okMsg); }
+    catch (e) { setStatus("Fikk ikke kopiert. Stien er: " + path); }
+  }
   const bomSum = (b) => `${b.lines} linjer · ${b.to_order} å bestille · ${nf0.format(b.excl)} kr`;
   function bomCell(p) {
     const b = p.bomStatus, id = esc(p.id);
-    const apne = LOCAL ? `<button type="button" class="mini" data-act="open" data-id="${id}">Åpne i Excel</button>` : "";
+    const apne = openButtons(p);
     if (b && b.exists && !b.error && !b.lines) {
       return `<div class="bomcell"><span class="pill miss" title="${esc(b.file)}">Tom BOM – fyll ut i Excel</span>${apne}</div>`;
     }
@@ -1176,6 +1197,7 @@
       }
       if (a === "template") act(() => api("POST", P(id) + "/template"), (r) => LOCAL ? `Laget ${r.file} i BOM-mappen og åpnet den i Excel. Fyll den ut og lagre, så dukker den opp her.` : `Laget ${r.file} i BOM-mappen.`);
       if (a === "open") act(() => api("POST", P(id) + "/open"), "Åpnet i Excel. Lagre, og kom tilbake hit.");
+      if (a === "copypath") copyPath(b.dataset.path, "Stien er kopiert. Lim den inn i Excel (Fil → Åpne) eller i Utforsker.");
       if (a === "list") act(() => api("POST", P(id) + "/order-list"), (r) => `Lagret «${r.file}» i Bestillingslister (${r.lines} linjer).`);
       if (a === "unlink") act(() => api("PATCH", P(id), { bom: null }), "Koblingen er fjernet. Filen er ikke slettet.");
       return;
@@ -1199,7 +1221,8 @@
     const b = e.target.closest("button[data-act=read]"); if (!b) return;
     act(() => api("POST", P(b.dataset.id) + "/seen"));
   });
-  $("openBomDir").addEventListener("click", () => act(() => api("POST", "/api/folder/bom")));
+  $("openBomDir").addEventListener("click", () => BOM_WIN ? copyPath(BOM_WIN, "Stien til BOM-mappen er kopiert. Lim den inn i Utforsker.")
+    : act(() => api("POST", "/api/folder/bom")));
   $("openListDir").addEventListener("click", () => act(() => api("POST", "/api/folder/lists")));
 
   // ---------- stengte perioder ----------

@@ -210,3 +210,24 @@ def test_marked_ordered_without_bom(client):
     res = run_page(client.get("/api/state").get_json())
     assert res["errors"] == []
     assert '<span class="ostat ok">Bestilt ' in res["tbody"] and 'data-v="0"' in res["tbody"]
+
+
+def test_server_copies_bom_path_and_links_to_excel_when_ascii(client, monkeypatch):
+    """On the server Excel can't be opened for you: the page copies the path the engineer's PC sees,
+    and links to Excel only when the path has no æøå (Excel doesn't decode them from an ms-excel: link)."""
+    monkeypatch.setattr(config, "BOM_WINDOWS", r"\\felles.ansatt.ntnu.no\ies\BOM")
+    for name, file in (("Lodding", "Lodding-BOM.xlsx"), ("Insektsløp", "Insektsløp – BOM.xlsx")):
+        g = client.post(G, json={"name": name, "school_year": SY, "start": 44}).get_json()
+        client.patch(f"{G}/{g['id']}", json={"bom": make_bom(file).name})
+    state = client.get("/api/state").get_json()
+    assert state["folders"]["bomWindows"] == r"\\felles.ansatt.ntnu.no\ies\BOM"
+    local = run_page(state)
+    assert local["errors"] == [] and 'data-act="open"' in local["tbody"] and "Kopier sti" not in local["tbody"]
+    res = run_page({**state, "mode": "server"})
+    assert res["errors"] == []
+    t = res["tbody"]
+    assert 'data-act="open"' not in t
+    assert 'href="ms-excel:ofe|u|file://felles.ansatt.ntnu.no/ies/BOM/Lodding-BOM.xlsx"' in t
+    assert t.count("ms-excel:") == 1  # not for «Insektsløp – BOM.xlsx»
+    assert r'data-path="\\felles.ansatt.ntnu.no\ies\BOM\Insektsløp – BOM.xlsx"' in t
+    assert t.count('data-act="copypath"') == 2

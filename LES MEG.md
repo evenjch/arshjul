@@ -59,7 +59,7 @@ Krever Python 3.10 eller nyere. Uten startfilen: `pip install -r requirements.tx
 | Se hva prosjektene har kostet  | «Historikk» under tabellen: bestilt per prosjekt og skoleår, og per sett  |
 | Lage BOM for nytt prosjekt     | «Lag BOM-mal» – filen lages i BOM-mappen med navn, dato, frist og antall sett, og åpnes i Excel |
 | Koble til en BOM du allerede har | Legg filen i BOM-mappen, velg den i «Koble til fil …»                  |
-| Endre en BOM                   | «Åpne i Excel», endre, lagre, gå tilbake til nettleseren                  |
+| Endre en BOM                   | «Åpne i Excel», endre, lagre, gå tilbake til nettleseren. På serveren: «Kopier sti» og lim inn i Excel (Fil → Åpne) – «Åpne i Excel» finnes bare når filnavnet er uten æøå |
 | Se hva som er endret           | Endringer siden sist vises over tabellen. «OK, sett» når du har sett dem  |
 | Lage bestillingsliste          | «Bestillingsliste» – lagres i Bestillingslister og åpnes. For én leverandør: «Liste» under «Bestilling» |
 | Registrere at du har bestilt   | Trykk på statusen i «Bestilling»-kolonnen, skriv ordrenummer, «Registrer bestilt» for hver leverandør |

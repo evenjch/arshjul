@@ -13,6 +13,9 @@
                         Locally it's created automatically and stored in <data folder>/.cache.
     ARSHJUL_BAK_PROXY   «på» when Caddy/nginx is in front (the default in server mode).
     ARSHJUL_NO_OPEN     set = don't open files or the browser (in local mode too)
+    ARSHJUL_BOM_WINDOWS the BOM folder as the engineers' PCs see it, e.g. \\\\felles.ansatt.ntnu.no\\…\\BOM.
+                        In server mode the page can then copy a BOM's path, and open it in Excel when
+                        the path has no æøå (Excel can't read those from an ms-excel: link).
 
 The settings can also be in arshjul/innstillinger.env, one per line (NAME=value,
 # for a comment). Environment variables that are set take precedence over the file. Same format as
@@ -66,6 +69,7 @@ PORT = int(os.environ.get("ARSHJUL_PORT", "5057"))
 
 # open files, folders and the browser on this machine?
 OPEN_LOCAL = LOCAL and not os.environ.get("ARSHJUL_NO_OPEN")
+BOM_WINDOWS = (os.environ.get("ARSHJUL_BOM_WINDOWS") or "").strip().rstrip("\\/")
 
 SECRET_KEY = os.environ.get("ARSHJUL_SECRET_KEY") or ""
 if not SECRET_KEY:

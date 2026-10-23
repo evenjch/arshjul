@@ -24,6 +24,7 @@ Vi utvikler på egen PC, men slik at årshjulet når som helst kan flyttes til e
 | `ARSHJUL_SECRET_KEY` | tilfeldig lokalt | påkrevd i servermodus (innlogging), minst 32 tegn |
 | `ARSHJUL_BAK_PROXY` | `av` lokalt, `på` på server | stol på `X-Forwarded-*` fra Caddy/nginx |
 | `ARSHJUL_NO_OPEN` | ikke satt | satt = åpne aldri filer eller nettleser |
+| `ARSHJUL_BOM_WINDOWS` | ikke satt | på serveren: BOM-mappen slik ingeniørens PC ser den (`\\felles.ansatt.ntnu.no\…\BOM`) – gir «Kopier sti» og «Åpne i Excel» |
 
 Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.eksempel.env`). Satte miljøvariabler går foran.
 
@@ -193,7 +194,18 @@ Testet 6. oktober 2026 fra Windows mot `\\felles.ansatt.ntnu.no\...\evenjc\claud
 **Gjenstår å teste:**
 - «Oppdater På lager» mens BOM-en er åpen i Excel på nettverksmappen (skal nekte).
 - Linux-VPS-en sin tilkobling til mappen (CIFS-montering). Kan bare testes når VPS-en finnes.
-- Hvordan «Åpne i Excel» skal virke fra en server: knapp som kopierer stien, eller en Office-lenke (`ms-excel:`) – må prøves.
+
+**«Åpne i Excel» fra serveren – testet 23. oktober 2026** (nettleser og Excel på Windows, kopi av en BOM på hjemmeområdet):
+
+| Lenke | Resultat |
+|---|---|
+| `ms-excel:ofe\|u\|file://server/mappe/test-bom.xlsx` (bare ASCII, mellomrom som `%20`) | åpnes, i beskyttet visning |
+| samme med æøå eller tankestrek i stien (nettleseren gjør dem om til `%C3%B8` o.l.) | Excel finner ikke filen |
+| æøå kodet som Windows-1252 (`%F8`) | Excel finner ikke filen |
+
+Derfor, på serveren med `ARSHJUL_BOM_WINDOWS` satt: **«Kopier sti»** ved hver BOM (lim inn i Excel under Fil → Åpne, eller i Utforsker), og **«Åpne i Excel»** bare når hele stien er uten æøå og spesialtegn. «BOM-mappen» kopierer stien til mappen. Filene åpnes i beskyttet visning; legg fellesmappen inn som klarert plassering i Excel (Fil → Alternativer → Klareringssenter) for å slippe det. BOM-er fra «Lag BOM-mal» heter «… – BOM.xlsx» med tankestrek, så de får bare «Kopier sti».
+
+**Bestillingslister på serveren:** «Bestillingsliste» lagrer HTML-filen i `Bestillingslister/` på VPS-en, der ingeniøren ikke kommer til. Bør lastes ned i nettleseren i stedet (eller lagres på fellesmappen).
 
 ## Åpne spørsmål (til IT)
 

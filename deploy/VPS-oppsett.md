@@ -79,8 +79,10 @@ ARSHJUL_DATA=/srv/arshjul-data
 ARSHJUL_BOM=/mnt/arshjul-bom
 ARSHJUL_SECRET_KEY=<64 tegn fra: python3 -c "import secrets; print(secrets.token_hex(32))">
 ARSHJUL_HOST=127.0.0.1
+ARSHJUL_BOM_WINDOWS=\\felles.ansatt.ntnu.no\<sti>\BOM     # når fellesmappen er på plass
 ```
 Byttes nøkkelen, blir alle logget ut.
+`ARSHJUL_BOM_WINDOWS` er den samme BOM-mappen slik ingeniørens PC ser den. Da får hver BOM «Kopier sti», og «Åpne i Excel» når stien er uten æøå (se `VEIKART.md`). Uten den kan ingeniøren ikke nå BOM-ene fra siden.
 
 ### 4. Tjenesten – `/etc/systemd/system/arshjul.service`
 ```ini

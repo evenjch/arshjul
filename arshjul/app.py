@@ -379,7 +379,7 @@ def state():
         reply["freeBoms"] = sorted(f.name for f in BOM_DIR.glob("*.xlsx")
                                    if not f.name.startswith("~$") and f.name not in linked) if BOM_DIR.exists() else []
         reply["setup"] = deadlines.setup_warning([g for g in mine if not g["deleted"]], closed, today)
-        reply["folders"] = {"bom": str(BOM_DIR), "lists": str(LIST_DIR)}
+        reply["folders"] = {"bom": str(BOM_DIR), "lists": str(LIST_DIR), "bomWindows": config.BOM_WINDOWS or None}
         def is_mine(e):
             if e["recipient_id"] is not None:  # a notification to one particular person (e.g. "you have been chosen as engineer")
                 return e["recipient_id"] == me["id"]
