@@ -47,6 +47,7 @@ Krever Python 3.10 eller nyere. Uten startfilen: `pip install -r requirements.tx
 |--------------------------------|---------------------------------------------------------------------------|
 | Legge til et prosjekt          | Bla til riktig skoleår, trykk «+ Legg til nytt prosjekt»                  |
 | Bare hjulet, eller bare de neste 8 ukene | «Vis alene» bak titlene «Skoleåret …» og «Neste 8 uker». `/uker` passer som startside i nettleseren; `/hjul` er hjulet over hele bredden |
+| Som widget/panel i nettleseren (f.eks. Vivaldi) | Legg `?widget` bak adressen: `/uker?widget`, `/hjul?widget` (eller den delte lenken `/hjul/<nøkkel>?widget`). Da vises bare innholdet, uten toppfelt og ramme, og siden oppdaterer seg selv hver halvtime. ↗ ved tittelen åpner årshjulet i en vanlig fane |
 | Dele hjulet med studenter | Under hjulet på `/hjul`: «Lag delbar lenke». Lenken åpnes uten innlogging (fra NTNU-nettet/VPN) og viser bare prosjektnavn og ukene de er i bruk – ikke frister, BOM-er eller navn. «Lag ny lenke» gjør den gamle ugyldig, «Slutt å dele» stenger den |
 | Frister og prosjektuker i Outlook | «Kalender» over tabellen: kopier lenken og abonner på den i Outlook («Legg til kalender» → «Fra Internett»). Lenken er personlig; «Lag ny lenke» gjør den gamle ugyldig |
 | Endre navn eller notat         | «Endre» ved navnet i tabellen. Enter lagrer, Escape avbryter |

@@ -76,6 +76,19 @@ def test_views_need_login_and_work_for_lecturers(inst):
     assert 'href="/hjul"' in html and 'href="/uker"' in html and "data-view" not in html
 
 
+def test_widget_views(inst):
+    """?widget: the same view stripped for a small browser panel – still behind login, and reloads itself."""
+    assert new_client().get("/uker?widget").status_code == 302
+    ola = log_in("ola")
+    plain, widget = ola.get("/uker").get_data(as_text=True), ola.get("/uker?widget").get_data(as_text=True)
+    assert "data-widget" not in plain and 'http-equiv="refresh"' not in plain
+    assert 'data-view="weeks" data-widget' in widget and 'http-equiv="refresh"' in widget
+    wheel = log_in("anne").get("/hjul?widget").get_data(as_text=True)
+    assert "data-widget" in wheel and 'id="sharebox"' not in wheel  # no sharing controls in the widget
+    url = share_url(log_in("anne"), {})
+    assert "data-widget" in new_client().get(path(url) + "?widget").get_data(as_text=True)
+
+
 def run_view(state, dataset):
     """The page's JS in V8 with data-view (and data-share) on <body>: draws only that panel."""
     src = (Path(config.APP_DIR) / "static" / "arshjul.js").read_text(encoding="utf-8")

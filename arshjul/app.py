@@ -805,15 +805,20 @@ def sets_to_bom(g0: dict, g1: dict) -> dict | None:
 
 # ---------- the wheel and «neste 8 uker» on their own, and the wheel shared with students ----------
 # The page is index.html with data-view: the JS draws only that part, and the CSS hides the rest.
+# ?widget strips it further, for a small browser panel (Vivaldi's web panels/widgets): no header, no frame.
+
+def _widget() -> bool:
+    return "widget" in request.args
+
 
 @app.get("/hjul")
 def wheel_view():
-    return render_template("index.html", view="wheel")
+    return render_template("index.html", view="wheel", widget=_widget())
 
 
 @app.get("/uker")
 def weeks_view():
-    return render_template("index.html", view="weeks")
+    return render_template("index.html", view="weeks", widget=_widget())
 
 
 def _shared_user(token: str) -> dict:
@@ -830,7 +835,7 @@ def shared_wheel(token):
         user = _shared_user(token)
     except NotFound:
         return "Lenken virker ikke lenger. Be om en ny.", 404
-    return render_template("index.html", view="wheel", share=token, shared_by=user["name"])
+    return render_template("index.html", view="wheel", share=token, shared_by=user["name"], widget=_widget())
 
 
 @app.get("/hjul/<token>/data")

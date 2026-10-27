@@ -6,9 +6,10 @@
 <title>{% if share %}Årshjul – prosjekter{% elif view == "weeks" %}Neste 8 uker – årshjul{% else %}Årshjul for innkjøp{% endif %}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <meta name="csrf" content="{{ csrf_token }}">
+{% if widget %}<meta http-equiv="refresh" content="1800">{% endif %}
 <link rel="stylesheet" href="{{ url_for('static', filename='arshjul.css') }}">
 </head>
-<body data-userrole="{{ me.role if me else 'lecturer' }}"{% if view %} data-view="{{ view }}"{% endif %}{% if share %} data-share="{{ share }}"{% endif %}>
+<body data-userrole="{{ me.role if me else 'lecturer' }}"{% if view %} data-view="{{ view }}"{% endif %}{% if share %} data-share="{{ share }}"{% endif %}{% if widget %} data-widget{% endif %}>
 <div class="wrap">
   <header>
     <div>
@@ -35,7 +36,8 @@
   <div class="grid">
     <div class="panel">
       <div class="row">
-        <h2>Skoleåret <span id="syName"></span> <a class="mini quiet viewlink" href="/hjul" title="Bare hjulet – kan deles med studenter">Vis alene</a></h2>
+        <h2>Skoleåret <span id="syName"></span> <a class="mini quiet viewlink" href="/hjul" title="Bare hjulet – kan deles med studenter">Vis alene</a>
+          <a class="mini quiet widgetlink" href="{{ '/hjul/' ~ share if share else '/hjul' }}" target="_blank" rel="noopener" title="Åpne i en vanlig fane">↗</a></h2>
         <div class="synav">
           <button class="mini" id="syPrev" type="button" aria-label="Forrige skoleår">‹</button>
           <button class="mini" id="syNow" type="button">I år</button>
@@ -59,12 +61,13 @@
       </div>
     </div>
     <div class="panel">
-      <h2>Neste 8 uker <a class="mini quiet viewlink" href="/uker" title="Bare de neste 8 ukene – f.eks. som startside">Vis alene</a></h2>
+      <h2>Neste 8 uker <a class="mini quiet viewlink" href="/uker" title="Bare de neste 8 ukene – f.eks. som startside">Vis alene</a>
+        <a class="mini quiet widgetlink" href="/" target="_blank" rel="noopener" title="Åpne årshjulet i en vanlig fane">↗</a></h2>
       <div class="weeks" id="weeks"></div>
     </div>
   </div>
 
-  {% if view == "wheel" and not share %}
+  {% if view == "wheel" and not share and not widget %}
   <div class="addbox sharebox" id="sharebox">
     <h3 class="boxtitle">Del hjulet med studenter</h3>
     <p class="formnote">Lenken viser prosjektene i hjulet ditt uten innlogging, men bare navnet og ukene de er i bruk – ikke bestillingsfrister, BOM-er eller hvem som har ansvaret. Den virker fra NTNU-nettet og VPN. Kommer den på avveie, lager du en ny; da slutter den gamle å virke.</p>
