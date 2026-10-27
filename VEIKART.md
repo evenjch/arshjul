@@ -24,7 +24,7 @@ Vi utvikler på egen PC, men slik at årshjulet når som helst kan flyttes til e
 | `ARSHJUL_SECRET_KEY` | tilfeldig lokalt | påkrevd i servermodus (innlogging), minst 32 tegn |
 | `ARSHJUL_BAK_PROXY` | `av` lokalt, `på` på server | stol på `X-Forwarded-*` fra Caddy/nginx |
 | `ARSHJUL_NO_OPEN` | ikke satt | satt = åpne aldri filer eller nettleser |
-| `ARSHJUL_BOM_WINDOWS` | ikke satt | på serveren: BOM-mappen slik ingeniørens PC ser den (`\\felles.ansatt.ntnu.no\…\BOM`) – gir «Kopier sti» og «Åpne i Excel» |
+| `ARSHJUL_BOM_WINDOWS` | ikke satt | på serveren: BOM-mappen slik ingeniørens PC ser den (`\\kunde.it.ntnu.no\ies-arshjul$\BOM`) – gir «Kopier sti» og «Åpne i Excel» |
 
 Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.eksempel.env`). Satte miljøvariabler går foran.
 
@@ -39,6 +39,7 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 - **Faglæreren bestemmer *når* og *hvor mange*:** navn, type, semester, start- og sluttuke, antall studenter, gruppestørrelse, ekstra sett og notat.
   **Ingeniøren bestemmer *hvor lang tid bestillingen trenger*:** leveringstid, buffer, hvilken BOM som er koblet til, og farge. Faglæreren ser disse, men kan ikke endre dem.
 - **BOM-ene ligger i en delt nettverksmappe** som både serveren og ingeniørens PC når. Én app og én database; ingeniøren åpner BOM-ene i Excel fra en tilordnet stasjon. At bare ingeniøren skal se BOM-ene, løses med roller i appen, ikke med hvor filene ligger. (Valgt fremfor *hybrid* – to apper og synkronisering – og fremfor opplasting/nedlasting i nettleseren.)
+  **Mappen blir et eget unix-område på `kunde.it.ntnu.no`** (valgt 27. oktober 2026, etter forslag fra IT): VPS-en monterer det med NFS (tilgang etter IP, automount), ingeniørene bruker det skjulte sharet `\\kunde.it.ntnu.no\ies-arshjul$`, og tilgangen styres med en gruppe i BAS. Valgt fremfor CIFS-montering av `felles.ansatt.ntnu.no` med tjenestekonto, fordi passordet til tjenestekontoen måtte byttes hvert år – glemmes det, når ikke VPS-en BOM-ene lenger. Stien har heller ingen æøå, så «Åpne i Excel» virker for BOM-er med vanlige filnavn. Databasen blir liggende på VPS-ens egen disk – SQLite og NFS passer ikke sammen.
 
 ## Fase 0 – Grunnmur
 
@@ -158,7 +159,7 @@ Gjort i oktober 2026 – slik det faktisk ble satt opp (Caddy, sertifikat, brann
 1. Installer Python 3.10 eller nyere på VPS-en.
 2. Hent koden (`git clone`), og lag et Python-miljø: `python -m venv .venv` og `pip install -r requirements.txt`.
 3. Lag en datamappe, for eksempel `/srv/arshjul-data`, og kopier over `arshjul.db`. Stopp årshjulet lokalt først, så databasen er ferdig lagret.
-4. Monter BOM-fellesmappen (CIFS, med `iocharset=utf8` for æøå), for eksempel på `/mnt/arshjul-bom`.
+4. Monter BOM-mappen – NFS-området fra `kunde.it.ntnu.no` med automount (autofs), for eksempel på `/mnt/arshjul-bom`. Tjenestebrukeren må være med i BAS-gruppens GID for å kunne skrive.
 5. Sett `ARSHJUL_MODUS=server`, `ARSHJUL_DATA`, `ARSHJUL_BOM=/mnt/arshjul-bom` og `ARSHJUL_SECRET_KEY` (lag med `python -c "import secrets; print(secrets.token_hex(32))"`) – i `innstillinger.env` (lesbar bare for tjenestebrukeren) eller i systemd-tjenesten. La `ARSHJUL_HOST=127.0.0.1`, så bare Caddy/nginx når appen.
 6. Lag administratoren: `python manage.py ny-bruker <brukernavn> "<Navn>" ingenior --admin`. Resten av brukerne lages på nettsiden under «Brukere». (Tar du med `arshjul.db` fra PC-en, følger brukerne med.)
 7. Kjør `python app.py` som en systemd-tjeneste, med Caddy foran for HTTPS, f.eks. `arshjul.ntnu.no { reverse_proxy 127.0.0.1:5057 }`.
@@ -200,7 +201,11 @@ Testet 6. oktober 2026 fra Windows mot `\\felles.ansatt.ntnu.no\...\evenjc\claud
 | Åpnet i **beskyttet visning** (slik `ms-excel:`-lenken åpner den) | ingen `~$`-fil, så årshjulet **skriver**. Ufarlig: «Aktiver redigering» leser filen på nytt (viste det nye tallet), og deretter nekter årshjulet |
 
 **Gjenstår å teste:**
-- Linux-VPS-en sin tilkobling til fellesmappen (CIFS-montering), og at låsen fra Excel på en PC stopper skriving fra VPS-en. Venter på fellesmappen fra IT.
+Venter på NFS-området fra IT. Med kopier av BOM-ene, når det er klart:
+- At låsen fra Excel på en PC (SMB) stopper skriving fra VPS-en (NFS). `~$`-filen virker uansett protokoll; om lagringen i tillegg håndhever låsen på tvers av NFS og SMB, avhenger av lagringssystemet.
+- Rettigheter begge veier: VPS-en skriver i BOM-er som ingeniøren har laget, og ingeniøren redigerer BOM-er og sikkerhetskopier som VPS-en har laget.
+- Filnavn med æøå og tankestrek ser like ut over NFS og SMB.
+- «Åpne i Excel» (`ms-excel:`-lenken) med `$` i sharenavnet.
 
 **«Åpne i Excel» fra serveren – testet 23. oktober 2026** (nettleser og Excel på Windows, kopi av en BOM på hjemmeområdet):
 
@@ -228,6 +233,24 @@ Anbefaling: 3 hvis ett klikk er viktig (få ingeniører, samme opplevelse som f�
 
 ## Åpne spørsmål (til IT)
 
-- Kan vi få en **egen fellesmappe for tjenesten** (ikke under en personlig `ansatte\…`-mappe), som VPS-en kan montere med lese- og skrivetilgang via en tjenestekonto, og som ingeniøren kan tilordne som stasjon?
+- ~~Kan vi få en egen fellesmappe for tjenesten?~~ Ja – IT foreslo to alternativer (27. oktober 2026), og vi valgte unix-området (se «Beslutninger»). Svaret under sendes 28. oktober.
 - Hva krever IT for en VPS (operativsystem, tilgang, backup, sikkerhetsgjennomgang)?
-- Tas det backup av fellesmappen? (Sikkerhetskopiene i `BOM/Sikkerhetskopi/` dekker bare årshjulets egne endringer.)
+- Tas det backup av BOM-området? (Sikkerhetskopiene i `BOM/Sikkerhetskopi/` dekker bare årshjulets egne endringer.) Spurt i svaret under.
+
+**Svar til IT om lagringsområdet** (sendes 28. oktober 2026):
+
+> Hei, og takk for grundig svar!
+>
+> Vi vil gjerne ha alternativ 2: et eget unix-område på kunde.it.ntnu.no, NFS-eksportert til ies-arshjul etter IP og med automount der, pluss det skjulte CIFS-sharet `\\kunde.it.ntnu.no\ies-arshjul$` for oss på Windows. Alle i gruppen kan ha samme lese- og skrivetilgang til hele området.
+>
+> Noen spørsmål og ønsker:
+>
+> 1. **Rettigheter:** Tjenesten på VPS-en skriver i Excel-filer som vi lager fra Windows, og vi må kunne redigere filer som tjenesten lager. Hvilken GID får BAS-gruppen, slik at vi kan legge tjenestebrukeren på VPS-en i den? Kan området settes opp slik at nye filer og mapper blir gruppeskrivbare (setgid på mappene, umask/ACL), uansett om de lages over NFS eller SMB? Hvilken security style får volumet?
+> 2. **Låsing:** Respekteres en fil som er åpen i Excel over SMB (share-lås) også når noen skriver til den over NFS? Tjenesten sjekker selv Excels `~$`-fil, men vi vil gjerne vite om lagringen i tillegg hindrer at filen skrives fra VPS-en.
+> 3. **Tegnsett:** Bruker volumet UTF-8, så filnavn med æøå vises likt over NFS og SMB?
+> 4. **Backup:** Tas det backup eller snapshots av området, og kan vi hente tilbake eldre versjoner selv (f.eks. via «Tidligere versjoner» i Windows)?
+> 5. **Størrelse:** Området skal bare inneholde Excel-filer og noen sikkerhetskopier, så noen få GB holder godt.
+>
+> Gruppen bør i første omgang bestå av: [navn/brukernavn].
+>
+> Mvh

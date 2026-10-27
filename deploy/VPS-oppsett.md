@@ -8,7 +8,7 @@ Oppsettet slik det ble gjort i oktober 2026. Kommandoene kjøres som root på VP
 | System | Ubuntu 26.04, Python 3.14 |
 | Kode | `/opt/arshjul` (git-klone), Python-miljø i `/opt/arshjul/arshjul/.venv` |
 | Data | `/srv/arshjul-data` (`arshjul.db`, `Bestillingslister/`, `.cache/`, `Sikkerhetskopi-db/`), eid av `arshjul` |
-| BOM-mappe | `/mnt/arshjul-bom` – foreløpig en tom lokal mappe, skal bli fellesmappen (se «Gjenstår») |
+| BOM-mappe | `/mnt/arshjul-bom` – foreløpig en tom lokal mappe, skal bli NFS-området fra `kunde.it.ntnu.no` (se «Gjenstår») |
 | Innstillinger | `/etc/arshjul.env` |
 | Tjenester | `arshjul` (appen, waitress på `127.0.0.1:5057`), `caddy` (HTTPS foran), `arshjul-sertifikat.timer`, `arshjul-sikkerhetskopi.timer` |
 
@@ -56,7 +56,7 @@ caddy
 git
 ```
 Lista leses **ikke** av seg selv – etter hver endring kjøres `/local/admin/bin/do_pkgsync.sh` (ingen feilmeldinger = pakkene er godkjent). Først da er det trygt å installere.
-(`curl`, `openssl`, `python3` og `keyutils` er med i NTNUs grunninstallasjon. `cifs-utils` kommer til med BOM-mappen.)
+(`curl`, `openssl`, `python3` og `keyutils` er med i NTNUs grunninstallasjon. `nfs-common` og `autofs` kommer til med BOM-mappen, hvis IT ikke legger dem inn selv.)
 
 Se hva som er installert: `grep -h -A1 '^Commandline' /var/log/apt/history.log` og `apt-mark showmanual`.
 
@@ -79,7 +79,7 @@ ARSHJUL_DATA=/srv/arshjul-data
 ARSHJUL_BOM=/mnt/arshjul-bom
 ARSHJUL_SECRET_KEY=<64 tegn fra: python3 -c "import secrets; print(secrets.token_hex(32))">
 ARSHJUL_HOST=127.0.0.1
-ARSHJUL_BOM_WINDOWS=\\felles.ansatt.ntnu.no\<sti>\BOM     # når fellesmappen er på plass
+ARSHJUL_BOM_WINDOWS=\\kunde.it.ntnu.no\ies-arshjul$\BOM     # når BOM-området er på plass
 ```
 Byttes nøkkelen, blir alle logget ut.
 `ARSHJUL_BOM_WINDOWS` er den samme BOM-mappen slik ingeniørens PC ser den. Da får hver BOM «Kopier sti», og «Åpne i Excel» når stien er uten æøå (se `VEIKART.md`). Uten den kan ingeniøren ikke nå BOM-ene fra siden.
@@ -225,10 +225,9 @@ Kopiene ligger på **samme maskin** som databasen: de hjelper mot feil i årshju
 
 ## Gjenstår
 
-- **BOM-fellesmappen** – venter på IT (egen fellesmappe, tjenestekonto, TCP 445 fra VPS-en). Plan: `cifs-utils` i pakkelista, innlogging i `/etc/arshjul-bom.cred` (chmod 600), og i `/etc/fstab`:
-  ```
-  //felles.ansatt.ntnu.no/<sti>  /mnt/arshjul-bom  cifs  credentials=/etc/arshjul-bom.cred,uid=arshjul,gid=arshjul,file_mode=0660,dir_mode=0770,iocharset=utf8,vers=3.0,_netdev,nofail  0  0
-  ```
-  Sjekk at `/mnt/arshjul-bom` er tom før montering (filer der blir skjult). NTNU bruker Heimdal Kerberos – velger IT Kerberos, følg deres oppskrift. Testene som gjenstår står i `VEIKART.md`.
+- **BOM-området** – valgt 27. oktober 2026: et eget unix-område på `kunde.it.ntnu.no`, NFS-eksportert til VPS-en etter IP, med automount (autofs) som IT setter opp; ingeniørene bruker `\\kunde.it.ntnu.no\ies-arshjul$`, og tilgangen styres med en gruppe i BAS (se `VEIKART.md`, «Beslutninger»). Ingen tjenestekonto eller passord. Når det er på plass:
+  - Over NFS bestemmer lagringen eierskapet, ikke `chown`. Legg `arshjul` i BAS-gruppens GID (`groupadd -g <GID> …` og `usermod -aG …`) og sjekk at tjenesten kan skrive: `sudo -u arshjul touch /mnt/arshjul-bom/test && rm …`. Ellers stopper appen med `PermissionError` (punkt 2).
+  - Sjekk at monteringspunktet er tomt før automount tar det i bruk (filer der blir skjult), og at tjenesten starter selv om området ikke svarer med en gang.
+  - Testene som gjenstår (lås på tvers av NFS og SMB, rettigheter begge veier, æøå) står i `VEIKART.md`.
 - **Kalenderen i Outlook** – Outlook på nett/mobil henter feeden fra Microsofts servere, som ikke når VPS-en. Spurt IT om `/calendar/` kan åpnes utenfra.
-- **Backup til et annet sted** – de daglige kopiene (punkt 8) ligger på VPS-en selv. Spør IT om de tar backup av maskinen, eller om `Sikkerhetskopi-db/` kan kopieres til fellesmappen når den er på plass. `Bestillingslister/` lages på nytt fra databasen; `/etc/arshjul.env` (nøkkelen) må tas vare på for seg.
+- **Backup til et annet sted** – de daglige kopiene (punkt 8) ligger på VPS-en selv. Spør IT om de tar backup av maskinen, eller om `Sikkerhetskopi-db/` kan kopieres til BOM-området når det er på plass (kopiene, ikke selve databasen). `Bestillingslister/` lages på nytt fra databasen; `/etc/arshjul.env` (nøkkelen) må tas vare på for seg.
