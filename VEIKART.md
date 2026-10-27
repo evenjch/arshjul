@@ -129,7 +129,7 @@ Innstillingene kan også stå i `arshjul/innstillinger.env` (se `innstillinger.e
 - [x] «Kopier til neste skoleår» og vårpåminnelsen gjelder egne emner.
 - [x] **Antall sett regnes ut av studenter og grupper** (migrering 11): antall studenter ÷ studenter per gruppe, rundet opp, + ekstra sett (`db.set_count` – eneste stedet det regnes). Antall sett lagres fortsatt, så bestilling, telling og historikk er uendret, men kan ikke settes direkte. Eksisterende gjennomføringer fikk studenter = sett og grupper på 1. Endrer antall sett seg, logges og varsles det sammen med feltet som ble endret.
 - [x] **Visninger og deling** (migrering 19): `/hjul` og `/uker` viser bare hjulet eller «Neste 8 uker» (samme side med `data-view`; JS tegner bare den delen). «Del med studenter» på `/hjul` gir en personlig lenke `/hjul/<nøkkel>` uten innlogging (`users.share_token`, som kalenderen). `/hjul/<nøkkel>/data` sender bare navn, type, farge og bruksuker for brukerens egne prosjekter – ingen frister, bestillinger, BOM, emner eller personer. Ny lenke gjør den gamle ugyldig; deaktiverte brukere får 404.
-- [x] **Kalender i Outlook** (migrering 17, `calendar_feed.py`): «Kalender» gir en personlig lenke (`/calendar/<nøkkel>.ics`) å abonnere på. Ingeniører får forberedelse, bestillingsfrist, bruksperiode og telling; faglærere bruksperioden. Hele dager, faste UID-er så endringer oppdaterer hendelsene, inneværende og neste skoleår. «Lag ny lenke» gjør den gamle ugyldig; deaktiverte brukere får 404. Lokalt kan bare Outlook på samme PC abonnere – på serveren virker det overalt.
+- [x] **Kalender i Outlook** (migrering 17, `calendar_feed.py`): «Kalender» gir en personlig lenke (`/calendar/<nøkkel>.ics`) å abonnere på. Ingeniører får forberedelse, bestillingsfrist, bruksperiode og telling; faglærere bruksperioden. Hele dager, faste UID-er så endringer oppdaterer hendelsene, inneværende og neste skoleår. «Lag ny lenke» gjør den gamle ugyldig; deaktiverte brukere får 404. Lokalt kan bare Outlook på samme PC abonnere. På serveren virker det i klassisk Outlook på PC-er på NTNU-nettet/VPN, men ikke i Outlook på nett, mobil eller den nye Outlook – de henter via Microsofts servere, som ikke når VPS-en (se «Parkert / senere»).
 - [x] **Koden er på engelsk** (migrering 16): navn, kommentarer, API-felt og -adresser, databasens tabeller, kolonner og koder, nøklene i lagrede data, testnavn og commit-meldinger. Ordliste i CLAUDE.md. Tekst brukerne ser er fortsatt norsk – også mappene i datamappen, Excel-malene, `innstillinger.env` og kommandolinjen i `manage.py`. Migreringen kjører med fremmednøkler av (brukere og prosjekter bygges om) og tar sikkerhetskopi først. «BOM sist sett»-filen gjøres om én gang (`bom-last-seen.json`).
 - [x] **Sikkerhetskopi før oppgradering**: før databasen migreres, kopieres den til `Sikkerhetskopi-db/` (samme sted og navn som «Ta sikkerhetskopi nå» i administratorpanelet).
 - [x] **Fire prosjekttyper** (`deadlines.TYPES`): semestersett, prosjekt, hackathon og lab. Typen gir navnene i hjulet og telleuka (sett og lab: siste bruksuke; prosjekt og hackathon: uka etter). Gamle «Hackathon / lab» ble Hackathon – lab-ene endres i tabellen. Ingen migrering: typen er fritekst i databasen og sjekkes i API-et.
@@ -170,6 +170,7 @@ Gjort i oktober 2026 – slik det faktisk ble satt opp (Caddy, sertifikat, brann
 
 - **Instituttoversikt**: se alle emner samtidig for å finne kollisjoner (travle uker, delte rom og utstyr) og felles lager. Bevisst tatt bort for nå – i et stort institutt blir det rot. Administratoren ser allerede alt; en egen visning kan komme senere.
 
+- **Tilgang utenfra** for kalenderen (Outlook på nett, mobil og den nye Outlook) og den delte lenken til hjulet (studenter uten VPN). VPS-en har bare en intern adresse; IT kan gi en ny VM i et mer åpent nett, men da må oppsettet flyttes dit (tilbudt 27. oktober 2026, takket nei til foreløpig – ikke en del av kjernen). Gjøres det: Caddy svarer utenfra bare på `/calendar/…`, `/hjul/<nøkkel>` og det de trenger av `/static/`, resten bare fra NTNU-nettet/VPN; be om at navnet `ies-arshjul.it.ntnu.no` flyttes med, så delte lenker virker videre; og NFS-eksporten må flyttes til den nye IP-en.
 - Påminnelser på e-post eller Teams før frister som ikke er bestilt
 - Samle bestillinger på tvers av prosjekter hos samme leverandør
 - Leveringstid per leverandør i stedet for per prosjekt
@@ -233,11 +234,14 @@ Anbefaling: 3 hvis ett klikk er viktig (få ingeniører, samme opplevelse som f�
 
 ## Åpne spørsmål (til IT)
 
-- ~~Kan vi få en egen fellesmappe for tjenesten?~~ Ja – IT foreslo to alternativer (27. oktober 2026), og vi valgte unix-området (se «Beslutninger»). Svaret under sendes 28. oktober.
+- ~~Kan vi få en egen fellesmappe for tjenesten?~~ Ja – IT foreslo to alternativer (27. oktober 2026), og vi valgte unix-området (se «Beslutninger»). Svaret under ble sendt 27. oktober; venter på svar om rettigheter, låsing og tegnsett.
 - Hva krever IT for en VPS (operativsystem, tilgang, backup, sikkerhetsgjennomgang)?
-- Tas det backup av BOM-området? (Sikkerhetskopiene i `BOM/Sikkerhetskopi/` dekker bare årshjulets egne endringer.) Spurt i svaret under.
+- ~~Tas det backup av BOM-området?~~ Ja, IT tar backup av lagringsområdene. Derfor skal også de nattlige databasekopiene kopieres dit.
+- ~~Trengs det åpninger i brannmuren for at VPS-en skal nå lagringsområdet?~~ Nei.
+- ~~Kan `/calendar/` nås utenfra?~~ Ikke fra VPS-en slik den står – det krever en ny VM i et mer åpent nett. Lagt til side (se «Parkert / senere»).
+- Tas det backup av selve VM-en? Spurt i det andre svaret under.
 
-**Svar til IT om lagringsområdet** (sendes 28. oktober 2026):
+**Svar til IT om lagringsområdet** (sendt 27. oktober 2026):
 
 > Hei, og takk for grundig svar!
 >
@@ -252,5 +256,17 @@ Anbefaling: 3 hvis ett klikk er viktig (få ingeniører, samme opplevelse som f�
 > 5. **Størrelse:** Området skal bare inneholde Excel-filer og noen sikkerhetskopier, så noen få GB holder godt.
 >
 > Gruppen bør i første omgang bestå av: [navn/brukernavn].
+>
+> Mvh
+
+**Svar til IT om tilgang utenfra og backup** (27. oktober 2026, etter IT-s oppfølging om punkt 3–5):
+
+> Hei igjen, og takk!
+>
+> Meldingen min om lagringsområdet krysset nok din. Svarene på 3 og 4 passer fint. Siden det tas backup av lagringsområdet, kopierer vi også de nattlige sikkerhetskopiene av databasen dit.
+>
+> **Punkt 5:** Vi lar det vente. Tilgang utenfra var bare et ønske, ikke noe tjenesten trenger nå, så vi blir på ies-arshjul01. NFS-området kan altså eksporteres dit. Trenger vi å nå den utenfra senere, tar vi kontakt.
+>
+> Tas det forresten backup av selve VM-en også, eller bare av lagringsområdene?
 >
 > Mvh
