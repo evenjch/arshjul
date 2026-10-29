@@ -44,6 +44,7 @@ journalctl -u caddy -n 50 --no-pager        # HTTPS/proxy
 curl -I http://127.0.0.1:5057/login         # svarer appen? (200)
 curl -I --resolve ies-arshjul.it.ntnu.no:443:127.0.0.1 https://ies-arshjul.it.ntnu.no/login   # svarer Caddy? (200)
 ```
+`permission denied` på sertifikatet eller i `/var/lib/caddy`: se «Caddys bruker kan få nytt nummer» under punkt 6.
 Etter en feil som stoppet tjenesten («Start request repeated too quickly»): rett feilen, så `systemctl reset-failed arshjul && systemctl restart arshjul`.
 
 ## Slik ble det satt opp
@@ -177,6 +178,14 @@ ies-arshjul.it.ntnu.no {
 caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
 ```
 Caddy sender `X-Forwarded-For/-Proto/-Host`, som appen stoler på i servermodus (riktig klientadresse og `Secure`-cookie). Det er ingen IP-regel i Caddy: maskinen har bare en intern adresse, så nettverket avgrenser tilgangen. (En regel med `remote_ip 129.241.0.0/16` stengte ute alle, også fra NTNU – brukerne kommer fra interne adresser.)
+
+**Caddys bruker kan få nytt nummer.** Etter omstarten 28. oktober 2026 startet ikke Caddy: `open /etc/caddy/certs/arshjul.crt: permission denied`. Brukeren og gruppen `caddy` hadde fått UID/GID 895 i stedet for 298 (som pakken ga ved installasjonen 22. oktober), mens filene fortsatt hadde 298 – sertifikatene, `/var/lib/caddy` og `/var/log/caddy`. Oppføringen i `/etc/group` var skrevet om (`caddy:*:895:caddy`), trolig av NTNUs maskinstyring; spurt IT. Caddy leser sertifikatet bare ved oppstart, så det viste seg først ved omstart. `arshjul` (299) beholdt nummeret sitt. Derfor retter Caddy eierskapet selv før hver start, `/etc/systemd/system/caddy.service.d/eierskap.conf` (utenfor pakken, så den overlever at `pkgsync` fjerner Caddy):
+```ini
+[Service]
+ExecStartPre=+/bin/chown -R caddy:caddy /var/lib/caddy /var/log/caddy
+ExecStartPre=+/bin/chgrp caddy /etc/caddy/certs/arshjul.crt /etc/caddy/certs/arshjul.key
+```
+`+` kjører kommandoen som root. Etter endring: `systemctl daemon-reload && systemctl restart caddy`. Får `arshjul` også nytt nummer en gang, trengs det samme for `/srv/arshjul-data` (ikke BOM-mappen – der bestemmer NFS-området eierskapet). Finne filer med et gammelt nummer: `timeout 60 find /etc /var /srv /opt -xdev \( -uid <nr> -o -gid <nr> \)`.
 
 ### 7. Brannmur
 Etter NTNUs guide: to filer i `/etc/local/firewall.d/`, `ipv4-arshjul-webserver.conf` og `ipv6-arshjul-webserver.conf`, med:
