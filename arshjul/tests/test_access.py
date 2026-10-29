@@ -98,6 +98,15 @@ def test_next_cant_send_you_off_site(logins):
     assert log_in("ola", next_="/api/state").reply.headers["Location"] == "/api/state"
 
 
+def test_login_keeps_the_query(logins):
+    # a widget (/uker?widget) whose session ran out should come back as a widget
+    r = new_client().get("/uker?widget")
+    assert r.status_code == 302
+    next_ = r.headers["Location"].split("next=", 1)[1]
+    assert log_in("ola", next_=next_).reply.headers["Location"] == "/uker?widget"
+    assert new_client().get("/uker").headers["Location"].endswith("/login?next=/uker")
+
+
 def test_deactivation_and_new_password_end_the_session(logins):
     c = log_in("ola")
     arshjul.store.update_user(logins["ola"], active=0)

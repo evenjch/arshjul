@@ -28,7 +28,7 @@
     if (body) headers["Content-Type"] = "application/json";
     const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined, credentials: "same-origin" });
     let data = {}; try { data = await res.json(); } catch (e) {}
-    if (res.status === 401 && data.login) { location.href = "/login?next=" + encodeURIComponent(location.pathname); throw new Error(data.error); }
+    if (res.status === 401 && data.login) { location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search); throw new Error(data.error); }
     if (!res.ok) throw new Error(data.error || "Noe gikk galt (" + res.status + ").");
     return data;
   }

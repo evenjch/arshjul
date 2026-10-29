@@ -145,7 +145,8 @@ def _guard():
             return jsonify({"error": "Du er ikke logget inn.", "login": True}), 401
         if _can_create_first():
             return redirect(url_for("auth.setup"))
-        return redirect(url_for("auth.login", next=request.path))
+        # keep the query, so e.g. /uker?widget is still a widget after logging in
+        return redirect(url_for("auth.login", next=request.full_path if request.query_string else request.path))
     return None
 
 
